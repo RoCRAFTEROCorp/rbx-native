@@ -12,13 +12,11 @@
 //! up here per render.
 
 use std::collections::HashMap;
-use std::path::Path;
 
 use gpui_kit::{Context, SharedString};
-use rbx_dom::{Ref, WeakDom};
+use rbx_dom::Ref;
 
-use crate::explorer;
-use crate::folder_colors::{self, FolderColors, Rgb};
+use crate::folder_colors::{self, Rgb};
 
 use super::Shell;
 
@@ -42,15 +40,7 @@ impl Shell {
     /// of the theme's default (see `shell::rows::row`; the row's *icon* is
     /// recolored separately, baked in at `explorer::items` build time).
     pub(super) fn folder_tints(&self) -> HashMap<SharedString, Rgb> {
-        let mut tints = HashMap::new();
-        collect_tints(
-            &self.dom,
-            self.dom.root_refs(),
-            &self.folder_colors,
-            &self.path,
-            &mut tints,
-        );
-        tints
+        self.explorer.folder_tints().clone()
     }
 
     /// Routes an "Explorer Colour" row's commit to the local colour store
@@ -73,28 +63,6 @@ impl Shell {
         let _ = self.folder_colors.save();
         self.rebuild_explorer(cx);
         Ok(())
-    }
-}
-
-fn collect_tints(
-    dom: &WeakDom,
-    refs: &[Ref],
-    colors: &FolderColors,
-    place: &Path,
-    out: &mut HashMap<SharedString, Rgb>,
-) {
-    for &reference in refs {
-        let Some(instance) = dom.get(reference) else {
-            continue;
-        };
-        if instance.class() == folder_colors::FOLDER_CLASS {
-            if let Some(path) = folder_colors::path_of(dom, reference) {
-                if let Some(color) = colors.get(place, &path) {
-                    out.insert(explorer::item_id(reference), color);
-                }
-            }
-        }
-        collect_tints(dom, instance.children(), colors, place, out);
     }
 }
 

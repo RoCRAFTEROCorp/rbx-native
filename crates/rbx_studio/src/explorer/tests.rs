@@ -297,6 +297,29 @@ fn an_untagged_folder_under_a_place_with_other_tags_keeps_its_plain_icon() {
     assert_eq!(plain_bytes.as_bytes(0), mixed_bytes.as_bytes(0));
 }
 
+// The row tints the tree paints with, worked out with the rows rather than
+// by walking the DOM every render: only tagged folders, keyed by row id, and
+// kept by an icon-pack switch.
+#[test]
+fn only_tagged_folders_have_a_row_tint() {
+    let mut dom = WeakDom::new();
+    let tagged = insert(&mut dom, 1, "Folder", "Tagged");
+    insert(&mut dom, 2, "Folder", "Plain");
+    insert(&mut dom, 3, "Model", "Tagged2");
+
+    let mut colors = FolderColors::default();
+    let place = PathBuf::from("/tmp/tagged.rbxl");
+    colors.set(&place, "Tagged", (200, 60, 60));
+    colors.set(&place, "Tagged2", (1, 2, 3));
+
+    let explorer = Explorer::from_dom(&dom, IconPack::Dark, &colors, &place);
+    let expected = HashMap::from([(item_id(tagged), (200, 60, 60))]);
+    assert_eq!(explorer.folder_tints(), &expected);
+
+    let switched = explorer.set_icon_pack(IconPack::Light, &colors, &place);
+    assert_eq!(switched.folder_tints(), &expected);
+}
+
 #[test]
 fn find_by_name_walks_depth_first_in_file_order() {
     let mut dom = WeakDom::new();
