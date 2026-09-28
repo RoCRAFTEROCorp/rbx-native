@@ -1,5 +1,20 @@
 # Changelog
 
+## 2026-09-29
+
+- **The editor is much lighter when nothing is moving.** The 3D view used
+  to draw, copy back and repaint the whole window at the display's full
+  rate even over a still place; it now draws only when something could
+  change the picture: an edit, the camera moving, an asset arriving, or
+  effects that move on their own (particles, beams, trails, ForceField).
+  An idle editor went from 29% of a CPU core to about 1.5%, and the
+  Viewport dock's frame rate reads Idle meanwhile. A big place animating
+  its own effects costs less too (39% to 32% on a 16 742-instance place),
+  since the Explorer no longer re-walks the whole place every frame. The
+  3D view also reserves far less video memory: 596 to 272 MiB for a small
+  place at the lowest quality level, 1366 to 1124 MiB for a big one at the
+  highest. — @chteau
+
 ## 2026-09-26
 
 - **Studio Settings (`File › Studio Settings…`, `Alt+S`).** One window
