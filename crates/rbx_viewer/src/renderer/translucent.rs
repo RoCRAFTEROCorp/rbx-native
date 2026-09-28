@@ -96,6 +96,11 @@ impl Translucent {
         self.items.is_empty()
     }
 
+    /// Whether any `ForceField` is drawn: its shimmer moves with the clock.
+    pub(super) fn has_force_field(&self) -> bool {
+        self.items.iter().any(|item| item.force_field)
+    }
+
     /// Brings this pass in line with one edited part: its item rewritten,
     /// added or dropped on the CPU side (see [`Translucent::place`]), and the
     /// buffer the next [`Translucent::prepare`] uploads into grown if the

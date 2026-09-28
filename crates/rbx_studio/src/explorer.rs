@@ -19,7 +19,7 @@ use rbx_viewer::services::SERVICE_ORDER;
 pub(crate) use rbx_viewer::services::{is_default_visible, is_known_service};
 
 use crate::class_icons::{self, IconPack};
-use crate::folder_colors::{FolderColors, FOLDER_CLASS};
+use crate::folder_colors::{FolderColors, Rgb, FOLDER_CLASS};
 
 pub(crate) mod insert;
 pub(crate) mod reparent;
@@ -67,6 +67,9 @@ pub(crate) struct Explorer {
     /// `classes` so [`Explorer::set_icon_pack`] can re-tint a tagged
     /// `Folder`'s icon for the other pack without re-walking `dom` either.
     paths: HashMap<SharedString, String>,
+    /// Every tagged `Folder` row's colour, by row id — see
+    /// [`Explorer::folder_tints`].
+    tints: HashMap<SharedString, Rgb>,
 }
 
 impl Explorer {
@@ -112,6 +115,7 @@ impl Explorer {
             default_items,
             all_items,
             icons,
+            tints: tints_of(&classes, &paths, folder_colors, place),
             classes,
             paths,
         }
@@ -162,9 +166,19 @@ impl Explorer {
             default_items: self.default_items.clone(),
             all_items: self.all_items.clone(),
             icons,
+            tints: tints_of(&self.classes, &self.paths, folder_colors, place),
             classes: self.classes.clone(),
             paths: self.paths.clone(),
         }
+    }
+
+    /// Every tagged `Folder` row's colour, by row id — what the tree paints a
+    /// tagged row's hover and selected state with. Worked out when the rows
+    /// were, from the same classes and paths their tinted icons came from,
+    /// so the two always agree, and never per render: walking the DOM for it
+    /// on every frame cost a big place a fifth of the UI thread.
+    pub(crate) fn folder_tints(&self) -> &HashMap<SharedString, Rgb> {
+        &self.tints
     }
 
     /// The root items to show. Cloning a `TreeItem` shares its expansion
@@ -333,6 +347,23 @@ fn sort_roots(roots: &mut [Node]) {
                 .then_with(|| left.name.cmp(&right.name)),
         },
     );
+}
+
+/// Every `Folder` row in `classes` whose path `folder_colors` has a colour for.
+fn tints_of(
+    classes: &HashMap<SharedString, String>,
+    paths: &HashMap<SharedString, String>,
+    folder_colors: &FolderColors,
+    place: &Path,
+) -> HashMap<SharedString, Rgb> {
+    classes
+        .iter()
+        .filter(|(_, class)| *class == FOLDER_CLASS)
+        .filter_map(|(id, _)| {
+            let color = folder_colors.get(place, paths.get(id)?)?;
+            Some((id.clone(), color))
+        })
+        .collect()
 }
 
 /// `tinted` caches one recolored icon per tag colour actually in use this

@@ -40,6 +40,7 @@ impl Shell {
             .set_property(scroll.referent, CANVAS_POSITION, position)
         {
             self.output.push_warning(&format!("viewport scroll: {err}"));
+            cx.notify();
             return;
         }
         let changes = self.dom.take_changes();

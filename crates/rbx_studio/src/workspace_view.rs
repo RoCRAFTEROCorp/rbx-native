@@ -243,6 +243,9 @@ pub(crate) struct WorkspaceView {
     /// [`presence`].
     visible: bool,
     missed_paints: u32,
+    /// Whether the render thread was resting at the last tick — see
+    /// `Pump::resting`.
+    resting: bool,
     frame: Option<Arc<RenderImage>>,
     /// One display refresh: the budget a frame is given while the window is
     /// focused. Fixed for the life of the view — see `pacing` for the
@@ -424,6 +427,7 @@ impl WorkspaceView {
             painted: Rc::new(Cell::new(true)),
             visible: true,
             missed_paints: 0,
+            resting: false,
             frame: None,
             full_interval,
             interval,
@@ -471,11 +475,20 @@ impl WorkspaceView {
         // stale at whatever it last was, so this is the only way to catch it.
         // A single miss is not enough on its own, and a run of them is not
         // conclusive either — see `presence`.
-        let presence = presence::presence(
-            self.painted.replace(false),
-            self.missed_paints,
-            self.visible,
-        );
+        // A render thread resting on a still picture sends no frames, so
+        // nothing repaints and a missed paint means nothing — counted, it
+        // would probe a repaint of the whole window every frame. A tab
+        // switched away meanwhile is caught by the next frame that is drawn,
+        // and until then there is no drawing to stop.
+        let resting = self.pump.resting();
+        if resting != self.resting {
+            // The Viewport dock's frame rate reads "Idle" while resting, and
+            // no frame is coming to repaint it.
+            self.resting = resting;
+            cx.notify();
+        }
+        let painted = self.painted.replace(false) || resting;
+        let presence = presence::presence(painted, self.missed_paints, self.visible);
         self.missed_paints = presence.missed;
         if presence.visible != self.visible {
             self.visible = presence.visible;
@@ -829,7 +842,7 @@ impl WorkspaceView {
         [
             (
                 "Frame rate",
-                label::frame_rate(self.pump.stats().latest_fps()),
+                label::frame_rate(self.pump.stats().latest_fps(), self.pump.resting()),
             ),
             ("Quality level", label::quality(self.quality, self.level)),
         ]

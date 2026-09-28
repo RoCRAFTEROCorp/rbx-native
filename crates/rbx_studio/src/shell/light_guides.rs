@@ -18,6 +18,7 @@ impl Shell {
         self.light_guides = !self.light_guides;
         self.sync_light_guides(cx);
         self.save_settings();
+        cx.notify();
     }
 
     /// Sends the viewport the guides of whatever lights are selected, as the

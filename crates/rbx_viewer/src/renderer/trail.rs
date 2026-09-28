@@ -225,6 +225,12 @@ impl Trails {
             pipeline::create_pipeline(device, target, &self.camera_layout, &self.image_layout);
     }
 
+    /// Whether anything is drawn at all — every live one moves with the
+    /// clock, so a host that only draws on change has to keep drawing.
+    pub(super) fn is_live(&self) -> bool {
+        !self.live.is_empty()
+    }
+
     /// Advances every trail's recorder by one frame, rebuilds every ribbon,
     /// uploads them and draws one run per texture group over `targets`'s
     /// existing colour and depth attachments — same pass shape as

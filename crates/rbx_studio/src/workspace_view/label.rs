@@ -25,8 +25,12 @@ pub(super) fn quality(mode: QualityLevel, level: u8) -> SharedString {
 /// The last second's frame rate and its frame time, or a placeholder while
 /// the first second since sampling started is still being counted — `0.0` is
 /// "not measured yet", never a real rate.
-pub(super) fn frame_rate(fps: f32) -> SharedString {
-    if fps > 0.0 {
+pub(super) fn frame_rate(fps: f32, resting: bool) -> SharedString {
+    if resting {
+        // Nothing is being drawn: the view draws only when the picture can
+        // change (see `pump`), so there is no rate to show.
+        "Idle".into()
+    } else if fps > 0.0 {
         // Formatted by `rbx_viewer::fps_readout`, which `rbxview`'s own title
         // bar reads the same way; the frame time is exactly 1/fps over the
         // same window, not a separate approximation.
@@ -62,14 +66,22 @@ mod tests {
 
     #[test]
     fn a_measured_rate_carries_its_frame_time() {
-        assert_eq!(frame_rate(60.0), "60 fps\u{b7}16.7 ms");
+        assert_eq!(frame_rate(60.0, false), "60 fps\u{b7}16.7 ms");
     }
 
     // The first second after the dock opens has nothing to report yet, and a
     // "0 fps" there would read as the viewport having frozen.
     #[test]
     fn no_rate_yet_reads_as_measuring_not_as_zero() {
-        assert_eq!(frame_rate(0.0), "Measuring\u{2026}");
+        assert_eq!(frame_rate(0.0, false), "Measuring\u{2026}");
+    }
+
+    // A still view draws nothing, so neither a stale rate nor "Measuring…"
+    // (which would never end) describes it.
+    #[test]
+    fn a_resting_view_reads_as_idle_whatever_was_last_measured() {
+        assert_eq!(frame_rate(60.0, true), "Idle");
+        assert_eq!(frame_rate(0.0, true), "Idle");
     }
 
     #[test]

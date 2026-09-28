@@ -312,7 +312,7 @@ struct Place {
     /// This place's `Folder` colour tags — see `folder_colors`. Loaded here
     /// (and pruned of any entry whose folder no longer resolves) rather than
     /// lazily on first use, since the Explorer's own tints are baked in by
-    /// `shell::folder_color::folder_tints` from the moment the window opens.
+    /// `Explorer::from_dom` from the moment the window opens.
     folder_colors: FolderColors,
 }
 

@@ -67,6 +67,11 @@ pub fn describe_adapter() -> Result<String, String> {
 pub(crate) fn device(adapter: &wgpu::Adapter) -> Result<(wgpu::Device, wgpu::Queue), String> {
     pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
         label: Some("rbxview"),
+        // Small allocator blocks rather than wgpu's default 128-256 MB ones:
+        // the renderer's own allocations are a few large textures made at
+        // load, and the default left a small place holding ~4x what it
+        // actually used — hundreds of megabytes a low-end GPU does not have.
+        memory_hints: wgpu::MemoryHints::MemoryUsage,
         ..Default::default()
     }))
     .map_err(|err| format!("failed to open a GPU device: {err}"))
