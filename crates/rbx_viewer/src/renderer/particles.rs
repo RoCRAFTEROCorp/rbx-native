@@ -214,6 +214,12 @@ impl Particles {
             pipeline::create_pipeline(device, target, &self.camera_layout, &self.image_layout);
     }
 
+    /// Whether anything is drawn at all — every live one moves with the
+    /// clock, so a host that only draws on change has to keep drawing.
+    pub(super) fn is_live(&self) -> bool {
+        !self.live.is_empty()
+    }
+
     /// Advances every emitter by wall-clock `dt`, sorts every alive particle
     /// back-to-front, and draws them in one pass over `targets`'s existing
     /// colour and depth attachments (loaded, not cleared, so this always runs

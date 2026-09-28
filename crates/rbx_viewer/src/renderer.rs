@@ -529,6 +529,19 @@ impl Renderer {
             .upload_pending(device, queue, &self.quality, usize::MAX);
     }
 
+    /// Whether the next [`Renderer::draw`] would differ from the last one
+    /// with the camera and the scene both left alone: something on screen
+    /// moves with the clock (a `ForceField`'s shimmer, a `Beam`, a `Trail`,
+    /// a particle), or textures are still being uploaded a few per frame. A
+    /// host that only draws on change keeps drawing while this holds.
+    pub(crate) fn animating(&self) -> bool {
+        self.translucent.has_force_field()
+            || self.beams.is_live()
+            || self.trails.is_live()
+            || self.particles.is_live()
+            || self.textured.has_pending()
+    }
+
     /// Moves the `ForceField` shimmer to where it is `elapsed` into the
     /// host's clock.
     pub(crate) fn set_elapsed(&mut self, elapsed: std::time::Duration) {

@@ -265,6 +265,12 @@ impl Textured {
         self.blended = blended;
     }
 
+    /// Whether images are still queued for [`Textured::upload_pending`],
+    /// which only uploads a few per frame.
+    pub(super) fn has_pending(&self) -> bool {
+        !self.pending.is_empty()
+    }
+
     /// Uploads up to `budget` of the real images [`Textured::rebuild`] deferred,
     /// replacing that slot's placeholder bind group with the real one —
     /// called once per drawn frame (see `Renderer::draw`) with a bounded

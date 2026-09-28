@@ -420,6 +420,14 @@ impl Headless {
         moved | self.take_landed_assets()
     }
 
+    /// Whether the picture moves on its own, with no input and no edit: a
+    /// `ForceField`, `Beam`, `Trail` or particle is on screen, or textures are
+    /// still being uploaded a few per frame. A host that draws only when
+    /// [`Headless::tick`] reports a change keeps drawing while this holds.
+    pub fn animating(&self) -> bool {
+        self.offscreen.animating()
+    }
+
     /// How the free camera responds to the mouse and the keys, from now on.
     pub fn set_camera_feel(&mut self, feel: CameraFeel) {
         self.feel = feel;

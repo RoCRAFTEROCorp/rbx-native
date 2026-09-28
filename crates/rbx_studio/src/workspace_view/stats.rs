@@ -39,6 +39,9 @@ pub(super) struct Stats {
     /// kept regardless of [`enabled`], which only gates the stderr dump.
     /// `0.0` until the first full second since sampling started is in.
     latest_fps: AtomicU32,
+    /// Whether the render thread rested at any point in the current window —
+    /// see [`Stats::rested`].
+    rested: AtomicBool,
     /// Whether anything is counted at all. Off unless the Viewport dock is
     /// on screen: a readout nobody can see is per-frame work for nothing.
     sampling: AtomicBool,
@@ -105,6 +108,14 @@ impl Stats {
         Duration::from_nanos(self.latest_upload.load(Ordering::Relaxed))
     }
 
+    /// Notes that the render thread had nothing to draw on this tick. A second
+    /// it rested in counts fewer frames than the view can draw, only because
+    /// nothing asked for more, so it is not what the Viewport dock's readout
+    /// shows: that keeps the last second drawn without a break.
+    pub(super) fn rested(&self) {
+        self.rested.store(true, Ordering::Relaxed);
+    }
+
     /// Prints the last second, if a second has passed and anything was drawn in
     /// it. `interval` is the budget a frame had, for the line to be read against,
     /// and `level` the graphics quality those frames were drawn at.
@@ -122,12 +133,15 @@ impl Stats {
         let readback = self.readback.swap(0, Ordering::Relaxed);
         let uploads = self.uploads.swap(0, Ordering::Relaxed);
         let upload = self.upload.swap(0, Ordering::Relaxed);
+        let rested = self.rested.swap(false, Ordering::Relaxed);
         if frames == 0 {
             return;
         }
 
-        self.latest_fps
-            .store(fps(frames, elapsed).to_bits(), Ordering::Relaxed);
+        if !rested {
+            self.latest_fps
+                .store(fps(frames, elapsed).to_bits(), Ordering::Relaxed);
+        }
         if !enabled() {
             return;
         }
@@ -332,6 +346,27 @@ mod tests {
         stats.set_sampling(false);
         stats.drew(Duration::from_millis(1), Duration::from_millis(2));
         assert_eq!(stats.frames.load(Ordering::Relaxed), 0);
+    }
+
+    // A second the render thread rested in counts only the frames something
+    // asked for — a click's worth — which is not the rate the view draws at.
+    #[test]
+    fn a_second_with_a_rest_in_it_keeps_the_last_rate() {
+        let stats = Stats::default();
+        stats.set_sampling(true);
+        stats.latest_fps.store(60f32.to_bits(), Ordering::Relaxed);
+        stats.drew(Duration::ZERO, Duration::ZERO);
+        stats.rested();
+        stats.opened.store(0, Ordering::Relaxed);
+        std::thread::sleep(super::REPORT_EVERY);
+
+        stats.report(Duration::from_millis(16), 21);
+
+        assert_eq!(stats.latest_fps(), 60.0);
+        assert!(
+            !stats.rested.load(Ordering::Relaxed),
+            "the next second starts clean"
+        );
     }
 
     // Reopening starts from nothing: the rate from before the dock closed is

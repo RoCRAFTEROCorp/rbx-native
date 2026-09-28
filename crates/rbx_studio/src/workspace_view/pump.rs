@@ -5,12 +5,15 @@
 //! thread does nothing but upload them, so neither the 5 MB readback nor the wait
 //! for the GPU behind it ever sits between a mouse move and the answer to it.
 //!
-//! The thread paces itself to one display refresh and draws continuously while
-//! the panel is visible — camera at rest or not — so animated content
-//! (particles, `Trail`, `Clouds`) keeps moving without input; it sleeps
-//! outright once the panel is not, which is what keeps a backgrounded view
-//! free.
+//! The thread paces itself to one display refresh and draws only while the
+//! picture can change: a command arrived, the camera moved, an asset landed,
+//! or something on screen moves with the clock (particles, `Trail`, `Beam`, a
+//! `ForceField` — see `Headless::animating`). A still view over a still place
+//! draws nothing, reads nothing back and uploads nothing, which is most of
+//! what an editor sits doing; and it sleeps outright once the panel is not
+//! visible, which is what keeps a backgrounded view free.
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender, TryRecvError};
 use std::sync::Arc;
 use std::thread::{self, JoinHandle};
@@ -136,6 +139,8 @@ pub(super) struct Pump {
     commands: Sender<Command>,
     ready: Receiver<Ready>,
     stats: Arc<Stats>,
+    /// Whether the thread has nothing to draw — see [`Pump::resting`].
+    resting: Arc<AtomicBool>,
     /// Joined on drop: the thread holds a GPU device of its own, and letting it
     /// draw into a window that is being torn down is how a driver crash starts.
     thread: Option<JoinHandle<()>>,
@@ -155,6 +160,8 @@ impl Pump {
         let (frames, ready) = mpsc::channel();
         let stats = Arc::new(Stats::default());
         let counters = stats.clone();
+        let resting = Arc::new(AtomicBool::new(false));
+        let rests = resting.clone();
 
         let thread = thread::Builder::new()
             .name("rbxstudio-render".to_string())
@@ -165,6 +172,7 @@ impl Pump {
                     &orders,
                     &frames,
                     &counters,
+                    &rests,
                     Opened { interval, quality },
                 )
             })
@@ -177,6 +185,7 @@ impl Pump {
             commands,
             ready,
             stats,
+            resting,
             thread,
         }
     }
@@ -264,10 +273,8 @@ impl Pump {
 
     /// Tells the render thread whether the panel is actually on screen — the
     /// dock only mounts the active tab of a group, so a hidden viewport never
-    /// calls back into `render` to report a size. Draws pace continuously
-    /// while visible (so animated content — particles, `Trail`, `Clouds` —
-    /// keeps moving without camera input) and stop entirely while not, rather
-    /// than drawing forever into a picture nobody can see.
+    /// calls back into `render` to report a size. Draws stop entirely while
+    /// it is not, rather than going on into a picture nobody can see.
     pub(super) fn set_visible(&self, visible: bool) {
         let _ = self.commands.send(Command::Visible(visible));
     }
@@ -281,6 +288,14 @@ impl Pump {
     /// The next message waiting, without ever blocking the UI thread.
     pub(super) fn poll(&self) -> Option<Ready> {
         self.ready.try_recv().ok()
+    }
+
+    /// Whether the thread is idle by choice — visible, but with nothing that
+    /// would change the picture — rather than stalled: no frame is coming
+    /// until something does, so no frame arriving says nothing about whether
+    /// the panel is still on screen (see `super::presence`).
+    pub(super) fn resting(&self) -> bool {
+        self.resting.load(Ordering::Relaxed)
     }
 
     pub(super) fn stats(&self) -> &Stats {
@@ -310,6 +325,7 @@ fn run(
     commands: &Receiver<Command>,
     frames: &Sender<Ready>,
     stats: &Stats,
+    resting: &AtomicBool,
     opened: Opened,
 ) {
     let Opened { interval, quality } = opened;
@@ -325,7 +341,9 @@ fn run(
     let mut quality = Quality::new(quality, interval, &mut viewer);
     let mut size = (0, 0);
     let mut visible = true;
-    let mut was_visible = false;
+    let mut in_flight = false;
+    // Owed from the start: nothing has been drawn yet.
+    let mut owed = true;
     let mut ticked = Instant::now();
     let mut speed = viewer.speed();
     let mut idle = false;
@@ -343,6 +361,7 @@ fn run(
     let mut canvas = canvas::Canvas::default();
 
     loop {
+        let wait = idle.then_some(if visible { interval } else { IDLE_WAIT });
         if !drain(
             commands,
             Rendering {
@@ -355,21 +374,29 @@ fn run(
                 scrolls: &mut scrolls,
                 interval: &mut interval,
                 canvas: &mut canvas,
+                owed: &mut owed,
             },
-            idle,
+            wait,
         ) {
             return;
         }
 
         let now = Instant::now();
-        viewer.tick(step(now.duration_since(ticked), interval));
+        let changed = viewer.tick(step(now.duration_since(ticked), interval));
         ticked = now;
 
-        let frame = next_frame(&mut viewer, size, visible, &mut was_visible, stats);
-        // Not visible, or a frame just drained on the way to that: wait for an
-        // event rather than for the clock. While visible, a frame is always
-        // owed — that is what keeps animated content moving without input.
-        idle = !visible && frame.is_none();
+        // Not `||`: `animating` is only worth asking once nothing else asked.
+        let draw = visible && (std::mem::take(&mut owed) | changed || viewer.animating());
+        let frame = next_frame(&mut viewer, size, draw, &mut in_flight, stats);
+        // Nothing to draw, and the last frame queued already collected: wait
+        // for an event rather than for the clock — for no longer than a frame
+        // while visible, since the camera and the asset pool are only ever
+        // looked at from here.
+        idle = !draw && frame.is_none() && !in_flight;
+        resting.store(visible && idle, Ordering::Relaxed);
+        if idle {
+            stats.rested();
+        }
 
         let current = viewer.speed();
         let told = (current - speed).abs() > f32::EPSILON;
@@ -465,6 +492,10 @@ struct Frame {
 
 /// Draws the frame the viewport is owed, or collects the one still in flight.
 ///
+/// `draw` is false both while the panel is hidden and while nothing would
+/// change the picture; either way the frame queued last is collected once,
+/// so the one on screen is the latest.
+///
 /// Panels the dock is not currently showing never report a size — the active
 /// tab of a group is the only one mounted, so a hidden viewport's `render`
 /// simply never runs to say otherwise — but `visible` is driven by that same
@@ -478,19 +509,19 @@ struct Frame {
 fn next_frame(
     viewer: &mut Headless,
     size: (u32, u32),
-    visible: bool,
-    was_visible: &mut bool,
+    draw: bool,
+    in_flight: &mut bool,
     stats: &Stats,
 ) -> Option<Frame> {
-    if size.0 == 0 || size.1 == 0 || !visible {
-        let draining = std::mem::replace(was_visible, false);
+    if size.0 == 0 || size.1 == 0 || !draw {
+        let draining = std::mem::replace(in_flight, false);
         return if draining {
             drain_pending_frame(viewer, stats)
         } else {
             None
         };
     }
-    *was_visible = true;
+    *in_flight = true;
 
     // Read before the frame is queued, because that is the frame it applies to:
     // what comes back below was queued at the previous call, so a level that
@@ -516,7 +547,7 @@ fn next_frame(
 }
 
 /// Collects the one frame `render_frame` had already queued when the viewport
-/// stopped being visible, without queuing another behind it.
+/// stopped being visible or came to rest, without queuing another behind it.
 fn drain_pending_frame(viewer: &mut Headless, stats: &Stats) -> Option<Frame> {
     let level = viewer.quality().resolved();
     match viewer.take_frame() {
@@ -558,14 +589,23 @@ struct Rendering<'a> {
     /// opened with, not to this — see this module's `run` for why that's fine.
     interval: &'a mut Duration,
     canvas: &'a mut canvas::Canvas,
+    /// Set by every command, so the tick that follows draws: nearly all of
+    /// them change the picture, and one frame for one that did not is cheap.
+    owed: &'a mut bool,
 }
 
-/// Applies everything the UI thread has asked for, blocking for the first order
-/// only while the camera is at rest. Returns `false` once the view is gone.
-fn drain(commands: &Receiver<Command>, mut rendering: Rendering<'_>, idle: bool) -> bool {
-    if idle {
-        match commands.recv_timeout(IDLE_WAIT) {
+/// Applies everything the UI thread has asked for, blocking for up to `idle`
+/// for the first order while there is nothing to draw. Returns `false` once
+/// the view is gone.
+fn drain(
+    commands: &Receiver<Command>,
+    mut rendering: Rendering<'_>,
+    idle: Option<Duration>,
+) -> bool {
+    if let Some(wait) = idle {
+        match commands.recv_timeout(wait) {
             Ok(command) => {
+                *rendering.owed = true;
                 if !apply(command, &mut rendering) {
                     return false;
                 }
@@ -582,6 +622,9 @@ fn drain(commands: &Receiver<Command>, mut rendering: Rendering<'_>, idle: bool)
             Err(TryRecvError::Empty) => break,
             Err(TryRecvError::Disconnected) => return false,
         }
+    }
+    if !queued.is_empty() {
+        *rendering.owed = true;
     }
     for command in coalesce(queued) {
         if !apply(command, &mut rendering) {

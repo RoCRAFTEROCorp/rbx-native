@@ -471,11 +471,13 @@ impl WorkspaceView {
         // stale at whatever it last was, so this is the only way to catch it.
         // A single miss is not enough on its own, and a run of them is not
         // conclusive either — see `presence`.
-        let presence = presence::presence(
-            self.painted.replace(false),
-            self.missed_paints,
-            self.visible,
-        );
+        // A render thread resting on a still picture sends no frames, so
+        // nothing repaints and a missed paint means nothing — counted, it
+        // would probe a repaint of the whole window every frame. A tab
+        // switched away meanwhile is caught by the next frame that is drawn,
+        // and until then there is no drawing to stop.
+        let painted = self.painted.replace(false) || self.pump.resting();
+        let presence = presence::presence(painted, self.missed_paints, self.visible);
         self.missed_paints = presence.missed;
         if presence.visible != self.visible {
             self.visible = presence.visible;
@@ -829,7 +831,7 @@ impl WorkspaceView {
         [
             (
                 "Frame rate",
-                label::frame_rate(self.pump.stats().latest_fps()),
+                label::frame_rate(self.pump.stats().latest_fps(), self.pump.resting()),
             ),
             ("Quality level", label::quality(self.quality, self.level)),
         ]

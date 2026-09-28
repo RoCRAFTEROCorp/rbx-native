@@ -209,6 +209,11 @@ impl Offscreen {
         }
     }
 
+    /// See [`Renderer::animating`].
+    pub(crate) fn animating(&self) -> bool {
+        self.renderer.animating()
+    }
+
     /// Queues the next frame and returns the one the previous call queued, so the
     /// GPU draws while the CPU is still busy with the frame before it.
     ///
