@@ -329,7 +329,6 @@ impl Shell {
 
         if let Err(err) = written {
             self.output.push_warning(&format!("viewport drag: {err}"));
-            return;
         }
         cx.notify();
     }

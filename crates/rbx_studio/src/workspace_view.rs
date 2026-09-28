@@ -243,6 +243,9 @@ pub(crate) struct WorkspaceView {
     /// [`presence`].
     visible: bool,
     missed_paints: u32,
+    /// Whether the render thread was resting at the last tick — see
+    /// `Pump::resting`.
+    resting: bool,
     frame: Option<Arc<RenderImage>>,
     /// One display refresh: the budget a frame is given while the window is
     /// focused. Fixed for the life of the view — see `pacing` for the
@@ -424,6 +427,7 @@ impl WorkspaceView {
             painted: Rc::new(Cell::new(true)),
             visible: true,
             missed_paints: 0,
+            resting: false,
             frame: None,
             full_interval,
             interval,
@@ -476,7 +480,14 @@ impl WorkspaceView {
         // would probe a repaint of the whole window every frame. A tab
         // switched away meanwhile is caught by the next frame that is drawn,
         // and until then there is no drawing to stop.
-        let painted = self.painted.replace(false) || self.pump.resting();
+        let resting = self.pump.resting();
+        if resting != self.resting {
+            // The Viewport dock's frame rate reads "Idle" while resting, and
+            // no frame is coming to repaint it.
+            self.resting = resting;
+            cx.notify();
+        }
+        let painted = self.painted.replace(false) || resting;
         let presence = presence::presence(painted, self.missed_paints, self.visible);
         self.missed_paints = presence.missed;
         if presence.visible != self.visible {

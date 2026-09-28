@@ -1109,6 +1109,7 @@ impl Shell {
             viewport.set_orthographic(orthographic, cx)
         });
         self.save_settings();
+        cx.notify();
     }
 
     /// Shows or hides the top-right orientation indicator — see
@@ -1122,6 +1123,7 @@ impl Shell {
         self.viewport
             .update(cx, |viewport, cx| viewport.set_axis_indicator(shown, cx));
         self.save_settings();
+        cx.notify();
     }
 
     /// Switches the selection outline between drawing through everything
@@ -1137,6 +1139,7 @@ impl Shell {
             viewport.set_selection_occluded(occluded, cx)
         });
         self.save_settings();
+        cx.notify();
     }
 
     /// Which icon pack the Explorer draws, for the dock's Explorer menu item
@@ -1213,6 +1216,7 @@ impl Shell {
         self.viewport
             .update(cx, |viewport, _| viewport.set_unfocused_fps(unfocused_fps));
         self.save_settings();
+        cx.notify();
     }
 
     /// Writes the current quality pick, Explorer visibility, projection mode,

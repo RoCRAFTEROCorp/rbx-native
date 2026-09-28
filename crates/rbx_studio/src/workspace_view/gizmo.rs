@@ -670,6 +670,10 @@ impl WorkspaceView {
         if let Some((position, modifiers)) = self.drag_pending.take() {
             let scale = window.scale_factor();
             self.drag_to(position, modifiers, scale, cx);
+            // The readout and guide labels move with the step even when it
+            // writes nothing (a Size step short of the next increment), and
+            // then no frame is coming to show them.
+            cx.notify();
         }
         // A turn easing in moves the selection with the mouse still.
         if self.guides.turning.is_some() {
