@@ -132,6 +132,34 @@ pub(crate) fn selection() -> Rgba {
     theme::color("selection")
 }
 
+/// The lighter of the launcher's two skeleton bars (white 4%), under the
+/// [`hover`] wash a loading row's other bars wear.
+pub(crate) fn wash_faint() -> Rgba {
+    theme::color("wash_faint")
+}
+
+/// The veil a launcher dialog lays over the window below the title bar.
+pub(crate) fn veil() -> Rgba {
+    theme::color("veil")
+}
+
+/// An account avatar's disc behind its accent initial, on a plain surface
+/// (the Home sidebar's account card).
+pub(crate) fn avatar() -> Rgba {
+    theme::color("avatar")
+}
+
+/// The same disc on an [`accent_soft`] row (Settings › Account's
+/// signed-in chip), one step darker than [`avatar`].
+pub(crate) fn avatar_on_accent() -> Rgba {
+    theme::color("avatar_on_accent")
+}
+
+/// The well the key wizard shows its dashboard screenshots in.
+pub(crate) fn slide_backdrop() -> Rgba {
+    theme::color("slide_backdrop")
+}
+
 // ---------------------------------------------------------------- borders
 
 /// Every 1px divider and default control border in the design (white 6%).

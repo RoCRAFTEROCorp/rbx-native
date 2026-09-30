@@ -124,7 +124,7 @@ impl Wizard {
                             .justify_center()
                             .py(px(14.))
                             .px(px(60.))
-                            .bg(rgb(0x131314))
+                            .bg(tokens::slide_backdrop())
                             .border_b_1()
                             .border_color(tokens::border())
                             .children(slide_image(slide).map(|image| {

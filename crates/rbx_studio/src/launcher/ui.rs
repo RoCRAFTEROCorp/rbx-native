@@ -43,7 +43,7 @@ pub(super) fn wash() -> Rgba {
 }
 /// `rgba(255,255,255,.04)`: the lighter skeleton bar.
 pub(super) fn wash_faint() -> Rgba {
-    rgba(0xFFFFFF0A)
+    tokens::wash_faint()
 }
 /// A Lucide icon from the kit's full catalogue, by file name.
 pub(super) fn icon(name: &'static str, size: f32) -> Icon {
@@ -270,7 +270,7 @@ pub(super) fn dialog(
         .right_0()
         .top(tokens::topbar_height())
         .bottom_0()
-        .bg(rgba(0x0000008C))
+        .bg(tokens::veil())
         .flex()
         .items_center()
         .justify_center()

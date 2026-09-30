@@ -1974,14 +1974,16 @@ against `Roblox/creator-docs` rather than assumed:
   in the Settings nav as its own window rather than merged into the
   dialog, as Studio keeps it.
 - [ ] 📋 **What still assumes a dark ground under Light.** The chrome reads
-  the theme's tokens, but a few colours are still literals picked for the
-  dark palette: the Home window's lighter skeleton bar
-  (`launcher::ui::wash_faint`, white 4%, invisible on Light), the account
-  avatars' dark indigo disc (`settings_window/files_account.rs`,
-  `home_window/view/sidebar.rs`), the key wizard's slide backdrop
-  (`wizard/create.rs`), and the viewport's own overlays (the view-cube
-  labels, selection outlines, measurement boxes — these sit on the 3D
-  scene, so dark is arguably right). The accent presets are tuned for a
+  the theme's tokens, launcher and account screens included (the skeleton
+  bar, dialog veil, avatar discs and the wizard's slide well are tokens
+  now: `wash_faint`, `veil`, `avatar`, `avatar_on_accent`,
+  `slide_backdrop`). What still paints literals: the key wizard's slide
+  images themselves (screenshots of the dark Creator Dashboard), drop
+  shadows (black on any ground, which is right), the colour picker's white
+  thumb ring and gradients, the Baseplate thumbnail, the Appearance
+  cards' mini previews of each theme, and the viewport's own overlays (the
+  view-cube labels, selection outlines, measurement boxes — these sit on
+  the 3D scene, so dark is arguably right). The accent presets are tuned for a
   dark ground too: on Light every one of them fails Links and is offered
   darkened, and a built-in theme's own accent shows as **Custom** in the
   accent row. High contrast's Script Editor keeps the toolkit's dark syntax
@@ -2077,8 +2079,8 @@ against `Roblox/creator-docs` rather than assumed:
   looks, and the dropdown only names), and a progress figure for a large
   download (the button only reads "Installing…"). A theme cannot ship
   fonts yet (the families are fixed to Manrope and JetBrains Mono), and the
-  launcher windows and the 3D viewport's own overlays still paint a handful
-  of literal colours that no theme reaches.
+  3D viewport's own overlays still paint literal colours that no theme
+  reaches.
 - [ ] 📋 **What the visual pass left behind**, beyond the items that
   already have their own bullets under "What's planned" → Editor (the
   remaining Stage 2/Stage 3 accessibility items and the property types

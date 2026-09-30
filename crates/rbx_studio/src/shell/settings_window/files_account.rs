@@ -218,7 +218,7 @@ impl SettingsWindow {
                             .rounded_full()
                             .items_center()
                             .justify_center()
-                            .bg(rgba(0x2A2D4AFF))
+                            .bg(tokens::avatar_on_accent())
                             .text_color(tokens::check_on())
                             .text_size(px(11.))
                             .font_weight(FontWeight::BOLD)

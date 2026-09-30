@@ -10,6 +10,11 @@
     "hover_faint": "#00000005",
     "track": "#0000001F",
     "selection": "@check_on/0.2",
+    "wash_faint": "#0000000A",
+    "veil": "#00000059",
+    "avatar": "#DDE0F4",
+    "avatar_on_accent": "#D3D7F1",
+    "slide_backdrop": "#EDEDF0",
 
     "border": "#00000014",
     "border2": "#00000024",
