@@ -23,7 +23,8 @@ pub(crate) const PRESETS: [(&str, u32); 7] = [
     ("Graphite", 0xA0A8B8),
 ];
 
-/// How far a hue may sit from a status colour's before it reads as one.
+/// How far a hue may sit from a status colour's before it reads as one,
+/// and from a preset's before a theme's accent stands in for it.
 const STATUS_HUE_DEGREES: f32 = 18.;
 /// Below this HLS saturation a colour is grey enough that its hue says
 /// nothing.
@@ -86,25 +87,63 @@ impl Check {
 }
 
 /// Button text on the accent, links in it on a panel, focus rings in it on
-/// a raised card.
+/// a raised card, on the active theme.
 pub(crate) fn checks(accent: Rgba) -> [Check; 3] {
+    checks_on(accent, &crate::theme::active())
+}
+
+/// [`checks`] on `theme`, which need not be the active one.
+fn checks_on(accent: Rgba, theme: &Palette) -> [Check; 3] {
     [
         Check {
             label: "Button text",
-            ratio: contrast(tokens::black(), accent),
+            ratio: contrast(theme.color("black"), accent),
             min: 4.5,
         },
         Check {
             label: "Links",
-            ratio: contrast(accent, tokens::dock()),
+            ratio: contrast(accent, theme.color("dock")),
             min: 4.5,
         },
         Check {
             label: "Focus rings",
-            ratio: contrast(accent, tokens::field_select()),
+            ratio: contrast(accent, theme.color("field_select")),
             min: 3.0,
         },
     ]
+}
+
+/// The presets as `theme` offers them: each at the nearest lightness that
+/// clears the guard there (the guard's own fix, so on Default they are the
+/// values above untouched), and the one whose hue sits within 18° of the
+/// theme's own accent replaced by that accent, so a theme's accent reads
+/// as a preset rather than as Custom.
+pub(crate) fn presets(theme: &Palette) -> [(&'static str, Rgba); 7] {
+    let passes = |color: Rgba| checks_on(color, theme).iter().all(|c| c.passes());
+    let mut presets = PRESETS.map(|(name, value)| {
+        let color = rgb(value);
+        (name, lighten_until(color, passes).unwrap_or(color))
+    });
+    let own = theme.color("check_on");
+    let saturated = |color: Rgba| hls(color).2 > STATUS_SATURATION;
+    if saturated(own) && passes(own) {
+        let apart = |color: Rgba| hue_apart(color, own);
+        if let Some(slot) = presets
+            .iter_mut()
+            .filter(|(_, color)| saturated(*color))
+            .min_by(|a, b| apart(a.1).total_cmp(&apart(b.1)))
+            .filter(|(_, color)| apart(*color) <= STATUS_HUE_DEGREES)
+        {
+            slot.1 = own;
+        }
+    }
+    presets
+}
+
+/// Degrees between two colours' hues, the short way round.
+fn hue_apart(a: Rgba, b: Rgba) -> f32 {
+    let apart = (hls(a).0 - hls(b).0).abs() * 360.;
+    apart.min(360. - apart)
 }
 
 pub(crate) fn passes(accent: Rgba) -> bool {
@@ -170,16 +209,12 @@ impl Status {
 /// The status colour `accent`'s hue sits within 18° of, if it is saturated
 /// enough for its hue to read.
 pub(crate) fn near_status(accent: Rgba) -> Option<Status> {
-    let (hue, _, saturation) = hls(accent);
-    if saturation <= STATUS_SATURATION {
+    if hls(accent).2 <= STATUS_SATURATION {
         return None;
     }
     [Status::Error, Status::Warning, Status::Success]
         .into_iter()
-        .find(|status| {
-            let apart = (hls(status.color()).0 - hue).abs() * 360.;
-            apart.min(360. - apart) <= STATUS_HUE_DEGREES
-        })
+        .find(|status| hue_apart(status.color(), accent) <= STATUS_HUE_DEGREES)
 }
 
 /// The colour to offer instead of one that fails a bar: the same hue and

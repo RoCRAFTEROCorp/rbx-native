@@ -164,3 +164,36 @@ fn a_toggle_reads_differently_on_and_off() {
         );
     }
 }
+
+/// Each built-in theme offers every preset at a lightness that clears the
+/// guard there, with its own accent standing in for the preset nearest it;
+/// Default offers the presets exactly as they are.
+#[test]
+fn every_preset_clears_every_bar_on_every_built_in_theme() {
+    for id in ["default", "light", "high-contrast"] {
+        let pack = crate::theme::ThemePack::embedded(id).expect("a built-in theme");
+        let presets = presets(&pack.palette);
+        for (name, color) in presets {
+            for check in checks_on(color, &pack.palette) {
+                assert!(
+                    check.passes(),
+                    "{id} {name} {}: {} {:.2}",
+                    hex(color),
+                    check.label,
+                    check.ratio
+                );
+            }
+        }
+        let own = hex(pack.palette.color("check_on"));
+        assert_eq!(
+            presets.iter().filter(|(_, c)| hex(*c) == own).count(),
+            1,
+            "{id}: its own accent {own} is one preset"
+        );
+    }
+    let default = presets(Palette::builtin()).map(|(name, color)| (name, hex(color)));
+    assert_eq!(
+        default,
+        PRESETS.map(|(name, value)| (name, hex(rgb(value))))
+    );
+}
