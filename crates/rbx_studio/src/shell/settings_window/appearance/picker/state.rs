@@ -118,7 +118,8 @@ impl Picker {
     }
 
     /// The colour Apply would store: the candidate, or the nearest lighter
-    /// one that passes when the candidate fails a bar.
+    /// one (darker, on a light theme) that passes when the candidate fails
+    /// a bar.
     pub(super) fn applied(&self) -> Option<Rgba> {
         let candidate = self.candidate();
         match self.target {

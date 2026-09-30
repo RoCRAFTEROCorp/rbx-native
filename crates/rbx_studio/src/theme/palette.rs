@@ -11,6 +11,7 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::sync::LazyLock;
 
+use gpui_kit::component::ThemeMode;
 use gpui_kit::{point, px, rgb, rgba, BoxShadow, Rgba, WindowBackgroundAppearance};
 use serde::Deserialize;
 
@@ -32,6 +33,7 @@ const IMAGE_EXTENSIONS: [&str; 5] = ["png", "jpg", "jpeg", "webp", "gif"];
 #[derive(Debug, Default, Deserialize)]
 #[serde(default)]
 pub(super) struct ThemeFile {
+    mode: Option<String>,
     colors: HashMap<String, String>,
     sizes: HashMap<String, f32>,
     window: Option<String>,
@@ -136,8 +138,14 @@ pub(super) fn build(
         Some(theme) => effects(theme, dir, &raw_colors)?,
         None => Effects::default(),
     };
+    let mode = match theme.and_then(|theme| theme.mode.as_deref()).map(str::trim) {
+        None | Some("dark") => ThemeMode::Dark,
+        Some("light") => ThemeMode::Light,
+        Some(other) => return Err(format!("mode {other:?} is not \"dark\" or \"light\"")),
+    };
     Ok((
         Palette {
+            mode,
             colors,
             sizes,
             effects,

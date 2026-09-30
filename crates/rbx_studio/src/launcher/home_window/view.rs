@@ -134,7 +134,7 @@ pub(super) fn indeterminate_bar() -> impl IntoElement {
         .relative()
         .h(px(6.))
         .rounded(px(3.))
-        .bg(rgba(0xFFFFFF0F))
+        .bg(tokens::border())
         .overflow_hidden();
     let segment = div()
         .absolute()

@@ -1195,6 +1195,22 @@ Roblox's own engine.
   widgets-only `themes/<name>.json` from before still loads. An installer
   that downloads a theme from a GitHub repository link, validates it and
   swaps it in atomically is in place but not yet reachable from the UI.
+- [x] **Light and High contrast, built in beside Default**
+  (`assets/themes/{light,high-contrast}`, Studio Settings › Appearance ›
+  Theme). Both are ordinary themes layered over Default — only the
+  colours they change — embedded in the binary under ids no installed
+  theme can shadow or remove. A `theme.json` now declares its `mode`
+  (`dark` by default): a light theme gets the toolkit's light widgets, a
+  light syntax palette, and the class icons' light variant when switched
+  to (the Explorer's menu can still change it). High contrast is pure
+  black with white text and solid borders and is asserted at 7:1 for every
+  label, primary and secondary, on every surface, hover and selection it
+  can land on, 4.5:1 for placeholders, the accent and status colours
+  (WCAG 1.4.6, AAA); Light is asserted at 4.5:1 for the same labels
+  (1.4.3), and both keep 3:1 for focus rings, toggle edges and tool
+  colours. The accent guard's fix now darkens a colour on a light theme,
+  where lightening never passes. Colours still hardcoded for a dark
+  ground are listed under "What's planned".
 - [x] **"Sober but alive" restyle of the gpui-kit layer (PR #87).** The
   chrome now follows the redesign reference (`gpui-ref/`, kept out of the
   repo) token for token: a three-tone surface ramp (`#0A0A0B` / `#121213` /
@@ -1812,10 +1828,6 @@ against `Roblox/creator-docs` rather than assumed:
     Nothing needs it yet; the moment the script editor grows, it will.
   - **Named dock layouts.** Sizes persist and Reset Layout exists; saving
     several under names (Blender's "workspaces") is the piece that does not.
-  - **A high-contrast theme** targeting 7:1 body / 4.5:1 large text
-    (WCAG 1.4.6). The palette is already a token module and the toolkit
-    theme already mirrors it, so this is a second `ThemeSet` rather than a
-    rework.
   - **44×44 targets on primary and destructive controls by default** (2.5.5),
     rather than only when Large Click Targets is on — Save, Delete, and
     Play/Stop once they exist.
@@ -1955,12 +1967,28 @@ against `Roblox/creator-docs` rather than assumed:
   services is off), the **Auto-Recovery** toggle, interval and folder and
   Play's **test-copy name** (waiting on the autosave item below),
   **several accounts**, **named layouts**, **script font size**, the
-  **High contrast** and **Light** themes, the eyedropper in the colour
-  popover (GPUI has no way to sample the screen), and
+  eyedropper in the colour popover (GPUI has no way to sample the
+  screen), and
   **Keyboard shortcuts** — real Studio's own separate
   `File > Customize Shortcuts` screen (view and rebind any hotkey), listed
   in the Settings nav as its own window rather than merged into the
   dialog, as Studio keeps it.
+- [ ] 📋 **What still assumes a dark ground under Light.** The chrome reads
+  the theme's tokens, but a few colours are still literals picked for the
+  dark palette: the Home window's lighter skeleton bar
+  (`launcher::ui::wash_faint`, white 4%, invisible on Light), the account
+  avatars' dark indigo disc (`settings_window/files_account.rs`,
+  `home_window/view/sidebar.rs`), the key wizard's slide backdrop
+  (`wizard/create.rs`), and the viewport's own overlays (the view-cube
+  labels, selection outlines, measurement boxes — these sit on the 3D
+  scene, so dark is arguably right). The accent presets are tuned for a
+  dark ground too: on Light every one of them fails Links and is offered
+  darkened, and a built-in theme's own accent shows as **Custom** in the
+  accent row. High contrast's Script Editor keeps the toolkit's dark syntax
+  palette, whose colours have not been checked at 7:1. A GitHub install
+  of a repository named `light` or `high-contrast` still lands in a folder
+  the built-in theme shadows (`theme::github`'s `Source::id` reserves only
+  `default`; `theme::is_reserved` is the check to use).
 - [ ] 📋 **Discord Rich Presence, switched on from Studio Settings** —
   an rbx-native addition, not Studio parity: real Studio has no built-in
   Discord presence, only third-party plugins and companion apps. A

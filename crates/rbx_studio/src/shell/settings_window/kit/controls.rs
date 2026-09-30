@@ -54,7 +54,7 @@ pub(in crate::shell::settings_window) fn toggle(
         .bg(if on {
             tokens::check_on()
         } else {
-            rgba(0xFFFFFF1A)
+            tokens::track()
         })
         .on_click(on_click)
         .child(
@@ -95,7 +95,7 @@ pub(in crate::shell::settings_window) fn still_toggle(on: bool) -> Div {
         .bg(faded(if on {
             tokens::check_on()
         } else {
-            rgba(0xFFFFFF1A)
+            tokens::track()
         }))
         .child(
             div()
@@ -183,7 +183,7 @@ fn rail(fraction: f32) -> [Div; 2] {
             .top(px(7.))
             .h(px(4.))
             .rounded(px(2.))
-            .bg(rgba(0xFFFFFF1A))
+            .bg(tokens::track())
             .child(
                 div()
                     .absolute()
@@ -234,7 +234,7 @@ pub(in crate::shell::settings_window) fn still_slider(
         .flex_none()
         .w(px(width))
         .h(px(18.))
-        .child(rail(relative(1.).into(), rgba(0xFFFFFF1A)))
+        .child(rail(relative(1.).into(), tokens::track()))
         .child(rail(relative(fraction).into(), tokens::check_on()))
         .children((0..ticks).map(|i| {
             let at = if ticks > 1 {
@@ -341,7 +341,7 @@ pub(in crate::shell::settings_window) fn secondary_button(
         .font_weight(FontWeight::SEMIBOLD)
         .text_color(tokens::text())
         .cursor_pointer()
-        .hover(|this| this.bg(rgba(0x202123FF)))
+        .hover(|this| this.bg(tokens::secondary_hover()))
         .child(icon(glyph, 12.))
         .child(label)
 }

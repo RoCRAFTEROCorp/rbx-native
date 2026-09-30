@@ -310,7 +310,7 @@ impl SettingsWindow {
             .gap(px(10.))
             .items_center()
             .cursor_pointer()
-            .hover(|this| this.bg(rgba(0xFFFFFF04)))
+            .hover(|this| this.bg(tokens::hover_faint()))
             .on_click(cx.listener(|this, _, _, cx| {
                 this.advanced_open = !this.advanced_open;
                 cx.notify();

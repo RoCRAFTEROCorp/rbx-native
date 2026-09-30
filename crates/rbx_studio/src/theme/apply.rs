@@ -41,15 +41,28 @@ fn widgets(pack: &ThemePack, overrides: &Overrides, cx: &mut App) {
         Some(to) => recolour(&pack.widgets, pack.palette.colors["check_on"], to),
         None => pack.widgets.clone(),
     };
-    Theme::global_mut(cx).dark_theme = Rc::new(config);
+    let mode = pack.palette.mode;
+    let theme = Theme::global_mut(cx);
+    match mode {
+        ThemeMode::Dark => theme.dark_theme = Rc::new(config),
+        ThemeMode::Light => theme.light_theme = Rc::new(config),
+    }
     design_fonts(cx);
-    Theme::change(ThemeMode::Dark, None, cx);
+    Theme::change(mode, None, cx);
     // GPUI Kit only swaps its syntax palette for the one a theme file's
-    // `highlight` block defines; a theme without one keeps the kit's *light*
-    // palette whatever its mode, which put navy keywords on the editor's
-    // near black.
-    if Theme::global(cx).dark_theme.highlight.is_none() {
-        Theme::global_mut(cx).highlight_theme = HighlightTheme::default_dark();
+    // `highlight` block defines; a theme without one keeps whichever
+    // palette was there before, whatever its mode — the kit's *light* one
+    // at startup, which put navy keywords on the editor's near black.
+    let theme = Theme::global(cx);
+    let own = match mode {
+        ThemeMode::Dark => &theme.dark_theme,
+        ThemeMode::Light => &theme.light_theme,
+    };
+    if own.highlight.is_none() {
+        Theme::global_mut(cx).highlight_theme = match mode {
+            ThemeMode::Dark => HighlightTheme::default_dark(),
+            ThemeMode::Light => HighlightTheme::default_light(),
+        };
     }
 }
 

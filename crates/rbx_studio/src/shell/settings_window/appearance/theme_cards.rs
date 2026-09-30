@@ -1,6 +1,6 @@
 //! Appearance › Theme's three cards, each a small window drawn in its
-//! theme's palette: Dark soft (the built-in), and High contrast and Light,
-//! which are on the roadmap.
+//! theme's palette: the three built-in themes, Dark soft (Default), High
+//! contrast and Light.
 
 use gpui_kit::component::{h_flex, v_flex};
 use gpui_kit::prelude::FluentBuilder as _;
@@ -9,10 +9,11 @@ use gpui_kit::*;
 use crate::theme;
 use crate::tokens;
 
-use super::super::kit::{icon, soon_pill, text};
+use super::super::kit::{icon, text};
 use super::super::SettingsWindow;
 
-/// A card's small window, in its own colours.
+/// A card's small window, in its own colours: its theme's `dock`,
+/// `black`, `border`, `text2`, `text` and `field_select`.
 struct Mini {
     body: u32,
     chrome: u32,
@@ -43,7 +44,7 @@ const HIGH_CONTRAST: Mini = Mini {
         r: 1.,
         g: 1.,
         b: 1.,
-        a: 1.,
+        a: 0.55,
     },
     muted: 0xD6D6DC,
     title: 0xFFFFFF,
@@ -58,7 +59,7 @@ const LIGHT: Mini = Mini {
         b: 0.,
         a: 0.08,
     },
-    muted: 0x6A6A72,
+    muted: 0x55555C,
     title: 0x1B1B1F,
     field: 0xFFFFFF,
 };
@@ -76,50 +77,38 @@ fn over(color: Rgba, under: Rgba) -> Rgba {
 
 impl SettingsWindow {
     pub(super) fn theme_cards(&self, cx: &mut Context<Self>) -> AnyElement {
-        let builtin = self.shell.read(cx).appearance.theme.is_none();
+        let current = self.shell.read(cx).appearance.theme.clone();
+        let current = current.as_deref().unwrap_or(theme::DEFAULT_ID);
+        let cards = [
+            ("Dark soft", "Built-in", &DARK, theme::DEFAULT_ID),
+            (
+                "High contrast",
+                "7:1 text, AAA",
+                &HIGH_CONTRAST,
+                theme::HIGH_CONTRAST_ID,
+            ),
+            ("Light", "Built-in", &LIGHT, theme::LIGHT_ID),
+        ];
         h_flex()
             .gap(px(10.))
             .py(px(14.))
             .px(px(16.))
-            .child(
-                card("Dark soft", "Built-in", &DARK, builtin, false)
-                    .id("theme-dark-soft")
+            .children(cards.into_iter().map(|(name, sub, mini, id)| {
+                card(name, sub, mini, id == current)
+                    .id(SharedString::from(format!("theme-{id}")))
                     .cursor_pointer()
-                    .on_click(self.set(|shell, cx| shell.pick_theme(theme::DEFAULT_ID, cx))),
-            )
-            .child(card(
-                "High contrast",
-                "7:1 text, AAA",
-                &HIGH_CONTRAST,
-                false,
-                true,
-            ))
-            .child(card("Light", "Built-in", &LIGHT, false, true))
+                    .on_click(self.set(move |shell, cx| shell.pick_theme(id, cx)))
+            }))
             .into_any_element()
     }
 }
 
-/// A theme's card; `soon` draws it at 45%, mixed rather than faded shape
-/// by shape (see `kit::faded`).
-fn card(name: &'static str, sub: &'static str, mini: &Mini, selected: bool, soon: bool) -> Div {
-    let panel2 = tokens::field_select();
-    let fade = move |color: Rgba| {
-        if soon {
-            over(
-                Rgba {
-                    a: 0.45,
-                    ..over(color, panel2)
-                },
-                panel2,
-            )
-        } else {
-            color
-        }
-    };
+/// A theme's card.
+fn card(name: &'static str, sub: &'static str, mini: &Mini, selected: bool) -> Div {
     let accent = tokens::check_on();
     let body = rgb(mini.body);
     let chrome = rgb(mini.chrome);
-    let bar = |color: Rgba| div().h(px(4.)).rounded(px(2.)).bg(fade(color));
+    let bar = |color: Rgba| div().h(px(4.)).rounded(px(2.)).bg(color);
     let muted = over(
         Rgba {
             a: 0.6,
@@ -131,16 +120,16 @@ fn card(name: &'static str, sub: &'static str, mini: &Mini, selected: bool, soon
         .h(px(84.))
         .rounded(px(6.))
         .overflow_hidden()
-        .bg(fade(body))
+        .bg(body)
         .border_1()
-        .border_color(fade(over(mini.line, body)))
+        .border_color(over(mini.line, body))
         .child(
             div()
                 .h(px(12.))
                 .flex_none()
-                .bg(fade(chrome))
+                .bg(chrome)
                 .border_b_1()
-                .border_color(fade(over(mini.line, chrome))),
+                .border_color(over(mini.line, chrome)),
         )
         .child(
             h_flex()
@@ -153,9 +142,9 @@ fn card(name: &'static str, sub: &'static str, mini: &Mini, selected: bool, soon
                         .gap(px(4.))
                         .py(px(6.))
                         .px(px(5.))
-                        .bg(fade(chrome))
+                        .bg(chrome)
                         .border_r_1()
-                        .border_color(fade(over(mini.line, chrome)))
+                        .border_color(over(mini.line, chrome))
                         .child(bar(muted))
                         .child(bar(accent))
                         .child(bar(muted)),
@@ -170,17 +159,17 @@ fn card(name: &'static str, sub: &'static str, mini: &Mini, selected: bool, soon
                                 .w(relative(0.6))
                                 .h(px(5.))
                                 .rounded(px(2.))
-                                .bg(fade(rgb(mini.title))),
+                                .bg(rgb(mini.title)),
                         )
                         .child(
                             div()
                                 .h(px(24.))
                                 .rounded(px(4.))
-                                .bg(fade(rgb(mini.field)))
+                                .bg(rgb(mini.field))
                                 .border_1()
-                                .border_color(fade(over(mini.line, rgb(mini.field)))),
+                                .border_color(over(mini.line, rgb(mini.field))),
                         )
-                        .child(div().w(px(34.)).h(px(9.)).rounded(px(3.)).bg(fade(accent))),
+                        .child(div().w(px(34.)).h(px(9.)).rounded(px(3.)).bg(accent)),
                 ),
         );
     let footer = h_flex()
@@ -194,20 +183,13 @@ fn card(name: &'static str, sub: &'static str, mini: &Mini, selected: bool, soon
                 .child(
                     text(12., 16.)
                         .font_weight(FontWeight::SEMIBOLD)
-                        .text_color(fade(tokens::text()))
+                        .text_color(tokens::text())
                         .child(name),
                 )
-                .child(text(10.5, 14.).text_color(fade(tokens::text2())).child(sub)),
+                .child(text(10.5, 14.).text_color(tokens::text2()).child(sub)),
         )
         .when(selected, |this| {
             this.child(div().text_color(accent).child(icon("check", 14.)))
-        })
-        .when(soon, |this| {
-            this.child(
-                div()
-                    .opacity(0.45)
-                    .child(soon_pill(SharedString::from(format!("theme-soon-{name}")))),
-            )
         });
     v_flex()
         .flex_1()
@@ -221,8 +203,8 @@ fn card(name: &'static str, sub: &'static str, mini: &Mini, selected: bool, soon
                 this.border_color(tokens::accent_line())
                     .bg(tokens::accent_soft())
             } else {
-                this.border_color(fade(over(tokens::border(), tokens::dock())))
-                    .bg(fade(tokens::dock()))
+                this.border_color(over(tokens::border(), tokens::dock()))
+                    .bg(tokens::dock())
             }
         })
         .child(window)

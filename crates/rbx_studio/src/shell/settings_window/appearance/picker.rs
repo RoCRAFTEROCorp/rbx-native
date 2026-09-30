@@ -1,9 +1,10 @@
 //! The colour popover, for a custom accent and for a tool's colour: a
 //! saturation/value square, a hue bar, the hex, and the bars the colour has
 //! to clear. What it offers to apply follows from those: the colour itself
-//! when everything passes; the nearest lighter colour that passes when a
-//! contrast bar fails, never the raw one; the colour anyway, with a warning,
-//! when the only trouble is a hue close to a status colour.
+//! when everything passes; the nearest lighter colour that passes (darker,
+//! on a light theme) when a contrast bar fails, never the raw one; the
+//! colour anyway, with a warning, when the only trouble is a hue close to a
+//! status colour.
 
 use gpui_kit::component::input::Input;
 use gpui_kit::component::{h_flex, v_flex};
