@@ -44,11 +44,10 @@ impl Palette {
                     a: 1.,
                 },
             );
-            let max = self.colors["selection"].a;
             palette.colors.insert(
                 "selection".to_owned(),
                 Rgba {
-                    a: accent::selection_alpha(to, max),
+                    a: accent::selection_alpha(to, self),
                     ..to
                 },
             );

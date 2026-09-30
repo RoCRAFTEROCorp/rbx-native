@@ -44,7 +44,7 @@ fn every_preset_keeps_a_selected_row_readable_and_visible() {
     let max = f32::from(0xB8_u8) / 255.;
     for (name, value) in PRESETS {
         let accent = rgb(value);
-        let alpha = selection_alpha(accent, max);
+        let alpha = selection_alpha(accent, Palette::builtin());
         assert!(alpha <= max, "{name}");
         let dock = tokens::dock();
         let mix = |a: f32, b: f32| a * alpha + b * (1. - alpha);
@@ -62,7 +62,7 @@ fn every_preset_keeps_a_selected_row_readable_and_visible() {
         );
     }
     // Indigo keeps the theme's own wash.
-    assert_eq!(selection_alpha(rgb(0x6C7FDB), max), max);
+    assert_eq!(selection_alpha(rgb(0x6C7FDB), Palette::builtin()), max);
 }
 
 #[test]
@@ -122,7 +122,7 @@ fn a_selection_and_an_open_document_are_visible_as_states() {
     // The selection is the accent at the opacity `accent::selection_alpha`
     // derives for it, up to the default theme's own.
     for (accent, value) in PRESETS {
-        let alpha = selection_alpha(rgb(value), tokens::selection().a);
+        let alpha = selection_alpha(rgb(value), Palette::builtin());
         let selected = composite(
             Rgba {
                 a: alpha,
