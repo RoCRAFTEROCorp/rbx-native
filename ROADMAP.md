@@ -1986,8 +1986,7 @@ against `Roblox/creator-docs` rather than assumed:
   the 3D scene, so dark is arguably right). The accent presets are tuned for a
   dark ground too: on Light every one of them fails Links and is offered
   darkened, and a built-in theme's own accent shows as **Custom** in the
-  accent row. High contrast's Script Editor keeps the toolkit's dark syntax
-  palette, whose colours have not been checked at 7:1. A GitHub install
+  accent row. A GitHub install
   of a repository named `light` or `high-contrast` still lands in a folder
   the built-in theme shadows (`theme::github`'s `Source::id` reserves only
   `default`; `theme::is_reserved` is the check to use).

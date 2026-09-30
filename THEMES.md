@@ -120,3 +120,11 @@ and read a GPUI Kit `ThemeSet`; the first theme in the file of the
 `theme.json`'s `mode` is used. Without one, a light theme gets Light's.
 [`assets/themes/default/widgets.json`](assets/themes/default/widgets.json)
 is Default's.
+
+The Script Editor's code area and syntax colours come from that theme's
+`highlight` block; without one, the toolkit's own dark or light palette is
+used. The code area's colour is `highlight.editor_background` — spelled with
+an underscore, not Zed's `editor.background`, which this build of the
+toolkit ignores — and the gutter follows it.
+[`assets/themes/high-contrast/widgets.json`](assets/themes/high-contrast/widgets.json)
+has a complete example.

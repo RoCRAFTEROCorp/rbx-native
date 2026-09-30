@@ -616,3 +616,54 @@ fn the_built_in_widgets_paint_their_theme_s_palette() {
         }
     }
 }
+
+/// High contrast's Script Editor: the code area (and the gutter, which
+/// follows it) paints the theme's black, and every syntax colour, comments
+/// included, holds 7:1 (WCAG 1.4.6) on it, plain and under the selection
+/// wash. Without its own `highlight` block the theme took GPUI Kit's
+/// default dark one, whose editor background never parses (see
+/// `editor_background` in `widgets.json`), so the code area fell back to
+/// the kit's mid-grey input fill.
+#[test]
+fn high_contrast_code_clears_aaa() {
+    let pack = ThemePack::embedded(HIGH_CONTRAST_ID).unwrap();
+    let highlight = pack.widgets.highlight.as_ref().expect("a highlight block");
+    let color = |name: &str| pack.palette.color(name);
+    let background = Rgba::from(highlight.editor_background.expect("an editor background"));
+    assert_eq!(
+        background,
+        color("black"),
+        "the code area is the theme's black"
+    );
+    assert_eq!(
+        highlight.editor_gutter_background, None,
+        "the gutter follows"
+    );
+    // The gutter's other line numbers, in the widgets' muted foreground; a
+    // selection never reaches the gutter.
+    let numbers = contrast(color("text3"), background);
+    assert!(numbers >= 7., "line numbers are {numbers:.2}:1, below 7:1");
+    let selected = composite(color("selection"), background);
+    // Identifiers and the current line's number: the widgets' foreground.
+    let mut inks = vec![("foreground".to_owned(), color("text"))];
+    // Read through serde, which names each colour as the theme file does.
+    let syntax = serde_json::to_value(&highlight.syntax).unwrap();
+    for (name, style) in syntax.as_object().unwrap() {
+        if let Some(value) = style.get("color").filter(|value| !value.is_null()) {
+            let ink: gpui_kit::Hsla = serde_json::from_value(value.clone()).unwrap();
+            inks.push((name.clone(), ink.into()));
+        }
+    }
+    for token in ["comment", "keyword", "string", "number", "function", "type"] {
+        assert!(
+            inks.iter().any(|(name, _)| name == token),
+            "no colour for {token}"
+        );
+    }
+    for (name, ink) in inks {
+        for (ground, under) in [("the editor", background), ("a selection", selected)] {
+            let ratio = contrast(ink, under);
+            assert!(ratio >= 7., "{name} on {ground} is {ratio:.2}:1, below 7:1");
+        }
+    }
+}
