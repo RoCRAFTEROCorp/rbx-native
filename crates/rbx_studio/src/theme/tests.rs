@@ -112,6 +112,12 @@ fn the_default_palette_is_bit_identical_to_the_old_literals() {
     );
     assert_eq!(color("text_disabled"), rgb(0x5C5C63));
     assert_eq!(color("shadow"), rgba(0x00000066));
+    assert_eq!(color("wash_faint"), rgba(0xFFFFFF0A));
+    assert_eq!(color("veil"), rgba(0x0000008C));
+    assert_eq!(color("avatar"), rgb(0x2C3050));
+    assert_eq!(color("avatar_on_accent"), rgb(0x2A2D4A));
+    assert_eq!(color("slide_backdrop"), rgb(0x131314));
+    assert_eq!(color("secondary_hover"), rgb(0x202123));
     assert_eq!(palette.sizes["select_inset"], 7.5);
     assert_eq!(palette.sizes["text_sm"], 11.5);
     assert_eq!(palette.effects, super::Effects::default());

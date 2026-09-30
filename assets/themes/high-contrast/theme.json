@@ -9,6 +9,7 @@
     "hover_faint": "#FFFFFF12",
     "track": "#FFFFFF4D",
     "selection": "@check_on/0.3",
+    "wash_faint": "#FFFFFF17",
 
     "border": "#FFFFFF8C",
     "border2": "#FFFFFFFF",

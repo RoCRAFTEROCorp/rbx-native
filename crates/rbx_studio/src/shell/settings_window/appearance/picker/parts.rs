@@ -117,6 +117,6 @@ pub(super) fn button(
             .border_color(tokens::border2())
             .bg(tokens::field_select())
             .font_weight(FontWeight::SEMIBOLD)
-            .hover(|this| this.bg(rgba(0x202123FF))),
+            .hover(|this| this.bg(tokens::secondary_hover())),
     }
 }

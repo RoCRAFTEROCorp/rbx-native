@@ -208,7 +208,7 @@ impl HomeWindow {
                     .size(px(28.))
                     .flex_none()
                     .rounded_full()
-                    .bg(rgb(0x2C3050))
+                    .bg(tokens::avatar())
                     .items_center()
                     .justify_center()
                     .text_size(px(12.))
