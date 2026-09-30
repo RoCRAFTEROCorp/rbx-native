@@ -1,0 +1,30 @@
+{
+  "colors": {
+    "black": "#000000",
+    "dock": "#000000",
+    "field_select": "#0B0B0C",
+    "ribbon_tab_active": "#FFFFFF33",
+    "hover": "#FFFFFF24",
+    "hover_subtle": "#FFFFFF17",
+    "hover_faint": "#FFFFFF12",
+    "track": "#FFFFFF4D",
+    "selection": "@check_on/0.3",
+
+    "border": "#FFFFFF8C",
+    "border2": "#FFFFFFFF",
+
+    "text": "#FFFFFF",
+    "text2": "#D6D6DC",
+    "text3": "#B4B4BC",
+    "warning": "#FFC46B",
+    "text_error": "#FF8F8F",
+    "diff_add": "#7FE3A1",
+
+    "check_on": "#9AA8FF",
+    "accent_hover": "#A4B1FF",
+    "secondary_hover": "#26262A",
+    "knob": "#000000",
+    "danger_hover": "#B3261E",
+    "check_off_border": "#C8C8C8"
+  }
+}

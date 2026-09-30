@@ -20,7 +20,7 @@ use gpui_kit::component::{ThemeConfig, ThemeMode, ThemeSet};
 use serde::Deserialize;
 
 use super::palette;
-use super::{Palette, DEFAULT_ID};
+use super::{Palette, DEFAULT_ID, HIGH_CONTRAST_ID, LIGHT_ID};
 use crate::packs::{is_plain_name, IconOverlay};
 use crate::settings::default_config_dir;
 
@@ -32,6 +32,31 @@ const MAX_JSON_BYTES: u64 = 1024 * 1024;
 
 const DEFAULT_MANIFEST_JSON: &str = include_str!("../../../../assets/themes/default/manifest.json");
 const DEFAULT_WIDGETS_JSON: &str = include_str!("../../../../assets/themes/default/widgets.json");
+const LIGHT_WIDGETS_JSON: &str = include_str!("../../../../assets/themes/light/widgets.json");
+
+/// The themes shipped inside the editor besides Default, which is their
+/// base: `(id, manifest.json, theme.json, widgets.json)`, in the order a
+/// chooser lists them. Their ids are reserved like Default's.
+const EMBEDDED: [(&str, &str, &str, &str); 2] = [
+    (
+        HIGH_CONTRAST_ID,
+        include_str!("../../../../assets/themes/high-contrast/manifest.json"),
+        include_str!("../../../../assets/themes/high-contrast/theme.json"),
+        include_str!("../../../../assets/themes/high-contrast/widgets.json"),
+    ),
+    (
+        LIGHT_ID,
+        include_str!("../../../../assets/themes/light/manifest.json"),
+        include_str!("../../../../assets/themes/light/theme.json"),
+        LIGHT_WIDGETS_JSON,
+    ),
+];
+
+/// Whether `id` names a theme shipped inside the editor, which no installed
+/// theme may shadow or remove.
+pub(crate) fn is_reserved(id: &str) -> bool {
+    id == DEFAULT_ID || EMBEDDED.iter().any(|(embedded, ..)| *embedded == id)
+}
 
 /// Who made a theme and what it is — what a theme chooser shows.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
@@ -117,25 +142,46 @@ impl ThemePack {
                 .expect("assets/themes/default/manifest.json is a valid manifest"),
             dir: None,
             palette: Palette::builtin().clone(),
-            widgets: dark_config(DEFAULT_WIDGETS_JSON)
+            widgets: widgets_config(DEFAULT_WIDGETS_JSON, ThemeMode::Dark)
                 .expect("assets/themes/default/widgets.json has a dark theme"),
             icons: None,
             warnings: Vec::new(),
         }
     }
 
+    /// A theme shipped inside the editor: Default, or one of [`EMBEDDED`].
+    pub(crate) fn embedded(id: &str) -> Option<Self> {
+        if id == DEFAULT_ID {
+            return Some(Self::builtin());
+        }
+        let (id, manifest, theme, widgets) = EMBEDDED.into_iter().find(|(e, ..)| *e == id)?;
+        let pack = || -> Result<Self, String> {
+            let (palette, warnings) = palette::build(Some(&palette::parse(theme)?), None)?;
+            Ok(ThemePack {
+                id: id.to_owned(),
+                manifest: Manifest::parse(manifest, None)?,
+                dir: None,
+                widgets: widgets_config(widgets, palette.mode)?,
+                palette,
+                icons: None,
+                warnings,
+            })
+        };
+        Some(pack().unwrap_or_else(|err| panic!("assets/themes/{id} does not load: {err}")))
+    }
+
     /// The theme `appearance.json` names, from the config directory.
     pub(crate) fn load(id: &str) -> Result<Self, String> {
-        if id == DEFAULT_ID {
-            return Ok(Self::builtin());
+        if let Some(pack) = Self::embedded(id) {
+            return Ok(pack);
         }
         let themes = themes_dir().ok_or("there is no config directory")?;
         Self::load_from(&themes, id)
     }
 
     pub(crate) fn load_from(themes: &Path, id: &str) -> Result<Self, String> {
-        if id == DEFAULT_ID {
-            return Ok(Self::builtin());
+        if let Some(pack) = Self::embedded(id) {
+            return Ok(pack);
         }
         if !is_plain_name(id) {
             return Err(format!("{id:?} is not a theme folder name"));
@@ -162,8 +208,11 @@ impl ThemePack {
         };
         let (palette, warnings) = palette::build(theme_file.as_ref(), Some(&dir))?;
         let widgets = match optional_json(&dir.join("widgets.json"))? {
-            Some(json) => dark_config(&json)?,
-            None => dark_config(DEFAULT_WIDGETS_JSON)?,
+            Some(json) => widgets_config(&json, palette.mode)?,
+            None if palette.mode == ThemeMode::Light => {
+                widgets_config(LIGHT_WIDGETS_JSON, ThemeMode::Light)?
+            }
+            None => widgets_config(DEFAULT_WIDGETS_JSON, ThemeMode::Dark)?,
         };
         let icons_dir = dir.join("icons");
         let icons = if icons_dir.is_dir() {
@@ -184,7 +233,7 @@ impl ThemePack {
 
     fn legacy(id: &str, path: &Path) -> Result<Self, String> {
         let mut pack = Self::builtin();
-        pack.widgets = dark_config(&read_json(path)?)?;
+        pack.widgets = widgets_config(&read_json(path)?, ThemeMode::Dark)?;
         pack.id = id.to_owned();
         pack.manifest = Manifest {
             name: id.to_owned(),
@@ -198,25 +247,28 @@ impl ThemePack {
     }
 }
 
-/// The first dark theme in a `ThemeSet`, in the file's own order.
+/// The first theme of the palette's `mode` in a `ThemeSet`, in the file's
+/// own order.
 ///
-/// Applied straight to `Theme::dark_theme` rather than through the kit's
-/// registry, which ignores a name it already holds — and a theme being
-/// edited, or switched back to, always has a name it already holds.
-pub(super) fn dark_config(json: &str) -> Result<ThemeConfig, String> {
+/// Applied straight to `Theme::dark_theme` (or `light_theme`) rather than
+/// through the kit's registry, which ignores a name it already holds — and
+/// a theme being edited, or switched back to, always has a name it already
+/// holds.
+pub(super) fn widgets_config(json: &str, mode: ThemeMode) -> Result<ThemeConfig, String> {
     let set: ThemeSet = serde_json::from_str(json).map_err(|err| format!("widgets.json: {err}"))?;
     set.themes
         .into_iter()
-        .find(|theme| theme.mode == ThemeMode::Dark)
-        .ok_or_else(|| "widgets.json defines no dark theme".to_owned())
+        .find(|theme| theme.mode == mode)
+        .ok_or_else(|| format!("widgets.json defines no {} theme", mode.name()))
 }
 
 pub(crate) fn themes_dir() -> Option<PathBuf> {
     default_config_dir().map(|dir| dir.join("themes"))
 }
 
-/// Default first, then every installed theme with a valid manifest, by
-/// name. What a theme chooser lists.
+/// Default and the other themes shipped inside the editor first, then
+/// every installed theme with a valid manifest, by name. What a theme
+/// chooser lists.
 pub(crate) fn installed(themes: &Path) -> Vec<(String, Manifest)> {
     let mut found: Vec<(String, Manifest)> = fs::read_dir(themes)
         .into_iter()
@@ -224,7 +276,7 @@ pub(crate) fn installed(themes: &Path) -> Vec<(String, Manifest)> {
         .flatten()
         .filter(|entry| entry.path().is_dir())
         .filter_map(|entry| entry.file_name().to_str().map(str::to_owned))
-        .filter(|id| is_plain_name(id) && id != DEFAULT_ID)
+        .filter(|id| is_plain_name(id) && !is_reserved(id))
         .filter_map(|id| {
             let dir = themes.join(&id);
             let json = read_json(&dir.join("manifest.json")).ok()?;
@@ -232,16 +284,20 @@ pub(crate) fn installed(themes: &Path) -> Vec<(String, Manifest)> {
         })
         .collect();
     found.sort_by_cached_key(|(id, manifest)| (manifest.name.to_lowercase(), id.clone()));
-    found.insert(0, (DEFAULT_ID.to_owned(), ThemePack::builtin().manifest));
-    found
+    let embedded = [DEFAULT_ID]
+        .into_iter()
+        .chain(EMBEDDED.map(|(id, ..)| id))
+        .filter_map(ThemePack::embedded)
+        .map(|pack| (pack.id, pack.manifest));
+    embedded.chain(found).collect()
 }
 
-/// Deletes an installed theme's folder. Default is not a folder and cannot
-/// be removed.
+/// Deletes an installed theme's folder. The themes shipped inside the
+/// editor are not folders and cannot be removed.
 #[cfg_attr(not(test), expect(dead_code, reason = "for the settings screen"))]
 pub(crate) fn uninstall(themes: &Path, id: &str) -> Result<(), String> {
-    if id == DEFAULT_ID {
-        return Err("the Default theme cannot be uninstalled".to_owned());
+    if is_reserved(id) {
+        return Err(format!("the built-in theme {id:?} cannot be uninstalled"));
     }
     if !is_plain_name(id) {
         return Err(format!("{id:?} is not a theme folder name"));
