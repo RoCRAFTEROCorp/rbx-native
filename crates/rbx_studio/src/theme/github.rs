@@ -6,20 +6,17 @@
 //! before it replaces anything. A download that is not a valid theme leaves
 //! the themes folder as it was.
 //!
-//! Nothing calls this yet: it waits for the settings screen that will offer
-//! it. Everything here is a stranger's data, so the archive is bounded in
-//! size and file count and every path in it is checked before a byte is
-//! written.
-
-#![expect(dead_code, reason = "for the settings screen")]
+//! Settings › Appearance › Theme offers it. Everything here is a
+//! stranger's data, so the archive is bounded in size and file count and
+//! every path in it is checked before a byte is written.
 
 use std::fs;
 use std::io::{Cursor, Read};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+use super::pack::is_reserved;
 use super::pack::{self, Manifest, ThemePack};
-use super::DEFAULT_ID;
 
 /// A theme is JSON, SVGs and a few images; a repository archive far past
 /// this is not a theme.
@@ -88,9 +85,9 @@ impl Source {
     }
 
     /// The folder it installs into: the repository's name, unless that is
-    /// the one name reserved for the built-in theme.
+    /// a name reserved for a built-in theme.
     fn id(&self) -> String {
-        if self.repo.eq_ignore_ascii_case(DEFAULT_ID) {
+        if is_reserved(&self.repo.to_ascii_lowercase()) {
             format!("{}-{}", self.owner, self.repo)
         } else {
             self.repo.clone()

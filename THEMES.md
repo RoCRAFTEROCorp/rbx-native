@@ -25,8 +25,12 @@ saved, which is also how to preview a theme while writing it. A theme that
 fails to load is named in the Output dock with what is wrong, and the
 current one stays on screen.
 
-The editor can also install a theme straight from a GitHub repository link;
-that arrives with the settings screen.
+Settings › Appearance › Theme does all of this from inside the editor: its
+dropdown picks an installed theme, the bin beside it uninstalls the one in
+use (the editor goes back to Default), and **Install from GitHub** takes a
+repository link (`github.com/owner/repo`, optionally `/tree/<branch or
+tag>`), downloads it, checks it loads, and switches to it. Installing the
+same repository again updates it.
 
 ## Writing one
 

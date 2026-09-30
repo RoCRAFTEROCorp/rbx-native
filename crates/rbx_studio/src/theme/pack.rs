@@ -294,7 +294,6 @@ pub(crate) fn installed(themes: &Path) -> Vec<(String, Manifest)> {
 
 /// Deletes an installed theme's folder. The themes shipped inside the
 /// editor are not folders and cannot be removed.
-#[cfg_attr(not(test), expect(dead_code, reason = "for the settings screen"))]
 pub(crate) fn uninstall(themes: &Path, id: &str) -> Result<(), String> {
     if is_reserved(id) {
         return Err(format!("the built-in theme {id:?} cannot be uninstalled"));

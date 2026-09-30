@@ -3,9 +3,11 @@
 //! transform tools' colours.
 
 use gpui_kit::assets::IconName;
+use gpui_kit::component::input::{Input, InputEvent, InputState};
 use gpui_kit::component::select::{SearchableVec, Select, SelectEvent, SelectState};
 use gpui_kit::component::slider::{SliderEvent, SliderState, SliderValue};
 use gpui_kit::component::{h_flex, Icon, IndexPath, Sizable as _};
+use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
 use crate::class_icons::IconPack;
@@ -13,7 +15,9 @@ use crate::theme;
 use crate::tokens;
 
 use super::dragger::number;
-use super::kit::{self, icon, readout, ticked_slider, Reset, Row, Section};
+use super::kit::{
+    self, ghost_icon, icon, readout, secondary_button, ticked_slider, Reset, Row, Section,
+};
 use super::SettingsWindow;
 
 mod accent_card;
@@ -37,8 +41,15 @@ const TOOLS: [(&str, &str); 7] = [
     ("sun", "Sun"),
 ];
 
-/// The Appearance page's controls that keep state: the two dropdowns and
-/// the UI scale slider.
+/// Where Install from GitHub is.
+enum Install {
+    Idle,
+    Running,
+    Failed(SharedString),
+}
+
+/// The Appearance page's controls that keep state: the two dropdowns, the
+/// UI scale slider and Install from GitHub.
 pub(super) struct AppearanceControls {
     icon_pack: Entity<SelectState<Choices>>,
     /// What each row of the icon pack dropdown picks.
@@ -47,7 +58,31 @@ pub(super) struct AppearanceControls {
     themes: Vec<String>,
     ui_scale: Entity<SliderState>,
     /// The Script font size field, on the roadmap.
-    script_font: Entity<gpui_kit::component::input::InputState>,
+    script_font: Entity<InputState>,
+    /// The repository link Install from GitHub takes.
+    link: Entity<InputState>,
+    install: Install,
+}
+
+/// The installed themes' ids, their dropdown labels, and the row of
+/// `current`: what the theme dropdown lists, read afresh from the folder.
+fn theme_choices(current: &str) -> (Vec<String>, Vec<SharedString>, Option<IndexPath>) {
+    let installed = theme::themes_dir()
+        .map(|dir| theme::installed(&dir))
+        .unwrap_or_default();
+    let labels = installed
+        .iter()
+        .map(|(id, manifest)| {
+            if theme::is_reserved(id) {
+                format!("{} (built-in)", manifest.name).into()
+            } else {
+                manifest.name.clone().into()
+            }
+        })
+        .collect();
+    let ids: Vec<String> = installed.into_iter().map(|(id, _)| id).collect();
+    let row = ids.iter().position(|id| id == current).map(IndexPath::new);
+    (ids, labels, row)
 }
 
 impl AppearanceControls {
@@ -94,35 +129,11 @@ impl AppearanceControls {
             )
         });
 
-        let installed_themes = theme::themes_dir()
-            .map(|dir| theme::installed(&dir))
-            .unwrap_or_default();
-        let current = shell
-            .read(cx)
-            .appearance
-            .theme
-            .clone()
-            .unwrap_or_else(|| theme::DEFAULT_ID.to_owned());
-        let theme_labels: Vec<SharedString> = installed_themes
-            .iter()
-            .map(|(id, manifest)| {
-                if id == theme::DEFAULT_ID {
-                    "dark-soft (built-in)".into()
-                } else {
-                    manifest.name.clone().into()
-                }
-            })
-            .collect();
-        let themes: Vec<String> = installed_themes.into_iter().map(|(id, _)| id).collect();
-        let theme_row = themes.iter().position(|id| *id == current);
-        let theme = cx.new(|cx| {
-            SelectState::new(
-                SearchableVec::new(theme_labels),
-                theme_row.map(IndexPath::new),
-                window,
-                cx,
-            )
-        });
+        let current = shell.read(cx).appearance.theme.clone();
+        let (themes, theme_labels, theme_row) =
+            theme_choices(current.as_deref().unwrap_or(theme::DEFAULT_ID));
+        let theme =
+            cx.new(|cx| SelectState::new(SearchableVec::new(theme_labels), theme_row, window, cx));
 
         let (low, high) = tokens::FONT_SCALE_RANGE;
         let ui_scale = cx.new(|_| {
@@ -132,8 +143,8 @@ impl AppearanceControls {
                 .step(0.05)
                 .default_value(tokens::font_scale())
         });
-        let script_font = cx
-            .new(|cx| gpui_kit::component::input::InputState::new(window, cx).default_value("13"));
+        let script_font = cx.new(|cx| InputState::new(window, cx).default_value("13"));
+        let link = cx.new(|cx| InputState::new(window, cx).placeholder("github.com/owner/repo"));
 
         let subscriptions = vec![
             cx.subscribe(
@@ -172,6 +183,11 @@ impl AppearanceControls {
                         .update(cx, |shell, cx| shell.set_font_scale(scale, cx));
                 }
             }),
+            cx.subscribe_in(&link, window, |this, _, event: &InputEvent, window, cx| {
+                if matches!(event, InputEvent::PressEnter { .. }) {
+                    this.install_theme(window, cx);
+                }
+            }),
         ];
         (
             AppearanceControls {
@@ -181,6 +197,8 @@ impl AppearanceControls {
                 themes,
                 ui_scale,
                 script_font,
+                link,
+                install: Install::Idle,
             },
             subscriptions,
         )
@@ -244,6 +262,54 @@ fn open_folder(id: &'static str, folder: Option<std::path::PathBuf>) -> Stateful
 }
 
 impl SettingsWindow {
+    /// Re-reads the themes folder into the dropdown, after an install or
+    /// an uninstall.
+    fn refresh_themes(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let current = self.shell.read(cx).appearance.theme.clone();
+        let (themes, labels, row) = theme_choices(current.as_deref().unwrap_or(theme::DEFAULT_ID));
+        self.appearance.themes = themes;
+        self.appearance.theme.update(cx, |state, cx| {
+            state.set_items(SearchableVec::new(labels), window, cx);
+            state.set_selected_index(row, window, cx);
+        });
+    }
+
+    /// Installs the theme the link names off the UI thread, then lists and
+    /// applies it. A link that isn't a GitHub repository fails at once.
+    fn install_theme(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if matches!(self.appearance.install, Install::Running) {
+            return;
+        }
+        let link = self.appearance.link.read(cx).value().to_string();
+        if let Err(err) = theme::Source::parse(&link) {
+            self.appearance.install = Install::Failed(err.into());
+            cx.notify();
+            return;
+        }
+        self.appearance.install = Install::Running;
+        cx.notify();
+        cx.spawn_in(window, async move |this, cx| {
+            let installed = cx
+                .background_spawn(async move { theme::install(&link) })
+                .await;
+            let _ = this.update_in(cx, |this, window, cx| {
+                this.appearance.install = match installed {
+                    Ok((id, _)) => {
+                        this.appearance
+                            .link
+                            .update(cx, |state, cx| state.set_value("", window, cx));
+                        this.shell.update(cx, |shell, cx| shell.pick_theme(&id, cx));
+                        this.refresh_themes(window, cx);
+                        Install::Idle
+                    }
+                    Err(err) => Install::Failed(err.into()),
+                };
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
     pub(super) fn appearance_page(
         &mut self,
         window: &mut Window,
@@ -262,6 +328,21 @@ impl SettingsWindow {
                 .ui_scale
                 .update(cx, |state, cx| state.set_value(scale, window, cx));
         }
+        // A card click or an edited appearance.json changes the theme
+        // without going through the dropdown.
+        let current = self.shell.read(cx).appearance.theme.clone();
+        let current = current.as_deref().unwrap_or(theme::DEFAULT_ID);
+        let row = self
+            .appearance
+            .themes
+            .iter()
+            .position(|id| id == current)
+            .map(IndexPath::new);
+        if self.appearance.theme.read(cx).selected_index(cx) != row {
+            self.appearance
+                .theme
+                .update(cx, |state, cx| state.set_selected_index(row, window, cx));
+        }
         let (low, high) = tokens::FONT_SCALE_RANGE;
 
         let mut accent = Section::new("Accent", Vec::new());
@@ -272,17 +353,76 @@ impl SettingsWindow {
             accent.resets.push(reset);
         }
 
+        let active =
+            (self.shell.read(cx).appearance.theme.clone()).filter(|id| !theme::is_reserved(id));
+        let running = matches!(self.appearance.install, Install::Running);
+        let mut install_row = Row::new(
+            "Install from GitHub",
+            h_flex()
+                .gap(px(8.))
+                .items_center()
+                .child(
+                    h_flex()
+                        .w(px(220.))
+                        .h(px(30.))
+                        .px(px(10.))
+                        .items_center()
+                        .border_1()
+                        .border_color(tokens::border2())
+                        .rounded(px(6.))
+                        .bg(tokens::dock())
+                        .child(
+                            Input::new(&self.appearance.link)
+                                .appearance(false)
+                                .w_full()
+                                .px_0()
+                                .text_size(px(12.))
+                                .line_height(px(16.))
+                                .text_color(tokens::text()),
+                        ),
+                )
+                .child(if running {
+                    secondary_button("install-theme", "loader", "Installing\u{2026}")
+                        .text_color(tokens::text3())
+                        .cursor_default()
+                } else {
+                    secondary_button("install-theme", "download", "Install")
+                        .on_click(cx.listener(|this, _, window, cx| this.install_theme(window, cx)))
+                }),
+        )
+        .describe("A theme repository\u{2019}s link. Installing it again updates it.");
+        if let Install::Failed(err) = &self.appearance.install {
+            install_row = install_row.below(
+                kit::text(11.5, 16.)
+                    .text_color(tokens::text_error())
+                    .child(err.clone()),
+            );
+        }
         let mut theme_section = Section::new(
             "Theme",
-            vec![Row::new(
-                "Installed themes",
-                h_flex()
-                    .gap(px(8.))
-                    .items_center()
-                    .child(select(&self.appearance.theme, 200.))
-                    .child(open_folder("open-themes", theme::themes_dir())),
-            )
-            .describe("JSON files in the themes folder.")],
+            vec![
+                Row::new(
+                    "Installed themes",
+                    h_flex()
+                        .gap(px(8.))
+                        .items_center()
+                        .child(select(&self.appearance.theme, 200.))
+                        .when_some(active, |this, id| {
+                            this.child(
+                                ghost_icon("uninstall-theme", "trash", "Uninstall").on_click(
+                                    cx.listener(move |this, _, window, cx| {
+                                        this.shell
+                                            .update(cx, |shell, cx| shell.uninstall_theme(&id, cx));
+                                        this.refresh_themes(window, cx);
+                                    }),
+                                ),
+                            )
+                        })
+                        .child(open_folder("open-themes", theme::themes_dir())),
+                )
+                .describe("Folders in the themes folder, plus the three built in."),
+                install_row,
+            ],
         );
         theme_section.head = Some(self.theme_cards(cx));
 

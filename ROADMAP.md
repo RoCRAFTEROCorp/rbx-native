@@ -2069,12 +2069,13 @@ against `Roblox/creator-docs` rather than assumed:
   does, not a shortcut that could write something a saved place file
   can't actually represent.
 - [ ] 📋 **Choosing and installing themes from inside the editor.** Themes
-  reach the whole editor and switch live (see "What's been implemented"),
-  but picking one still means editing `appearance.json`, and there is no
-  browser of installed themes with their previews, no install-from-link
-  field and no uninstall button. The backend for all three exists and
-  waits for the settings screen (`theme::pack::installed`,
-  `theme::github::install`, `theme::pack::uninstall`). A theme cannot ship
+  reach the whole editor and switch live (see "What's been implemented").
+  Settings › Appearance › Theme now picks an installed theme, uninstalls
+  the one in use and installs one from a GitHub link, off the UI thread,
+  with the failure shown under the field. Still open: a browser of the
+  installed themes with their previews (the cards show only the built-in
+  looks, and the dropdown only names), and a progress figure for a large
+  download (the button only reads "Installing…"). A theme cannot ship
   fonts yet (the families are fixed to Manrope and JetBrains Mono), and the
   launcher windows and the 3D viewport's own overlays still paint a handful
   of literal colours that no theme reaches.

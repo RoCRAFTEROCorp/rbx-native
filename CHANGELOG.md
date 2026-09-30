@@ -11,6 +11,11 @@
   shadowed or uninstalled. A theme's `theme.json` can now say
   `"mode": "light"`, and the accent colour's fix darkens a colour that
   fails on a light theme instead of offering nothing. — @chteau
+- **Install and uninstall themes from Settings.** Appearance › Theme takes
+  a GitHub repository link and installs the theme in it without freezing
+  the editor, then switches to it; a link or download that isn't a theme
+  says why right under the field. The theme in use can be uninstalled
+  from beside the dropdown, which goes back to Default. — @chteau
 
 ## 2026-09-29
 

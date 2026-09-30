@@ -91,6 +91,11 @@ fn the_archive_url_defaults_to_the_default_branch() {
 fn a_repository_named_default_cannot_take_the_built_in_themes_name() {
     assert_eq!(source("someone", "dusk", None).id(), "dusk");
     assert_eq!(source("someone", "Default", None).id(), "someone-Default");
+    assert_eq!(source("someone", "Light", None).id(), "someone-Light");
+    assert_eq!(
+        source("someone", "high-contrast", None).id(),
+        "someone-high-contrast"
+    );
 }
 
 #[test]
