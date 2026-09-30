@@ -138,7 +138,7 @@ impl SettingsWindow {
                             .items_center()
                             .justify_center()
                             .rounded(px(4.))
-                            .bg(rgba(0xFFFFFF0F))
+                            .bg(tokens::border())
                             .text_color(tokens::text2())
                             .cursor_pointer()
                             .child(kit::icon("x", 10.))

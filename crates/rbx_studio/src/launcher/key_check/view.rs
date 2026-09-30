@@ -216,7 +216,7 @@ pub(in crate::launcher) fn result(
             ],
         ),
         Status::Network => card(
-            ui::status_dot("wifi-off", tokens::text2(), Some(rgba(0xFFFFFF0F)), 22.),
+            ui::status_dot("wifi-off", tokens::text2(), Some(tokens::border()), 22.),
             "Couldn\u{2019}t reach Roblox",
             "network error".into(),
             ui::text(12., 18.)
