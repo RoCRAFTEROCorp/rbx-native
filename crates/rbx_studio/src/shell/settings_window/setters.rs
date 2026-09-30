@@ -160,6 +160,51 @@ impl Shell {
         self.reload_theme(cx);
     }
 
+    /// Installs the theme `link` names off the UI thread, then applies it.
+    /// The task is the shell's, not Settings', so closing Settings
+    /// mid-download still applies the theme; a failure shows inline while
+    /// Settings is open, and in Output once it has been closed. A link
+    /// that isn't a GitHub repository fails at once.
+    pub(in crate::shell) fn install_theme(&mut self, link: String, cx: &mut Context<Self>) {
+        use super::ThemeInstall;
+        if matches!(self.theme_install, ThemeInstall::Running) {
+            return;
+        }
+        if let Err(err) = crate::theme::Source::parse(&link) {
+            self.theme_install = ThemeInstall::Failed(err.into());
+            cx.notify();
+            return;
+        }
+        self.theme_install = ThemeInstall::Running;
+        cx.notify();
+        cx.spawn(async move |shell, cx| {
+            let from = link.clone();
+            let installed = cx
+                .background_spawn(async move { crate::theme::install(&from) })
+                .await;
+            let _ = shell.update(cx, |shell, cx| {
+                let settings_open = shell
+                    .settings_window
+                    .is_some_and(|window| window.is_active(cx).is_some());
+                shell.theme_install = match installed {
+                    Ok((id, _)) => {
+                        shell.pick_theme(&id, cx);
+                        ThemeInstall::Idle
+                    }
+                    Err(err) if settings_open => ThemeInstall::Failed(err.into()),
+                    Err(err) => {
+                        shell
+                            .output
+                            .push_warning(&format!("theme {link:?} was not installed: {err}"));
+                        ThemeInstall::Idle
+                    }
+                };
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
     /// Deletes the installed theme `id`, switching to Default first when
     /// it is the one in use.
     pub(in crate::shell) fn uninstall_theme(&mut self, id: &str, cx: &mut Context<Self>) {

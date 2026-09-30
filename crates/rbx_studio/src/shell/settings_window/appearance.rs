@@ -41,8 +41,9 @@ const TOOLS: [(&str, &str); 7] = [
     ("sun", "Sun"),
 ];
 
-/// Where Install from GitHub is.
-enum Install {
+/// Where Install from GitHub is. The shell keeps it, since the install
+/// outlives this window.
+pub(in crate::shell) enum Install {
     Idle,
     Running,
     Failed(SharedString),
@@ -61,7 +62,9 @@ pub(super) struct AppearanceControls {
     script_font: Entity<InputState>,
     /// The repository link Install from GitHub takes.
     link: Entity<InputState>,
-    install: Install,
+    /// Whether the shell's install was running when last seen, to clear
+    /// the link and relist the themes once it ends.
+    installing: bool,
 }
 
 /// The installed themes' ids, their dropdown labels, and the row of
@@ -130,6 +133,7 @@ impl AppearanceControls {
         });
 
         let current = shell.read(cx).appearance.theme.clone();
+        let installing = matches!(shell.read(cx).theme_install, Install::Running);
         let (themes, theme_labels, theme_row) =
             theme_choices(current.as_deref().unwrap_or(theme::DEFAULT_ID));
         let theme =
@@ -183,9 +187,24 @@ impl AppearanceControls {
                         .update(cx, |shell, cx| shell.set_font_scale(scale, cx));
                 }
             }),
-            cx.subscribe_in(&link, window, |this, _, event: &InputEvent, window, cx| {
+            cx.subscribe_in(&link, window, |this, _, event: &InputEvent, _, cx| {
                 if matches!(event, InputEvent::PressEnter { .. }) {
-                    this.install_theme(window, cx);
+                    this.install_theme(cx);
+                }
+            }),
+            cx.observe_in(shell, window, |this, shell, window, cx| {
+                let install = &shell.read(cx).theme_install;
+                let running = matches!(install, Install::Running);
+                let done = this.appearance.installing && !running;
+                let succeeded = matches!(install, Install::Idle);
+                this.appearance.installing = running;
+                if done {
+                    if succeeded {
+                        this.appearance
+                            .link
+                            .update(cx, |state, cx| state.set_value("", window, cx));
+                    }
+                    this.refresh_themes(window, cx);
                 }
             }),
         ];
@@ -198,7 +217,7 @@ impl AppearanceControls {
                 ui_scale,
                 script_font,
                 link,
-                install: Install::Idle,
+                installing,
             },
             subscriptions,
         )
@@ -274,40 +293,11 @@ impl SettingsWindow {
         });
     }
 
-    /// Installs the theme the link names off the UI thread, then lists and
-    /// applies it. A link that isn't a GitHub repository fails at once.
-    fn install_theme(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if matches!(self.appearance.install, Install::Running) {
-            return;
-        }
+    /// Hands the link to the shell's Install from GitHub.
+    fn install_theme(&mut self, cx: &mut Context<Self>) {
         let link = self.appearance.link.read(cx).value().to_string();
-        if let Err(err) = theme::Source::parse(&link) {
-            self.appearance.install = Install::Failed(err.into());
-            cx.notify();
-            return;
-        }
-        self.appearance.install = Install::Running;
-        cx.notify();
-        cx.spawn_in(window, async move |this, cx| {
-            let installed = cx
-                .background_spawn(async move { theme::install(&link) })
-                .await;
-            let _ = this.update_in(cx, |this, window, cx| {
-                this.appearance.install = match installed {
-                    Ok((id, _)) => {
-                        this.appearance
-                            .link
-                            .update(cx, |state, cx| state.set_value("", window, cx));
-                        this.shell.update(cx, |shell, cx| shell.pick_theme(&id, cx));
-                        this.refresh_themes(window, cx);
-                        Install::Idle
-                    }
-                    Err(err) => Install::Failed(err.into()),
-                };
-                cx.notify();
-            });
-        })
-        .detach();
+        self.shell
+            .update(cx, |shell, cx| shell.install_theme(link, cx));
     }
 
     pub(super) fn appearance_page(
@@ -355,7 +345,7 @@ impl SettingsWindow {
 
         let active =
             (self.shell.read(cx).appearance.theme.clone()).filter(|id| !theme::is_reserved(id));
-        let running = matches!(self.appearance.install, Install::Running);
+        let running = matches!(self.shell.read(cx).theme_install, Install::Running);
         let mut install_row = Row::new(
             "Install from GitHub",
             h_flex()
@@ -387,11 +377,11 @@ impl SettingsWindow {
                         .cursor_default()
                 } else {
                     secondary_button("install-theme", "download", "Install")
-                        .on_click(cx.listener(|this, _, window, cx| this.install_theme(window, cx)))
+                        .on_click(cx.listener(|this, _, _, cx| this.install_theme(cx)))
                 }),
         )
         .describe("A theme repository\u{2019}s link. Installing it again updates it.");
-        if let Install::Failed(err) = &self.appearance.install {
+        if let Install::Failed(err) = &self.shell.read(cx).theme_install {
             install_row = install_row.below(
                 kit::text(11.5, 16.)
                     .text_color(tokens::text_error())

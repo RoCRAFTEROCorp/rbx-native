@@ -198,6 +198,8 @@ pub(crate) struct Shell {
     argon_diff: Option<WindowHandle<gpui_kit::component::Root>>,
     /// Studio Settings, while open — see `settings_window`.
     settings_window: Option<WindowHandle<gpui_kit::component::Root>>,
+    /// Install from GitHub's progress, kept here so it outlives Settings.
+    theme_install: settings_window::ThemeInstall,
     /// The Explorer's type-ahead buffer — see `shell::tree_keys`.
     typeahead: tree_keys::Typeahead,
     /// The Explorer's own editing affordances — the `+` picker, the
@@ -570,6 +572,7 @@ impl Shell {
             sequence: None,
             argon_diff: None,
             settings_window: None,
+            theme_install: settings_window::ThemeInstall::Idle,
             tree_focus_handle,
             typeahead: tree_keys::Typeahead::default(),
             explorer_edit: explorer_edit::ExplorerEdit::default(),

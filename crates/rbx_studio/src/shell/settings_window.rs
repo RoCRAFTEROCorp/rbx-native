@@ -33,6 +33,7 @@ mod search;
 mod setters;
 mod viewport;
 
+pub(super) use appearance::Install as ThemeInstall;
 use kit::{OnPick, Section};
 use nav::Page;
 
@@ -95,6 +96,10 @@ impl Shell {
             {
                 return;
             }
+        }
+        // An install error belongs to the window it was shown in.
+        if matches!(self.theme_install, ThemeInstall::Failed(_)) {
+            self.theme_install = ThemeInstall::Idle;
         }
         // Deferred: opening a window renders it at once, and its first
         // render reads this `Shell`, which is still being updated here.
