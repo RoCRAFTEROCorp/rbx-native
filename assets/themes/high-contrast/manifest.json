@@ -1,0 +1,7 @@
+{
+  "name": "High contrast",
+  "author": "@chteau",
+  "description": "Pure black surfaces, white text and solid borders: body text at 7:1 or better and every secondary label past 4.5:1 (WCAG 1.4.6, AAA).",
+  "version": "1.0.0",
+  "preview": "preview.png"
+}

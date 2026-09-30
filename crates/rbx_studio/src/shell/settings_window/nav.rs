@@ -244,7 +244,7 @@ fn nav_item(
         .line_height(px(line))
         .text_color(tokens::text2())
         .cursor_pointer()
-        .hover(|this| this.bg(rgba(0xFFFFFF08)).text_color(tokens::text()))
+        .hover(|this| this.bg(tokens::hover_subtle()).text_color(tokens::text()))
         .child(kit::icon(glyph, glyph_size))
         .child(div().flex_1().child(label))
 }

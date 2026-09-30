@@ -10,6 +10,8 @@
     "ribbon_tab_active": "#FFFFFF1A",
     "hover": "#FFFFFF0D",
     "hover_subtle": "#FFFFFF08",
+    "hover_faint": "#FFFFFF04",
+    "track": "#FFFFFF1A",
     "selection": "#6C7FDBB8",
 
     "border": "#FFFFFF0F",

@@ -132,8 +132,10 @@ impl Shell {
     }
 
     /// Switches to the installed theme `id` (`theme::DEFAULT_ID` for the
-    /// built-in one). A theme that brings an accent of its own seeds the
-    /// user's accent with it; after that the user's wins, as always.
+    /// built-in one). An installed theme that brings an accent of its own
+    /// seeds the user's accent with it; after that the user's wins, as
+    /// always. A built-in one doesn't: Light's darker accent would stay
+    /// behind, unreadable, after switching back to a dark theme.
     pub(in crate::shell) fn pick_theme(&mut self, id: &str, cx: &mut Context<Self>) {
         let pack = match crate::theme::ThemePack::load(id) {
             Ok(pack) => pack,
@@ -146,7 +148,7 @@ impl Shell {
         };
         let builtin = crate::theme::ThemePack::builtin();
         let own = pack.palette.color("check_on");
-        if own != builtin.palette.color("check_on") {
+        if own != builtin.palette.color("check_on") && !crate::theme::is_reserved(id) {
             self.appearance.accent = Some(crate::accent::hex(own));
             let _ = self.appearance.save_colors();
         }

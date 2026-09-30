@@ -5,7 +5,9 @@ type scale, the toolkit's own widgets, the class icons, and a few effects —
 a transparent or blurred window, a glow on hover, a background image. The
 editor's own look is itself a theme, **Default** (by @chteau), built in and
 impossible to uninstall. Every other theme is layered over it, so a theme
-only has to name what it changes.
+only has to name what it changes — the two other built-in themes, **Light**
+and **High contrast** ([`assets/themes/`](assets/themes)), are written that
+way too.
 
 ## Installing one
 
@@ -72,6 +74,7 @@ then delete what you don't change.
     "selection": "@check_on/0.45"
   },
   "sizes": { "radius": 8, "text_md": 13 },
+  "mode": "dark",
   "window": "transparent",
   "background": { "image": "bg.png", "opacity": 0.8, "fit": "cover", "layer": "behind" },
   "hover": { "glow": "@check_on/0.7", "glow_radius": 10 }
@@ -85,6 +88,9 @@ then delete what you don't change.
 - **Sizes** are pixels before the UI scale (Ctrl+= / Ctrl+-), between 0 and
   2000. Minimum click-target sizes are an accessibility floor and are not
   themeable.
+- **`mode`**: `dark` (default) or `light`. It picks the toolkit's widgets
+  and syntax colours for that ground, and switching to a light theme
+  switches the Explorer to the class icons' light variant.
 - **`window`**: `opaque` (default), `transparent` or `blurred`. The desktop
   only shows through surfaces you also gave some transparency (`black` is
   the ground behind everything, `dock` the panels). Blur needs a compositor
@@ -110,6 +116,7 @@ icon pack chosen in the Explorer's menu is drawn over the theme's icons.
 ### `widgets.json`
 
 Inputs, popovers, scrollbars and the focus ring are GPUI Kit's own widgets
-and read a GPUI Kit `ThemeSet`; the first dark theme in the file is used.
+and read a GPUI Kit `ThemeSet`; the first theme in the file of the
+`theme.json`'s `mode` is used. Without one, a light theme gets Light's.
 [`assets/themes/default/widgets.json`](assets/themes/default/widgets.json)
 is Default's.

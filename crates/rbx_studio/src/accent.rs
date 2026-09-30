@@ -9,6 +9,7 @@
 
 use gpui_kit::Rgba;
 
+use crate::theme::Palette;
 use crate::tokens;
 
 /// The built-in accents, in the order the Appearance page offers them.
@@ -110,13 +111,19 @@ pub(crate) fn passes(accent: Rgba) -> bool {
     checks(accent).iter().all(|check| check.passes())
 }
 
-/// The selection wash's opacity for `accent`: the strongest, up to the
-/// theme's own `max`, that still leaves a selected row's label at 4.5:1 on
-/// the dock. A lighter accent needs a thinner wash; legible text wins over
-/// the wash's own 3:1, which every preset clears anyway.
-pub(crate) fn selection_alpha(accent: Rgba, max: f32) -> f32 {
+/// The selection wash's opacity for `accent`: the strongest, up to
+/// `theme`'s own, that still leaves a selected row's label at 4.5:1 on the
+/// dock. A lighter accent needs a thinner wash; legible text wins over the
+/// wash's own 3:1, which every preset clears anyway. Measured on `theme`
+/// rather than the active palette, which is still the old one while a
+/// switch lays the user's accent over the new one.
+pub(crate) fn selection_alpha(accent: Rgba, theme: &Palette) -> f32 {
+    let (max, dock, text) = (
+        theme.color("selection").a,
+        theme.color("dock"),
+        theme.color("text_full"),
+    );
     let over_dock = |alpha: f32| {
-        let dock = tokens::dock();
         let mix = |a: f32, b: f32| a * alpha + b * (1. - alpha);
         Rgba {
             r: mix(accent.r, dock.r),
@@ -129,7 +136,7 @@ pub(crate) fn selection_alpha(accent: Rgba, max: f32) -> f32 {
     (0..=steps)
         .rev()
         .map(|step| step as f32 / 255.)
-        .find(|alpha| contrast(tokens::text_full(), over_dock(*alpha)) >= 4.5)
+        .find(|alpha| contrast(text, over_dock(*alpha)) >= 4.5)
         .unwrap_or(0.)
 }
 
@@ -176,27 +183,34 @@ pub(crate) fn near_status(accent: Rgba) -> Option<Status> {
 }
 
 /// The colour to offer instead of one that fails a bar: the same hue and
-/// saturation, lightness raised a step at a time until all three pass.
+/// saturation, lightness moved a step at a time until all three pass.
 /// `None` when `accent` already passes, or no lightness would.
 pub(crate) fn fix(accent: Rgba) -> Option<Rgba> {
     lighten_until(accent, passes)
 }
 
-/// `color`, lightness raised a step at a time until `ok` holds: `None`
-/// when it already does, or no lightness would.
+/// `color`, lightness moved a step at a time until `ok` holds: `None` when
+/// it already does, or no lightness would. Raised first, the only way that
+/// helps on a dark theme; lowered when raising never passes, as on a light
+/// one, where every bar is measured against a pale surface.
 pub(crate) fn lighten_until(color: Rgba, ok: impl Fn(Rgba) -> bool) -> Option<Rgba> {
     if ok(color) {
         return None;
     }
-    let (h, mut l, s) = hls(color);
-    while l < 1. {
-        l = (l + FIX_STEP).min(1.);
-        let candidate = quantize(from_hls(h, l, s));
-        if ok(candidate) {
-            return Some(candidate);
+    let (h, start, s) = hls(color);
+    [FIX_STEP, -FIX_STEP].into_iter().find_map(|step| {
+        let mut l = start;
+        loop {
+            l = (l + step).clamp(0., 1.);
+            let candidate = quantize(from_hls(h, l, s));
+            if ok(candidate) {
+                return Some(candidate);
+            }
+            if l == 0. || l == 1. {
+                return None;
+            }
         }
-    }
-    None
+    })
 }
 
 /// A transform tool's one bar: 3:1 against the ribbon tile it lights up

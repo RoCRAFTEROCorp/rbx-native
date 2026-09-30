@@ -10,6 +10,7 @@
 //! template a theme author copies. Every other theme is layered over it:
 //! whatever a theme leaves out is Default's, so a theme that recolours one
 //! accent is a valid theme, and a theme without icons draws Default's.
+//! Light and High contrast are built in the same way, embedded beside it.
 //!
 //! `tokens` reads the active [`Palette`] on every call through [`color`] and
 //! [`size`]. It is process-wide state for the same reason `tokens`' UI scale
@@ -19,6 +20,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, LazyLock, RwLock};
 
+use gpui_kit::component::ThemeMode;
 use gpui_kit::{BoxShadow, ObjectFit, Rgba, WindowBackgroundAppearance};
 
 mod apply;
@@ -31,7 +33,7 @@ mod watch;
 pub(crate) use apply::{apply, startup};
 pub(crate) use github::{install, Source};
 pub(crate) use overrides::Overrides;
-pub(crate) use pack::{installed, themes_dir, uninstall, ThemePack};
+pub(crate) use pack::{installed, is_reserved, themes_dir, uninstall, ThemePack};
 pub(crate) use watch::{Watch, POLL_INTERVAL};
 
 /// The folder name, and `appearance.json` value, of the built-in theme. No
@@ -39,10 +41,19 @@ pub(crate) use watch::{Watch, POLL_INTERVAL};
 /// uninstall or shadow.
 pub(crate) const DEFAULT_ID: &str = "default";
 
+/// The two other built-in themes, embedded like Default and reserved the
+/// same way (see `pack::is_reserved`): layered over Default like any
+/// other theme, shipped in `assets/themes/<id>`.
+pub(crate) const LIGHT_ID: &str = "light";
+pub(crate) const HIGH_CONTRAST_ID: &str = "high-contrast";
+
 /// Everything a theme decides, resolved: every token has a value, every
 /// `@reference` has been followed, every path points inside the theme.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct Palette {
+    /// Which of the toolkit's modes the theme is drawn in: its widgets,
+    /// its syntax colours, and which of the kit's two icon variants suits it.
+    pub(crate) mode: ThemeMode,
     colors: HashMap<String, Rgba>,
     sizes: HashMap<String, f32>,
     pub(crate) effects: Effects,

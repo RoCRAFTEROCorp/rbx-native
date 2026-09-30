@@ -110,7 +110,7 @@ use std::cell::RefCell;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
-use gpui_kit::component::Root;
+use gpui_kit::component::{Root, ThemeMode};
 use gpui_kit::*;
 use rbx_dom::{Ref, WeakDom};
 use rbx_reflection::ReflectionDatabase;
@@ -189,6 +189,15 @@ fn main() {
     ));
     let theme = user.theme.clone();
     let overrides = user.appearance.overrides();
+    // A light theme draws the kit's light icons, as switching to one does
+    // (see `Shell::reload_theme`), whatever an earlier session left behind.
+    let settings = match theme.palette.mode {
+        ThemeMode::Light => Settings {
+            icon_pack: IconPack::Light,
+            ..settings
+        },
+        ThemeMode::Dark => settings,
+    };
 
     // The full Lucide catalog: the menu bar's icons are well outside the
     // default bundle the components themselves use. The Explorer's own class

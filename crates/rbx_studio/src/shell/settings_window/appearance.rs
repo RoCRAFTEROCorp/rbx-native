@@ -73,7 +73,7 @@ fn theme_choices(current: &str) -> (Vec<String>, Vec<SharedString>, Option<Index
     let labels = installed
         .iter()
         .map(|(id, manifest)| {
-            if id == theme::DEFAULT_ID {
+            if theme::is_reserved(id) {
                 format!("{} (built-in)", manifest.name).into()
             } else {
                 manifest.name.clone().into()
@@ -328,6 +328,21 @@ impl SettingsWindow {
                 .ui_scale
                 .update(cx, |state, cx| state.set_value(scale, window, cx));
         }
+        // A card click or an edited appearance.json changes the theme
+        // without going through the dropdown.
+        let current = self.shell.read(cx).appearance.theme.clone();
+        let current = current.as_deref().unwrap_or(theme::DEFAULT_ID);
+        let row = self
+            .appearance
+            .themes
+            .iter()
+            .position(|id| id == current)
+            .map(IndexPath::new);
+        if self.appearance.theme.read(cx).selected_index(cx) != row {
+            self.appearance
+                .theme
+                .update(cx, |state, cx| state.set_selected_index(row, window, cx));
+        }
         let (low, high) = tokens::FONT_SCALE_RANGE;
 
         let mut accent = Section::new("Accent", Vec::new());
@@ -338,7 +353,8 @@ impl SettingsWindow {
             accent.resets.push(reset);
         }
 
-        let active = self.shell.read(cx).appearance.theme.clone();
+        let active =
+            (self.shell.read(cx).appearance.theme.clone()).filter(|id| !theme::is_reserved(id));
         let running = matches!(self.appearance.install, Install::Running);
         let mut install_row = Row::new(
             "Install from GitHub",
@@ -404,7 +420,7 @@ impl SettingsWindow {
                         })
                         .child(open_folder("open-themes", theme::themes_dir())),
                 )
-                .describe("Folders in the themes folder; Default is built in."),
+                .describe("Folders in the themes folder, plus the three built in."),
                 install_row,
             ],
         );

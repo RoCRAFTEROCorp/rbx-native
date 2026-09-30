@@ -107,6 +107,17 @@ pub(crate) fn hover_subtle() -> Rgba {
     theme::color("hover_subtle")
 }
 
+/// The faintest hover (white 1.5%), for a Settings row: the whole row
+/// lights, and its control already has a hover of its own.
+pub(crate) fn hover_faint() -> Rgba {
+    theme::color("hover_faint")
+}
+
+/// An off toggle's track and a slider's empty rail (white 10%).
+pub(crate) fn track() -> Rgba {
+    theme::color("track")
+}
+
 /// A selected Explorer row: the accent, weighted to clear 3:1 against the
 /// dock it sits on — a selection is a state, and WCAG 1.4.11 does not
 /// exempt it — while still leaving its own label at 4.5:1 on top.

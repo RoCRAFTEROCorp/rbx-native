@@ -269,7 +269,7 @@ fn render_row(
         .when(id.1 > 0, |this| {
             this.border_t_1().border_color(tokens::border())
         })
-        .hover(|this| this.bg(rgba(0xFFFFFF04)))
+        .hover(|this| this.bg(tokens::hover_faint()))
         .when(row.reset.is_some(), |this| {
             this.child(
                 div()

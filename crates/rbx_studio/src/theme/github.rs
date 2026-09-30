@@ -15,8 +15,8 @@ use std::io::{Cursor, Read};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+use super::pack::is_reserved;
 use super::pack::{self, Manifest, ThemePack};
-use super::DEFAULT_ID;
 
 /// A theme is JSON, SVGs and a few images; a repository archive far past
 /// this is not a theme.
@@ -85,9 +85,9 @@ impl Source {
     }
 
     /// The folder it installs into: the repository's name, unless that is
-    /// the one name reserved for the built-in theme.
+    /// a name reserved for a built-in theme.
     fn id(&self) -> String {
-        if self.repo.eq_ignore_ascii_case(DEFAULT_ID) {
+        if is_reserved(&self.repo.to_ascii_lowercase()) {
             format!("{}-{}", self.owner, self.repo)
         } else {
             self.repo.clone()

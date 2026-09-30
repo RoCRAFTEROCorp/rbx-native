@@ -3,11 +3,13 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, Ordering};
 
+use gpui_kit::component::ThemeMode;
 use gpui_kit::{rgb, rgba, Rgba, WindowBackgroundAppearance};
 
 use super::pack::{self, inside, Manifest, ThemePack};
 use super::palette::{self, build};
-use super::{Palette, DEFAULT_ID};
+use super::{Palette, DEFAULT_ID, HIGH_CONTRAST_ID, LIGHT_ID};
+use crate::accent::contrast;
 
 fn scratch() -> PathBuf {
     static NEXT: AtomicU32 = AtomicU32::new(0);
@@ -340,7 +342,7 @@ fn default_cannot_be_shadowed_or_uninstalled() {
 }
 
 #[test]
-fn installed_lists_default_first_then_valid_themes_by_name() {
+fn installed_lists_the_built_in_themes_first_then_valid_themes_by_name() {
     let themes = scratch();
     theme(&themes, "zeta", None);
     let alpha = theme(&themes, "alpha", None);
@@ -356,7 +358,10 @@ fn installed_lists_default_first_then_valid_themes_by_name() {
         .into_iter()
         .map(|(id, _)| id)
         .collect();
-    assert_eq!(ids, [DEFAULT_ID, "alpha", "zeta"]);
+    assert_eq!(
+        ids,
+        [DEFAULT_ID, HIGH_CONTRAST_ID, LIGHT_ID, "alpha", "zeta"]
+    );
 }
 
 #[test]
@@ -385,5 +390,223 @@ fn inside_refuses_every_way_out_of_the_folder() {
         write(&outside, "secret.png", b"x");
         std::os::unix::fs::symlink(outside.join("secret.png"), dir.join("link.png")).unwrap();
         assert_eq!(inside(&dir, "link.png"), None);
+    }
+}
+
+// ------------------------------------------------------------- built-ins
+
+/// `foreground` (with its own alpha) over an opaque `background`.
+fn composite(foreground: Rgba, background: Rgba) -> Rgba {
+    let mix = |f: f32, b: f32| f * foreground.a + b * (1. - foreground.a);
+    Rgba {
+        r: mix(foreground.r, background.r),
+        g: mix(foreground.g, background.g),
+        b: mix(foreground.b, background.b),
+        a: 1.,
+    }
+}
+
+/// What lights a surface under a label: a hover, an active tab, and (for
+/// text, but not for the accent and status colours, which are never drawn
+/// on it) a selection.
+const WASHES: [&str; 4] = ["hover", "hover_subtle", "ribbon_tab_active", "selection"];
+const UNSELECTED: &[&str] = &["hover", "hover_subtle", "ribbon_tab_active"];
+
+/// Each of `names` at `min` or better on every surface a label can sit
+/// on, plain and lit by each of `washes`.
+fn assert_legible(pack: &ThemePack, names: &[&str], min: f32, washes: &[&str]) {
+    let color = |name: &str| pack.palette.color(name);
+    let mut grounds = Vec::new();
+    for surface in [
+        "black",
+        "dock",
+        "chrome",
+        "field_select",
+        "tile",
+        "menu_bar",
+    ] {
+        let under = color(surface);
+        grounds.push((surface.to_owned(), under));
+        for wash in washes {
+            grounds.push((
+                format!("{wash} on {surface}"),
+                composite(color(wash), under),
+            ));
+        }
+    }
+    for name in names {
+        for (ground, under) in &grounds {
+            let ratio = contrast(composite(color(name), *under), *under);
+            assert!(
+                ratio >= min,
+                "{}: {name} on {ground} is {ratio:.2}:1, below {min}:1",
+                pack.id
+            );
+        }
+    }
+}
+
+/// Every label that carries meaning, primary and secondary.
+const TEXT: [&str; 6] = [
+    "text",
+    "text_full",
+    "text_strong",
+    "text2",
+    "text_label",
+    "text_muted",
+];
+/// The colours drawn as text or glyphs besides the text ramp.
+const SIGNALS: [&str; 4] = ["check_on", "warning", "text_error", "diff_add"];
+
+/// WCAG 1.4.6 (AAA): 7:1 for body text — secondary labels included, as
+/// they are body-sized here — and 4.5:1 for the rest: placeholders, the
+/// accent as text, the status colours.
+#[test]
+fn high_contrast_clears_aaa() {
+    let pack = ThemePack::embedded(HIGH_CONTRAST_ID).unwrap();
+    assert_legible(&pack, &TEXT, 7., &WASHES);
+    let placeholder = ["text3", "text_placeholder", "text_disabled"];
+    assert_legible(&pack, &placeholder, 4.5, &WASHES);
+    assert_legible(&pack, &SIGNALS, 4.5, UNSELECTED);
+    let color = |name: &str| pack.palette.color(name);
+    let on_accent = contrast(color("black"), color("check_on"));
+    assert!(
+        on_accent >= 7.,
+        "button text on the accent is {on_accent:.2}:1"
+    );
+}
+
+/// AA (1.4.3) for every label that carries meaning; the placeholder and
+/// disabled tier is exempt, as it is in Default.
+#[test]
+fn light_clears_aa() {
+    let pack = ThemePack::embedded(LIGHT_ID).unwrap();
+    assert_legible(&pack, &TEXT, 4.5, &WASHES);
+    assert_legible(&pack, &SIGNALS, 4.5, UNSELECTED);
+    let color = |name: &str| pack.palette.color(name);
+    let on_accent = contrast(color("black"), color("check_on"));
+    assert!(
+        on_accent >= 4.5,
+        "button text on the accent is {on_accent:.2}:1"
+    );
+}
+
+/// The non-text floor (1.4.11) both keep: the focus ring, an unticked
+/// toggle's edge, and each tool's colour on the ribbon tile it lights.
+#[test]
+fn the_built_in_themes_keep_three_to_one_for_controls() {
+    for id in [LIGHT_ID, HIGH_CONTRAST_ID] {
+        let pack = ThemePack::embedded(id).unwrap();
+        let color = |name: &str| pack.palette.color(name);
+        for (name, on) in [
+            ("check_on", "dock"),
+            ("check_on", "field_select"),
+            ("check_off_border", "black"),
+            ("check_off_border", "dock"),
+            ("tool_select", "tile"),
+            ("tool_move", "tile"),
+            ("tool_scale", "tile"),
+            ("tool_rotate", "tile"),
+            ("tool_align", "tile"),
+            ("tool_local", "tile"),
+            ("tool_sun", "tile"),
+        ] {
+            let ratio = contrast(color(name), color(on));
+            assert!(ratio >= 3., "{id}: {name} on {on} is {ratio:.2}:1");
+        }
+    }
+}
+
+#[test]
+fn the_built_in_themes_load_in_their_own_mode_and_ship_a_preview() {
+    for (id, mode) in [
+        (DEFAULT_ID, ThemeMode::Dark),
+        (HIGH_CONTRAST_ID, ThemeMode::Dark),
+        (LIGHT_ID, ThemeMode::Light),
+    ] {
+        let pack = ThemePack::load(id).unwrap();
+        assert_eq!(pack.id, id);
+        assert!(pack.warnings.is_empty(), "{id}: {:?}", pack.warnings);
+        assert_eq!(pack.palette.mode, mode, "{id}");
+        assert_eq!(pack.widgets.mode, mode, "{id}");
+        let assets = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../assets/themes")
+            .join(id);
+        let png = fs::read(assets.join(&pack.manifest.preview)).unwrap();
+        assert_eq!(&png[1..4], b"PNG", "{id}");
+    }
+}
+
+#[test]
+fn a_light_theme_without_widgets_gets_light_widgets() {
+    let themes = scratch();
+    theme(&themes, "dawn", Some(r#"{"mode":"light"}"#));
+    let pack = ThemePack::load_from(&themes, "dawn").unwrap();
+    assert_eq!(pack.widgets.mode, ThemeMode::Light);
+    assert!(palette_of(r#"{"mode":"sepia"}"#, None).is_err());
+}
+
+#[test]
+fn the_built_in_themes_cannot_be_shadowed_or_uninstalled() {
+    let themes = scratch();
+    for id in [LIGHT_ID, HIGH_CONTRAST_ID] {
+        let dir = theme(&themes, id, Some(r##"{"colors":{"dock":"#FF0000"}}"##));
+        assert_eq!(
+            ThemePack::load_from(&themes, id).unwrap().palette,
+            ThemePack::embedded(id).unwrap().palette
+        );
+        assert!(pack::uninstall(&themes, id).is_err());
+        assert!(dir.exists());
+    }
+}
+
+/// Like Default's (see `tokens`' own test), each built-in theme's
+/// `widgets.json` is a second copy of its palette, checked key by key so
+/// the toolkit's widgets never drift from the chrome around them.
+#[test]
+fn the_built_in_widgets_paint_their_theme_s_palette() {
+    let hex = |color: Rgba| {
+        let byte = |c: f32| (c * 255.).round() as u8;
+        let rgb = format!(
+            "#{:02X}{:02X}{:02X}",
+            byte(color.r),
+            byte(color.g),
+            byte(color.b)
+        );
+        if color.a >= 1. {
+            rgb
+        } else {
+            format!("{rgb}{:02X}", byte(color.a))
+        }
+    };
+    for id in [LIGHT_ID, HIGH_CONTRAST_ID] {
+        let pack = ThemePack::embedded(id).unwrap();
+        let widgets = serde_json::to_value(&pack.widgets).unwrap();
+        for (key, token) in [
+            ("background", "black"),
+            ("foreground", "text"),
+            ("popover.background", "field_select"),
+            ("border", "border"),
+            ("muted.background", "field_select"),
+            ("muted.foreground", "text3"),
+            ("sidebar.background", "dock"),
+            ("secondary.foreground", "text2"),
+            ("primary.background", "check_on"),
+            ("ring", "check_on"),
+            ("selection.background", "selection"),
+            ("accent.background", "hover"),
+            ("tab_bar.background", "black"),
+            ("title_bar.background", "black"),
+            ("danger.background", "text_error"),
+        ] {
+            let listed = widgets["colors"][key]
+                .as_str()
+                .unwrap_or_else(|| panic!("{id}: widgets.json has no {key}"));
+            assert_eq!(
+                listed.to_ascii_uppercase(),
+                hex(pack.palette.color(token)),
+                "{id}: widgets.json's {key} has drifted from {token}"
+            );
+        }
     }
 }

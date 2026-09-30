@@ -175,7 +175,7 @@ impl SettingsWindow {
                     .line_height(px(16.))
                     .font_weight(FontWeight::SEMIBOLD)
                     .cursor_pointer()
-                    .hover(|this| this.bg(rgba(0x202123FF)))
+                    .hover(|this| this.bg(tokens::secondary_hover()))
                     .child("Open Roblox publishing")
                     .child(icon("external-link", 12.))
                     .on_click(move |_, _, cx| {
