@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-09-30
+
+- **Light and High contrast themes.** Studio Settings › Appearance ›
+  Theme's two faded cards are live: Light puts the editor on a pale
+  neutral ground with dark text, a deeper indigo, light syntax colours in
+  the Script Editor and the class icons' light variant; High contrast is
+  pure black with white text and solid borders, every label at 7:1 or
+  better. Both are built in like Default, switch instantly, and can't be
+  shadowed or uninstalled. A theme's `theme.json` can now say
+  `"mode": "light"`, and the accent colour's fix darkens a colour that
+  fails on a light theme instead of offering nothing. — @chteau
+
 ## 2026-09-29
 
 - **The editor is much lighter when nothing is moving.** The 3D view used
