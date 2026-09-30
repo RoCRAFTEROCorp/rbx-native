@@ -7,7 +7,7 @@ use gpui_kit::component::{h_flex, v_flex};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
-use crate::accent::{self, PRESETS};
+use crate::accent;
 use crate::tokens;
 
 use super::super::kit::{icon, mono, text};
@@ -17,9 +17,14 @@ use super::preview::{chips, conic, preview};
 
 impl SettingsWindow {
     pub(super) fn accent_card(&mut self, window: &Window, cx: &mut Context<Self>) -> AnyElement {
-        let (current, theme_accent) = {
+        let (current, theme_accent, presets) = {
             let shell = self.shell.read(cx);
-            (shell.accent(), shell.theme.palette.color("check_on"))
+            let palette = &shell.theme.palette;
+            (
+                shell.accent(),
+                palette.color("check_on"),
+                accent::presets(palette),
+            )
         };
         let picking = self
             .picker
@@ -27,16 +32,15 @@ impl SettingsWindow {
             .filter(|picker| picker.target == Target::Accent)
             .map(|picker| picker.candidate());
         let shown = picking.unwrap_or(current);
-        let preset = PRESETS
+        let preset = presets
             .iter()
-            .position(|(_, value)| accent::hex(accent::rgb(*value)) == accent::hex(current))
+            .position(|(_, color)| accent::hex(*color) == accent::hex(current))
             .filter(|_| picking.is_none());
 
-        let swatches = PRESETS
-            .iter()
+        let swatches = presets
+            .into_iter()
             .enumerate()
-            .map(|(i, (name, value))| {
-                let color = accent::rgb(*value);
+            .map(|(i, (name, color))| {
                 let selected = preset == Some(i);
                 // The theme's own accent is no override at all.
                 let choice = (accent::hex(color) != accent::hex(theme_accent)).then_some(color);

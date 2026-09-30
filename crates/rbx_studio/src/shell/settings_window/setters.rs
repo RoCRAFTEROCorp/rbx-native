@@ -135,7 +135,8 @@ impl Shell {
     /// built-in one). An installed theme that brings an accent of its own
     /// seeds the user's accent with it; after that the user's wins, as
     /// always. A built-in one doesn't: Light's darker accent would stay
-    /// behind, unreadable, after switching back to a dark theme.
+    /// behind, unreadable, after switching back to a dark theme. A preset
+    /// the user picked follows the switch as the new theme's variant of it.
     pub(in crate::shell) fn pick_theme(&mut self, id: &str, cx: &mut Context<Self>) {
         let pack = match crate::theme::ThemePack::load(id) {
             Ok(pack) => pack,
@@ -150,6 +151,15 @@ impl Shell {
         let own = pack.palette.color("check_on");
         if own != builtin.palette.color("check_on") && !crate::theme::is_reserved(id) {
             self.appearance.accent = Some(crate::accent::hex(own));
+            let _ = self.appearance.save_colors();
+        } else if let Some(i) = self.appearance.accent.as_deref().and_then(|text| {
+            let current = crate::accent::hex(crate::accent::parse_hex(text)?);
+            let from = crate::accent::presets(&self.theme.palette);
+            from.iter()
+                .position(|(_, color)| crate::accent::hex(*color) == current)
+        }) {
+            let to = crate::accent::hex(crate::accent::presets(&pack.palette)[i].1);
+            self.appearance.accent = (to != crate::accent::hex(own)).then_some(to);
             let _ = self.appearance.save_colors();
         }
         self.appearance.theme = (id != crate::theme::DEFAULT_ID).then(|| id.to_owned());
