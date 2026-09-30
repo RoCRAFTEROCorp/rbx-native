@@ -73,7 +73,7 @@
         "syntax": {
           "attribute": { "color": "#D8E0FF" },
           "boolean": { "color": "#FFD58F" },
-          "comment": { "color": "#C8C8D0" },
+          "comment": { "color": "#D6CBA4" },
           "constant": { "color": "#FFD58F" },
           "constructor": { "color": "#A6E2FF" },
           "embedded": { "color": "#FFFFFF" },
