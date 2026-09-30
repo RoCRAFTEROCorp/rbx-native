@@ -157,4 +157,20 @@ impl Shell {
         }
         self.reload_theme(cx);
     }
+
+    /// Deletes the installed theme `id`, switching to Default first when
+    /// it is the one in use.
+    pub(in crate::shell) fn uninstall_theme(&mut self, id: &str, cx: &mut Context<Self>) {
+        if self.appearance.theme.as_deref() == Some(id) {
+            self.pick_theme(crate::theme::DEFAULT_ID, cx);
+        }
+        let removed = crate::theme::themes_dir()
+            .ok_or_else(|| "there is no config directory".to_owned())
+            .and_then(|dir| crate::theme::uninstall(&dir, id));
+        if let Err(err) = removed {
+            self.output
+                .push_warning(&format!("theme {id:?} was not uninstalled: {err}"));
+        }
+        cx.notify();
+    }
 }

@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-09-30
+
+- **Install and uninstall themes from Settings.** Appearance › Theme takes
+  a GitHub repository link and installs the theme in it without freezing
+  the editor, then switches to it; a link or download that isn't a theme
+  says why right under the field. The theme in use can be uninstalled
+  from beside the dropdown, which goes back to Default. — @chteau
+
 ## 2026-09-29
 
 - **The editor is much lighter when nothing is moving.** The 3D view used

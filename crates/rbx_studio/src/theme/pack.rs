@@ -238,7 +238,6 @@ pub(crate) fn installed(themes: &Path) -> Vec<(String, Manifest)> {
 
 /// Deletes an installed theme's folder. Default is not a folder and cannot
 /// be removed.
-#[cfg_attr(not(test), expect(dead_code, reason = "for the settings screen"))]
 pub(crate) fn uninstall(themes: &Path, id: &str) -> Result<(), String> {
     if id == DEFAULT_ID {
         return Err("the Default theme cannot be uninstalled".to_owned());
