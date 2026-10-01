@@ -501,3 +501,11 @@ fn default_services_follow_the_users_overrides_and_store_only_differences() {
     assert!(overrides.is_empty());
     assert_eq!(labels(&overrides), ["Workspace", "Teams"]);
 }
+
+/// An override only reaches a service: a hand-edited `{"Folder": false}`
+/// must not hide the place's own root folders.
+#[test]
+fn an_override_for_a_non_service_class_is_ignored() {
+    let overrides = ServiceOverrides::from([("Folder".to_owned(), false)]);
+    assert!(is_listed("Folder", &overrides));
+}

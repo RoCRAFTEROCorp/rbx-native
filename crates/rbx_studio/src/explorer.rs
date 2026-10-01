@@ -25,12 +25,13 @@ pub(crate) use rbx_viewer::services::{is_default_visible, is_known_service};
 /// stops listing follows Studio unless the user has said otherwise.
 pub(crate) type ServiceOverrides = std::collections::BTreeMap<String, bool>;
 
-/// Whether a root of `class` is in the default view.
+/// Whether a root of `class` is in the default view. Only a known service
+/// takes an override: a root `Folder` stays listed whatever the file says.
 pub(crate) fn is_listed(class: &str, overrides: &ServiceOverrides) -> bool {
-    overrides
-        .get(class)
-        .copied()
-        .unwrap_or_else(|| is_default_visible(class))
+    match overrides.get(class) {
+        Some(&listed) if is_known_service(class) => listed,
+        _ => is_default_visible(class),
+    }
 }
 
 /// `overrides` with `class` flipped, keeping only what differs from Studio.
@@ -78,8 +79,6 @@ pub(crate) enum ClassIcon {
 
 /// A whole place, ready to hand to a `TreeState`.
 pub(crate) struct Explorer {
-    /// Studio's own default Explorer set: `SERVICE_ORDER` plus anything not a
-    /// recognized service at all.
     /// Every root the file has, for the "show all services" toggle.
     all_items: Vec<TreeItem>,
     icons: HashMap<SharedString, ClassIcon>,

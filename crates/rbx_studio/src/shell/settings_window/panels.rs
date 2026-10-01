@@ -4,29 +4,13 @@ use gpui_kit::component::{h_flex, v_flex};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
+use rbx_viewer::services::{rank, KNOWN_SERVICES, SERVICE_ORDER};
+
 use crate::tokens;
 
 use super::kit::{icon, secondary_button, segmented, still_toggle, text, toggle, Row, Section};
 use super::nav::Page;
 use super::SettingsWindow;
-
-/// Default services' grid: the services a place usually holds, each ticked
-/// when the Explorer's default view lists it (`explorer::is_listed`) and
-/// flipped by a click.
-const SERVICES: [&str; 12] = [
-    "Workspace",
-    "Players",
-    "Lighting",
-    "ReplicatedStorage",
-    "ServerScriptService",
-    "ServerStorage",
-    "StarterGui",
-    "StarterPlayer",
-    "SoundService",
-    "Teams",
-    "Chat",
-    "TextChatService",
-];
 
 impl SettingsWindow {
     pub(super) fn explorer_output_page(&mut self, cx: &mut Context<Self>) -> Vec<Section> {
@@ -40,12 +24,20 @@ impl SettingsWindow {
                 shell.service_overrides().clone(),
             )
         };
+        // Default services' grid: every service the Explorer knows, Studio's
+        // listed ones first, each ticked when the default view lists it
+        // (`explorer::is_listed`) and flipped by a click.
+        let names = SERVICE_ORDER.into_iter().chain(
+            KNOWN_SERVICES
+                .into_iter()
+                .filter(|name| rank(name).is_none()),
+        );
         let services = div()
             .grid()
             .grid_cols(4)
             .gap_y(px(6.))
             .gap_x(px(12.))
-            .children(SERVICES.map(|name| {
+            .children(names.map(|name| {
                 let shown = crate::explorer::is_listed(name, &overrides);
                 h_flex()
                     .id(SharedString::from(format!("service-{name}")))
@@ -106,7 +98,7 @@ impl SettingsWindow {
                 .describe("Open the tree down to whatever you select in the viewport.")
                 .changed(!expand, |shell, cx| shell.set_expand_on_select(true, cx)),
                 Row::new("Default services", div())
-                    .describe("The services listed when Show all services is off. Click one to list or hide it.")
+                    .describe("Click a service to list or hide it while Show all services is off.")
                     .changed(!overrides.is_empty(), |shell, cx| {
                         shell.reset_service_overrides(cx)
                     })
