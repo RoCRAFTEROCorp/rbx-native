@@ -1383,9 +1383,9 @@ Roblox's own engine.
   stay a window of their own, as in Studio; what the screen still shows as
   `SOON` is its own bullet under "What's planned".
 - [x] **Default services** in Studio Settings › Explorer & Output: which
-  services the Explorer lists while Show all services is off. The grid
-  holds every service the Explorer knows, each ticked when the default view
-  lists it and flipped on a click; only the differences from Studio's own default are saved
+  services the Explorer lists while Show all services is off. Each service
+  in the grid is ticked when the default view lists it and flips on a
+  click; only the differences from Studio's own default are saved
   (`service_overrides`), so a service Studio later starts or stops listing
   still follows Studio unless it was chosen here. The row's reset puts
   Studio's set back.

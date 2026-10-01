@@ -27,7 +27,7 @@ pub const SERVICE_ORDER: [&str; 14] = [
 /// this list is some real, user-placed instance — never one of the
 /// deliberately-noisy internal ones — so the default filter below must never
 /// hide it.
-pub const KNOWN_SERVICES: [&str; 55] = [
+const KNOWN_SERVICES: [&str; 55] = [
     "AssetService",
     "Chat",
     "CollectionService",
