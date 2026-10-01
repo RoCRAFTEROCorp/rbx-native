@@ -120,6 +120,8 @@ pub(crate) struct Shell {
     /// Studio's default service set. Persisted (see `settings`); every write
     /// goes through [`Shell::save_settings`].
     show_all_services: bool,
+    /// See `explorer::ServiceOverrides`; persisted.
+    service_overrides: crate::explorer::ServiceOverrides,
     /// The dropdown's current pick, kept alongside the `Select` entity itself
     /// so a settings write never has to reach into GPUI state to read it back.
     quality_choice: QualityLevel,
@@ -381,6 +383,7 @@ impl Shell {
         let Settings {
             quality,
             show_all_services,
+            service_overrides,
             orthographic,
             axis_indicator,
             selection_occluded,
@@ -420,7 +423,7 @@ impl Shell {
             format,
             folder_colors,
         } = place;
-        let items = explorer.items(show_all_services);
+        let items = explorer.items(show_all_services, &service_overrides);
 
         let selector = cx.new(|cx| {
             let row = IndexPath::new(quality_row(quality));
@@ -547,6 +550,7 @@ impl Shell {
             explorer: Rc::new(explorer),
             tree,
             show_all_services,
+            service_overrides,
             quality_choice: quality,
             orthographic,
             axis_indicator,
@@ -957,6 +961,32 @@ impl Shell {
         }
 
         self.show_all_services = show_all;
+        self.refresh_root_rows(cx);
+    }
+
+    /// Lists or hides one service in the Explorer's default view, from
+    /// Studio Settings' Default services grid.
+    pub(super) fn toggle_default_service(&mut self, class: &str, cx: &mut Context<Self>) {
+        let overrides = std::mem::take(&mut self.service_overrides);
+        self.service_overrides = crate::explorer::toggled(overrides, class);
+        self.refresh_root_rows(cx);
+    }
+
+    pub(super) fn service_overrides(&self) -> &crate::explorer::ServiceOverrides {
+        &self.service_overrides
+    }
+
+    /// Back to Studio's own default services.
+    pub(super) fn reset_service_overrides(&mut self, cx: &mut Context<Self>) {
+        if !self.service_overrides.is_empty() {
+            self.service_overrides.clear();
+            self.refresh_root_rows(cx);
+        }
+    }
+
+    /// Pushes the root rows the visibility settings now call for into the
+    /// tree, and saves them.
+    fn refresh_root_rows(&mut self, cx: &mut Context<Self>) {
         let items = self.explorer_items();
         // Replacing the rows drops the tree's selection; putting it back in the
         // same update keeps the observer from ever seeing the gap. A selected
@@ -1233,6 +1263,7 @@ impl Shell {
         let settings = Settings {
             quality: self.quality_choice,
             show_all_services: self.show_all_services,
+            service_overrides: self.service_overrides.clone(),
             orthographic: self.orthographic,
             axis_indicator: self.axis_indicator,
             selection_occluded: self.selection_occluded,

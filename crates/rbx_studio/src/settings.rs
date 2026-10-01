@@ -31,6 +31,9 @@ pub(crate) use dragger::DraggerSettings;
 pub(crate) struct Settings {
     pub(crate) quality: QualityLevel,
     pub(crate) show_all_services: bool,
+    /// Which services the Explorer's default view lists, where that differs
+    /// from Studio's — see `explorer::ServiceOverrides`.
+    pub(crate) service_overrides: crate::explorer::ServiceOverrides,
     pub(crate) orthographic: bool,
     /// The viewport's top-right orientation indicator — see
     /// `crate::workspace_view::orientation`. Defaults on: it's meant to read
@@ -105,6 +108,7 @@ impl Default for Settings {
         Settings {
             quality: QualityLevel::Automatic,
             show_all_services: false,
+            service_overrides: Default::default(),
             orthographic: false,
             axis_indicator: true,
             selection_occluded: false,
@@ -250,6 +254,15 @@ fn load_from(path: &Path) -> Settings {
     Settings {
         quality,
         show_all_services,
+        service_overrides: value
+            .get("service_overrides")
+            .and_then(|v| v.as_object())
+            .map(|map| {
+                map.iter()
+                    .filter_map(|(class, listed)| Some((class.clone(), listed.as_bool()?)))
+                    .collect()
+            })
+            .unwrap_or_default(),
         orthographic,
         axis_indicator,
         selection_occluded: value
@@ -389,6 +402,7 @@ fn save_to(settings: &Settings, path: &Path) -> Result<(), SettingsError> {
     let value = serde_json::json!({
         "quality": format_quality(settings.quality),
         "show_all_services": settings.show_all_services,
+        "service_overrides": settings.service_overrides,
         "orthographic": settings.orthographic,
         "axis_indicator": settings.axis_indicator,
         "selection_occluded": settings.selection_occluded,
@@ -757,6 +771,29 @@ mod tests {
 
         save_to(&settings, &path).expect("save settings");
         assert_eq!(load_from(&path).font_scale, 1.5);
+    }
+
+    #[test]
+    fn service_overrides_round_trip_and_a_non_boolean_is_dropped() {
+        let path = temp_settings_path();
+        let mut overrides = crate::explorer::ServiceOverrides::new();
+        overrides.insert("HttpService".into(), true);
+        overrides.insert("Teams".into(), false);
+        let settings = Settings {
+            service_overrides: overrides.clone(),
+            ..Settings::default()
+        };
+        save_to(&settings, &path).expect("save settings");
+        assert_eq!(load_from(&path).service_overrides, overrides);
+
+        std::fs::write(
+            &path,
+            br#"{"service_overrides": {"Teams": false, "Chat": "yes"}}"#,
+        )
+        .expect("write settings");
+        let loaded = load_from(&path).service_overrides;
+        assert_eq!(loaded.len(), 1);
+        assert_eq!(loaded.get("Teams"), Some(&false));
     }
 
     /// The dock layout is the one preference a user can wreck by accident
