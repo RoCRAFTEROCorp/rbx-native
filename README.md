@@ -34,8 +34,9 @@ Actively developed, pre-alpha. The parsing/format layer (`rbx_dom`,
 `rbx_binary`, `rbx_xml`, `rbx_reflection`, `rbx_mesh`) is solid and
 round-trip-tested against real files. The renderer (`rbx_viewer`) and the
 desktop editor (`rbx_studio`, binary `rbxstudio`) work end to end on real
-places but are still missing real pieces (GUI text rendering, terrain, rig
-animation — see [ROADMAP.md](ROADMAP.md) for the full, current picture of
+places. The biggest missing pieces are voxel terrain (`Terrain.SmoothGrid`),
+playing animations on rigs (`KeyframeSequence` playback and an Animation
+Editor), and a real Play/Test session. See [ROADMAP.md](ROADMAP.md) for the full, current picture of
 what's done, what's approximated, and what's out of scope on purpose).
 
 ## Platform support
@@ -44,7 +45,7 @@ what's done, what's approximated, and what's out of scope on purpose).
 |---|---|
 | Linux (X11) | Primary target. Actively developed and tested on it every day. |
 | Windows | **Supported: the editor runs.** CI also builds it on every change, running `cargo clippy -D warnings`, `cargo build` and `cargo test --workspace` on `windows-latest`. Known gaps are under [Platform: Windows](ROADMAP.md) in the roadmap. Reports of anything that breaks on your machine are welcome. |
-| macOS | Not a target yet. Likely buildable given the dependencies, entirely unverified. |
+| macOS | Not a supported target. CI builds it and runs the tests on `macos-latest` so the workspace keeps compiling there, but nobody runs the editor on it. |
 | Wayland | Falls back to an uncaptured cursor (no pointer lock) rather than failing outright. |
 
 ## Building
@@ -105,6 +106,23 @@ compiled at `opt-level = 3` even in dev builds (see the workspace
 `Cargo.toml`) because GPUI Kit's text/layout stack and an unoptimized
 offscreen frame are both too slow to use otherwise — don't be surprised that
 `cargo build` still takes a while for those two crates.
+
+### Workspace crates
+
+| Crate | What it does |
+|---|---|
+| `rbx_dom` | The in-memory instance tree and property value types shared by every other crate. |
+| `rbx_binary` | Reads and writes binary `.rbxl`/`.rbxm`. |
+| `rbx_xml` | Reads and writes XML `.rbxlx`/`.rbxmx`. |
+| `rbx_reflection` | The class/property/enum database, built from Roblox's API dump (synced daily by CI). |
+| `rbx_mesh` | Parses Roblox `.mesh` geometry, `version 1.00` through `5.00`. |
+| `rbx_lua` | A sandboxed, synchronous Luau runtime over a DOM, like Studio's command bar: no scheduler, no events, no yielding. |
+| `rbx_assets` | Resolves, caches and decodes the assets a place references (`rbxassetid://`, `rbxasset://`, legacy URLs). The network fetch plugs in from `rbx_cloud`. |
+| `rbx_materials` | The table of texture packs (colour, normal, metalness, roughness) behind each `Enum.Material`. |
+| `rbx_cloud` | Open Cloud API client and the `rbxcloud` CLI. |
+| `rbx_viewer` | The wgpu renderer and the `rbxview` binary (desktop and WebGPU). |
+| `rbx_studio` | The desktop editor (`rbxstudio`), built on GPUI Kit. |
+| `rbx_parser_cli` | The `rbxdump` and `rbxlua` command-line tools. |
 
 ## Testing
 
@@ -182,6 +200,97 @@ if it finds the file group- or world-readable) and never place it inside
 this repository; `.gitignore` has a few safety-net patterns
 (`api_key`, `*.key`, `.env`) in case one ends up in the tree by mistake, but
 the real answer is simply: it doesn't belong here at all.
+
+## Contributing
+
+### Branches
+
+| Branch | Who merges into it | What it is |
+|---|---|---|
+| `dev` | Collaborators with write access, through a reviewed pull request | The default branch. Every pull request targets it. |
+| `main` | **The maintainer only** | Releases. It only ever receives `dev`, never a feature branch. |
+
+`main` is protected by a repository ruleset: nobody but the maintainer can
+push to it, merge into it, force-push it or delete it, whatever their role on
+the repository. `dev` requires a pull request with one approving review and
+green CI (`Gate (Linux)` and `Build & test (Windows)`) before it can merge.
+
+### 1. Fork and clone
+
+Unless you're a collaborator with write access, work from your own fork:
+
+1. Click **Fork** at the top of
+   [github.com/chteau/rbx-native](https://github.com/chteau/rbx-native).
+   Leave "Copy the `dev` branch only" ticked; `dev` is all you need.
+2. Clone your fork, and add this repository as a second remote named
+   `upstream`:
+
+   ```sh
+   git clone https://github.com/<your-username>/rbx-native.git
+   cd rbx-native
+   git remote add upstream https://github.com/chteau/rbx-native.git
+   git remote -v   # origin = your fork, upstream = this repository
+   ```
+
+   With the GitHub CLI, `gh repo fork chteau/rbx-native --clone` does all of
+   this in one step.
+
+### 2. Stay in sync with upstream
+
+`dev` moves fast. Sync before you start a branch and again before you open a
+pull request, so you're never building on (or reviewing against) a stale
+base:
+
+```sh
+git switch dev
+git fetch upstream
+git merge --ff-only upstream/dev   # your dev never has commits of its own
+git push origin dev                # keep your fork's dev current too
+```
+
+Then bring an in-progress branch up to date:
+
+```sh
+git switch fix/my-change
+git rebase dev                     # or `git merge dev` if you'd rather not rewrite history
+git push --force-with-lease        # only needed after a rebase
+```
+
+Never commit to your own `dev`: keep it an exact copy of `upstream/dev`, so
+the `--ff-only` merge above always works. The **Sync fork** button on your
+fork's GitHub page does the same as the first block.
+
+### 3. Make the change on its own branch
+
+```sh
+git switch -c fix/beam-texture-orientation dev
+# ...edit, commit...
+./scripts/check.sh                 # must be green: fmt, clippy -D warnings, tests
+git push -u origin fix/beam-texture-orientation
+```
+
+One branch per change, named `fix/…`, `feat/…`, `docs/…` or `perf/…`.
+
+### 4. Open the pull request
+
+1. On GitHub, open your fork. A **Compare & pull request** banner appears
+   for the branch you just pushed. Or run
+   `gh pr create --repo chteau/rbx-native --base dev`.
+2. Check the target: **base repository `chteau/rbx-native`, base branch
+   `dev`**. A pull request against `main` will be closed.
+3. Fill in the template rather than deleting it: what changed and why, the
+   `ROADMAP.md` bullet or issue it addresses, how you verified it, and a
+   screenshot or recording for anything visible.
+4. Leave **Allow edits by maintainers** ticked, so a small fix-up can be
+   pushed to your branch instead of going back and forth in review.
+5. CI runs on the pull request. Push more commits to the same branch to
+   answer review comments; the pull request updates by itself.
+
+Once it's approved and green, it merges into `dev`. The maintainer later
+merges `dev` into `main` for a release.
+
+[CONTRIBUTING.md](CONTRIBUTING.md) has the rest: what a change has to
+include, how to report a bug, and the rules about Roblox assets.
 
 ## Documentation map
 
