@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-10-01
+
+- **Pick an instance for a reference property.** A `Weld`'s `Part0`, an
+  `ObjectValue`'s `Value` and every other property that points at an
+  instance were read-only, and an unset one wasn't listed at all. Now an
+  unset one shows as `nil`; click it, then click an instance in the
+  Explorer, and the property points there — the way Studio does it. Escape
+  backs out, `×` clears it, and a pick of the wrong kind of instance (a
+  `Folder` for a `Part0`) is refused with a message. — @Vikmanou
+
 ## 2026-09-30
 
 - **Light and High contrast themes.** Studio Settings › Appearance ›

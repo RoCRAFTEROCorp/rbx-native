@@ -82,8 +82,7 @@ pub(super) fn check_target(
         .ok_or_else(|| "that instance no longer exists".to_owned())?;
     match target_class(db, class, name) {
         Some(wanted) if !db.is_subclass_of(instance.class(), wanted) => Err(format!(
-            "{name} holds a {wanted}, and {} is a {}",
-            instance.name(),
+            "{name} takes a {wanted}, not a {}",
             instance.class()
         )),
         _ => Ok(()),

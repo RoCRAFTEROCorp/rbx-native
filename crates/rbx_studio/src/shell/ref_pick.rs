@@ -52,7 +52,7 @@ impl Shell {
         // Studio's own words for this moment are "Your cursor changes"; the
         // field says what the changed cursor is waiting for.
         let label = if armed {
-            "Click an instance in the Explorer…".to_owned()
+            "Pick in Explorer…".to_owned()
         } else {
             row.value.clone()
         };

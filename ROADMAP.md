@@ -463,6 +463,12 @@ Roblox's own engine.
     model's pivot stands in the world, read as `GetPivot` reads it, and
     moved as `PivotTo` moves it when one is typed — a model's parts and its
     pivot together, as one undo step.
+  - **Instance references** (`ObjectValue.Value`, `Weld.Part0`) are picked
+    the way Studio does it: click the row, then the instance in the
+    Explorer, which sets the property instead of selecting. An unset one is
+    listed as `nil` rather than left out; Escape backs out of a pick, the
+    row's `×` (or Delete) clears it, and an instance of the wrong class for
+    the property, per the API dump, is refused.
   - **Computed, read-only**: `Mass`, `CenterOfMass`,
     `CurrentPhysicalProperties` and the assembly's mass and centre, shown
     only where Roblox documents exactly how they are computed.
@@ -1849,9 +1855,8 @@ against `Roblox/creator-docs` rather than assumed:
   implemented" → Editor).
 
   Each is its own piece of work, so each gets its own PR:
-  - **`Ref`** (`ObjectValue.Value`, `Weld.Part0`) shows the target's name
-    and cannot be changed. Needs an instance picker — an Explorer target,
-    or a pick-in-viewport mode.
+  - **`Ref`**: picking a target in the 3D viewport as well as the Explorer
+    (the Explorer pick is done, see "What's been implemented" → Editor).
   - **`Content`** (`Decal.Texture`, `MeshPart.MeshId`) needs an asset URI
     field, and its `Content::Object` case is a `Ref` picker again.
 
