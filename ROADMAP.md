@@ -1382,6 +1382,14 @@ Roblox's own engine.
   description or `settings.json` key and shows it live. Keyboard shortcuts
   stay a window of their own, as in Studio; what the screen still shows as
   `SOON` is its own bullet under "What's planned".
+- [x] **Explorer search**: the search field above the tree filters it as
+  you type — every instance whose name contains the text (ignoring case),
+  under the rows that lead to it, which open. Unlike real Studio's, a
+  result stays browsable without clearing the search (a real devforum
+  request, `view-descendants-of-matching-instances-in-explorer-search`): a
+  match keeps all its own children, so it expands in place, and what is
+  opened while searching stays open afterwards. The selection survives a
+  search that hides its row.
 
 ### Platform
 - [x] Linux (X11) — the daily-driven target.
@@ -1635,28 +1643,17 @@ Roblox's own engine.
   Properties panel's `Origin` row reads a part's or model's pivot the way
   `GetPivot` does and moves the instance the way `PivotTo` does (see
   "What's been implemented" → Editor).
-- [ ] 📋 **Explorer export and searchable-tree browsing** — the two halves
-  of Explorer DOM editing that did not land with the row affordances
-  above:
-  - Export from the row's menu: services and the whole place to Roblox
-    (Save/Publish, see below), to a local file; individual instances to
-    `.obj` and `.gltf` — genuinely useful native additions since Studio
-    itself has no built-in mesh export today. Roblox's own roadmap does
-    list glTF export, pushed from Late 2025 to Late 2026 in its
-    [fall 2026 update](https://devforum.roblox.com/t/creator-roadmap-2026-fall-update/4880208),
-    so `.gltf` may become Studio parity rather than an addition. Check what
-    it actually exports once it ships.
-  - **Keep search results browsable without clearing the search field** —
-    a real devforum request
-    ([`view-descendants-of-matching-instances-in-explorer-search`](https://devforum.roblox.com/t/view-descendants-of-matching-instances-in-explorer-search/4862003),
-    read in full, not just the title: today's real Studio forces you to
-    clear the Explorer's search box before you can expand a matched
-    result's children, so inspecting several matches in a row means
-    search → select → clear → expand, repeated per result). Worth getting
-    right from the start here rather than reproducing that friction: a
-    filtered Explorer tree should stay expandable in place. The Explorer's
-    search box is still inert today, so this means building the filter as
-    well as keeping it browsable.
+- [ ] 📋 **Explorer export**, the half of Explorer DOM editing that did not
+  land with the row affordances above or the search (see "What's been
+  implemented" → Editor).
+  Export from the row's menu: services and the whole place to Roblox
+  (Save/Publish, see below), to a local file; individual instances to
+  `.obj` and `.gltf` — genuinely useful native additions since Studio
+  itself has no built-in mesh export today. Roblox's own roadmap does
+  list glTF export, pushed from Late 2025 to Late 2026 in its
+  [fall 2026 update](https://devforum.roblox.com/t/creator-roadmap-2026-fall-update/4880208),
+  so `.gltf` may become Studio parity rather than an addition. Check what
+  it actually exports once it ships.
 - [ ] 📋 **Multi-instance drag from a row outside the selection.** Pressing
   such a row collapses the selection to it before the drag starts, so a
   multi-instance drag only carries the whole selection when grabbed by its

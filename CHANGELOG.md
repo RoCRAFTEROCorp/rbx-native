@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-10-01
+
+- **Search the Explorer.** The search field above the Explorer tree now
+  filters it as you type, showing every matching instance under the path
+  to it. A result can still be expanded and browsed without clearing the
+  search, which real Studio doesn't allow, and searching doesn't lose your
+  selection. — @Vikmanou
+
 ## 2026-09-30
 
 - **Light and High contrast themes.** Studio Settings › Appearance ›

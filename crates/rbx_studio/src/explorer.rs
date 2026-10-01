@@ -473,3 +473,41 @@ fn icon(class: &str) -> IconName {
 #[cfg(test)]
 #[path = "explorer/tests.rs"]
 mod tests;
+
+/// The Explorer's search: every row whose name contains `query` (ignoring
+/// case), under the rows that lead to it, which are opened so the match is
+/// in view. A match keeps all of its own children, so it can be expanded and
+/// browsed in place without clearing the search — real Studio's Explorer
+/// makes you clear it first (`view-descendants-of-matching-instances-in-
+/// explorer-search` on the devforum).
+///
+/// Built from clones of `items`, which share each row's expansion state:
+/// opening a match here opens it in the unfiltered tree too, so clearing the
+/// search leaves the place as browsed. A blank query filters nothing.
+pub(crate) fn search(items: &[TreeItem], query: &str) -> Vec<TreeItem> {
+    let query = query.trim().to_lowercase();
+    if query.is_empty() {
+        return items.to_vec();
+    }
+    items
+        .iter()
+        .filter_map(|item| matching(item, &query))
+        .collect()
+}
+
+fn matching(item: &TreeItem, query: &str) -> Option<TreeItem> {
+    if item.label.to_lowercase().contains(query) {
+        return Some(item.clone());
+    }
+    let children: Vec<TreeItem> = item
+        .children
+        .iter()
+        .filter_map(|child| matching(child, query))
+        .collect();
+    if children.is_empty() {
+        return None;
+    }
+    let mut kept = item.clone().expanded(true);
+    kept.children = children;
+    Some(kept)
+}

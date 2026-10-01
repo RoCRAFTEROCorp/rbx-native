@@ -268,7 +268,10 @@ impl Shell {
     pub(super) fn explorer_items(&self) -> Vec<TreeItem> {
         match self.ui_canvas_active() {
             true => self.explorer.ui_items(),
-            false => self.explorer.items(self.show_all_services),
+            false => crate::explorer::search(
+                &self.explorer.items(self.show_all_services),
+                &self.explorer_query,
+            ),
         }
     }
 

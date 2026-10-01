@@ -468,3 +468,41 @@ fn the_ui_view_lists_only_ui_roots_and_what_is_under_them() {
     assert_eq!(roots[1].children.len(), 1);
     assert_eq!(roots[1].children[0].id.as_ref(), "6");
 }
+
+fn labels(items: &[TreeItem]) -> Vec<String> {
+    items.iter().map(|item| item.label.to_string()).collect()
+}
+
+/// A search keeps the matches and the path to them, opens that path, and
+/// leaves each match's own children whole so it can be browsed in place.
+#[test]
+fn a_search_keeps_matches_under_their_path_with_their_children_whole() {
+    let door = TreeItem::new("door", "Door").child(TreeItem::new("weld", "Weld"));
+    let model = TreeItem::new("model", "House")
+        .child(door)
+        .child(TreeItem::new("roof", "Roof"));
+    let items = vec![
+        TreeItem::new("ws", "Workspace").child(model),
+        TreeItem::new("light", "Lighting"),
+    ];
+
+    let found = search(&items, "  DOOR ");
+    assert_eq!(labels(&found), ["Workspace"]);
+    let house = &found[0].children[0];
+    assert_eq!(labels(&house.children), ["Door"], "Roof does not match");
+    assert_eq!(
+        labels(&house.children[0].children),
+        ["Weld"],
+        "a match keeps its children"
+    );
+    assert!(
+        found[0].is_expanded() && house.is_expanded(),
+        "the path is opened"
+    );
+    // The clone shares the original's state: the unfiltered House is open too.
+    assert!(items[0].children[0].is_expanded());
+
+    assert_eq!(labels(&search(&items, "light")), ["Lighting"]);
+    assert!(search(&items, "nothing like it").is_empty());
+    assert_eq!(labels(&search(&items, "   ")), ["Workspace", "Lighting"]);
+}
