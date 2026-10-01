@@ -4,7 +4,7 @@
 
 - **Your script templates in the Model menu.** Templates in the
   `script_templates` folder were only in the ribbon's Script menu; the menu
-  bar's Model menu now lists them too, under its built-in script inserts,
+  bar's Model menu now lists them too, at its end after Group/Ungroup,
   named the same way (`Insert Enemy AI (Script)`). — @Vikmanou
 
 ## 2026-09-30

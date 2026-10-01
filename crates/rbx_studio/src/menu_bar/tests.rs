@@ -64,11 +64,11 @@ fn no_menu_opens_or_closes_on_a_separator() {
     }
 }
 
-/// The user's templates sit under the built-in script inserts, labelled
-/// the way the ribbon's Script menu labels them, each running the template
-/// at its own index.
+/// The user's templates close Model after a separator (a long list must
+/// not push Group/Ungroup off the screen), labelled the way the ribbon's
+/// Script menu labels them, each running the template at its own index.
 #[test]
-fn the_users_templates_are_listed_in_model_after_the_script_inserts() {
+fn the_users_templates_close_the_model_menu() {
     let templates = [
         Template {
             class: "Script",
@@ -93,12 +93,16 @@ fn the_users_templates_are_listed_in_model_after_the_script_inserts() {
             _ => None,
         })
         .collect();
-    let class = names
-        .iter()
-        .position(|name| name == "Insert ModuleScript (Class)")
-        .expect("the built-in inserts");
-    assert_eq!(names[class + 1], "Insert Enemy AI (Script)");
-    assert_eq!(names[class + 2], "Insert Signal (ModuleScript)");
+    assert_eq!(
+        names[names.len() - 3..],
+        [
+            "Ungroup",
+            "Insert Enemy AI (Script)",
+            "Insert Signal (ModuleScript)"
+        ]
+    );
+    let n = model.items.len();
+    assert!(matches!(model.items[n - 3], OwnedMenuItem::Separator));
 
     let second = model
         .items

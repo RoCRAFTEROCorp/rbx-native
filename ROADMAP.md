@@ -57,9 +57,9 @@ Roblox's own engine.
   `script_templates` folder in the config directory holds one `.luau` file
   per template under `Script/`, `LocalScript/` or `ModuleScript/`
   (`script_templates.rs`), each listed by its file name in the ribbon's
-  Script menu and, under the built-in inserts, in the menu bar's Model menu,
-  and a `Default.luau` in a class's folder replaces the built-in
-  starter every new script of that class gets.
+  Script menu and at the end of the menu bar's Model menu. A `Default.luau`
+  in a class's folder replaces the built-in starter every new script of
+  that class gets.
 
 ### Renderer (`rbx_viewer`)
 - [x] Lighting model reverse-engineered from Roblox's own decompiled

@@ -112,9 +112,10 @@ pub(crate) fn build(shell: Entity<Shell>, templates: &[Template], cx: &mut App) 
 /// Properties and Command Bar items stay placeholders — those panels have no
 /// show/hide command to wire them to yet — while Style Editor brings its own
 /// Style Editor document to the front (see `shell::style_panel`). The
-/// user's own script templates follow the built-in script inserts, named the
-/// way the ribbon's Script menu names them, so the two menus list the same
-/// things.
+/// user's own script templates close Model, after a separator, named the way
+/// the ribbon's Script menu names them, so the two menus list the same
+/// things; last because the list is the user's and can run long, and the
+/// popup does not scroll, so it must not push Group/Ungroup out of reach.
 fn menus(templates: &[Template]) -> Vec<OwnedMenu> {
     let mut model = vec![
         MenuItem::action("Insert Part", MenuInsertPart),
@@ -124,20 +125,21 @@ fn menus(templates: &[Template]) -> Vec<OwnedMenu> {
         MenuItem::action("Insert LocalScript", MenuInsertLocalScript),
         MenuItem::action("Insert ModuleScript", MenuInsertModuleScript),
         MenuItem::action("Insert ModuleScript (Class)", MenuInsertModuleScriptClass),
+        MenuItem::separator(),
+        MenuItem::action("Insert Object…", MenuPlaceholder).disabled(true),
+        MenuItem::separator(),
+        MenuItem::action("Group", MenuGroup),
+        MenuItem::action("Ungroup", MenuUngroup),
     ];
+    if !templates.is_empty() {
+        model.push(MenuItem::separator());
+    }
     model.extend(templates.iter().enumerate().map(|(index, template)| {
         MenuItem::action(
             format!("Insert {} ({})", template.name, template.class),
             MenuInsertTemplate { index },
         )
     }));
-    model.extend([
-        MenuItem::separator(),
-        MenuItem::action("Insert Object…", MenuPlaceholder).disabled(true),
-        MenuItem::separator(),
-        MenuItem::action("Group", MenuGroup),
-        MenuItem::action("Ungroup", MenuUngroup),
-    ]);
 
     vec![
         Menu::new("File")
