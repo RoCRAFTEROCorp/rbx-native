@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-10-01
+
+- **Your script templates in the Model menu.** Templates in the
+  `script_templates` folder were only in the ribbon's Script menu; the menu
+  bar's Model menu now lists them too, under its built-in script inserts,
+  named the same way (`Insert Enemy AI (Script)`). — @Vikmanou
+
 ## 2026-09-30
 
 - **Light and High contrast themes.** Studio Settings › Appearance ›
