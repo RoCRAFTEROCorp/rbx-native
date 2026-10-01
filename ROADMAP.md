@@ -463,7 +463,8 @@ Roblox's own engine.
     read back the way Roblox's own `Content.fromUri`/`fromAssetId` read
     theirs — an empty field (or asset `0`) clears it to none, and a bare
     number becomes `rbxassetid://<id>`. A `Content` pointing at an instance
-    in the place stays read-only until it has a picker.
+    in the place stays read-only; wiring an instance picker to it is what is
+    left.
   - **`Origin`**, which Studio lists under Transform: where a part's or
     model's pivot stands in the world, read as `GetPivot` reads it, and
     moved as `PivotTo` moves it when one is typed — a model's parts and its

@@ -365,7 +365,7 @@ pub(crate) fn parse(
             }))
         }
         Variant::Font(_) => parse_font(text).map(Variant::Font),
-        Variant::Content(_) => Ok(parse_content(text)),
+        Variant::Content(current) => parse_content(current, text),
         Variant::NumberSequence(_) => parse_number_sequence(text).map(Variant::NumberSequence),
         Variant::ColorSequence(current) => {
             parse_color_sequence(current, text).map(Variant::ColorSequence)

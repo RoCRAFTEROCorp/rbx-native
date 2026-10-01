@@ -5,9 +5,10 @@
 - **Edit a `Content` property as an asset URI.** A `Decal`'s `Texture` or a
   `MeshPart`'s `MeshId` was read-only in the Properties panel; it is now a
   field. An empty field (or `0`) clears it, a bare number becomes
-  `rbxassetid://<id>` the way Roblox's own `Content.fromAssetId` does, and
-  any other URI is kept as typed. A `Content` pointing at an instance in the
-  place stays read-only until there is an instance picker. — @Vikmanou
+  `rbxassetid://<id>` the way Roblox's own `Content.fromAssetId` does, a
+  number that is no asset id is refused, and any other URI is kept as typed.
+  A `Content` pointing at an instance in the place stays read-only; wiring
+  an instance picker to it is what is left. — @Vikmanou
 
 ## 2026-09-30
 
