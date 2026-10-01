@@ -32,6 +32,7 @@ mod panel_window;
 mod panels;
 mod property_element;
 mod quality;
+mod ref_pick;
 mod reparent;
 mod ribbon;
 mod roving;
@@ -863,6 +864,16 @@ impl Shell {
         let selected = Selection::of_item(tree.read(cx).selected_item());
         if selected == self.selection.get() {
             return;
+        }
+        // A `Ref` row waiting for its target takes this click instead: the
+        // property changes, and the tree's row goes back to the selection
+        // the panel is editing (see `shell::ref_pick`).
+        if let Some(target) = selected {
+            if self.finish_ref_pick(target, cx) {
+                let anchor = self.selection.get().and_then(|r| self.explorer.item(r));
+                tree.update(cx, |tree, cx| tree.set_selected_item(anchor.as_ref(), cx));
+                return;
+            }
         }
         if self.selection.set(selected) {
             self.selection_changed(cx);

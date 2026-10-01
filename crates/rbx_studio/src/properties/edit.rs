@@ -12,11 +12,14 @@ use rbx_reflection::ReflectionDatabase;
 mod font;
 mod many;
 pub(super) mod pivot;
+mod reference;
 mod sequence;
 
 use font::{font_text, parse_font, synced};
 pub(crate) use many::commit_all;
 use many::stored_or_default;
+use reference::{check_target, parse_ref};
+pub(crate) use reference::{ref_text, NIL_REF};
 use sequence::{
     color_sequence_text, number_sequence_text, parse_color_sequence, parse_number_sequence,
 };
@@ -99,6 +102,7 @@ pub(crate) fn edit_text(value: &Variant) -> Option<String> {
             rect.min.x, rect.min.y, rect.max.x, rect.max.y
         )),
         Variant::Font(font) => Some(font_text(font)),
+        Variant::Ref(target) => Some(ref_text(*target)),
         // Keypoints along a `;`, each one's numbers along a `,`. Nobody
         // types this — `crate::sequence_window`'s graph is the editor; see
         // `sequence` for why its commits still come through here.
@@ -233,6 +237,14 @@ pub(crate) fn commit(
     let canonical = db.canonical_name(&class, prop_name);
 
     let value = parse(&current, db, &class, canonical, text)?;
+    if let Variant::Ref(target) = value {
+        check_target(dom, db, &class, canonical, target)?;
+        if target == NIL_REF {
+            return dom
+                .remove_property(reference, &key)
+                .map_err(|err| err.to_string());
+        }
+    }
     // A saved place carries both `Font` and `FontFace`, and the viewer draws
     // the face; the enum edit would otherwise change nothing on screen.
     let partner =
@@ -362,6 +374,7 @@ pub(crate) fn parse(
             }))
         }
         Variant::Font(_) => parse_font(text).map(Variant::Font),
+        Variant::Ref(_) => parse_ref(text),
         Variant::NumberSequence(_) => parse_number_sequence(text).map(Variant::NumberSequence),
         Variant::ColorSequence(current) => {
             parse_color_sequence(current, text).map(Variant::ColorSequence)
