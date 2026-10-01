@@ -58,7 +58,7 @@ pub(super) struct AppearanceControls {
     theme: Entity<SelectState<Choices>>,
     themes: Vec<String>,
     ui_scale: Entity<SliderState>,
-    /// The Script font size field, on the roadmap.
+    /// The Script font size field, in px at 1x.
     script_font: Entity<InputState>,
     /// The repository link Install from GitHub takes.
     link: Entity<InputState>,
@@ -147,7 +147,8 @@ impl AppearanceControls {
                 .step(0.05)
                 .default_value(tokens::font_scale())
         });
-        let script_font = cx.new(|cx| InputState::new(window, cx).default_value("13"));
+        let size = shell.read(cx).script_font_size();
+        let script_font = cx.new(|cx| InputState::new(window, cx).default_value(format!("{size}")));
         let link = cx.new(|cx| InputState::new(window, cx).placeholder("github.com/owner/repo"));
 
         let subscriptions = vec![
@@ -185,6 +186,19 @@ impl AppearanceControls {
                     let scale = (value * 20.).round() / 20.;
                     this.shell
                         .update(cx, |shell, cx| shell.set_font_scale(scale, cx));
+                }
+            }),
+            // As typed, like the snap increments: text that is not yet a
+            // size in range (a `1` on the way to `16`) leaves it alone.
+            cx.subscribe(&script_font, |this, input, event: &InputEvent, cx| {
+                if !matches!(event, InputEvent::Change) {
+                    return;
+                }
+                let (low, high) = crate::settings::SCRIPT_FONT_SIZE_RANGE;
+                let typed = input.read(cx).value().trim().parse::<f32>().ok();
+                if let Some(size) = typed.filter(|size| (low..=high).contains(size)) {
+                    this.shell
+                        .update(cx, |shell, cx| shell.set_script_font_size(size, cx));
                 }
             }),
             cx.subscribe_in(&link, window, |this, _, event: &InputEvent, _, cx| {
@@ -454,8 +468,7 @@ impl SettingsWindow {
                     "Script font size",
                     number(&self.appearance.script_font, "px", false),
                 )
-                .describe("The Script Editor only, on top of the UI scale.")
-                .soon(),
+                .describe("The Script Editor only, 8 to 32, on top of the UI scale."),
             ],
         );
 

@@ -1382,6 +1382,12 @@ Roblox's own engine.
   description or `settings.json` key and shows it live. Keyboard shortcuts
   stay a window of their own, as in Studio; what the screen still shows as
   `SOON` is its own bullet under "What's planned".
+- [x] **Script font size** in Studio Settings › Appearance: the Script
+  Editor's text size, 8 to 32 px, multiplied by the UI scale like every
+  other size, so the editor now also follows the UI scale, which it did
+  not before. It defaults to the toolkit's own 13 px code size, so nothing
+  changes for a file without the setting; the editor's rows follow the
+  size.
 
 ### Platform
 - [x] Linux (X11) — the daily-driven target.
@@ -1966,7 +1972,7 @@ against `Roblox/creator-docs` rather than assumed:
   **default services** (which services the Explorer lists when Show all
   services is off), the **Auto-Recovery** toggle, interval and folder and
   Play's **test-copy name** (waiting on the autosave item below),
-  **several accounts**, **named layouts**, **script font size**, the
+  **several accounts**, **named layouts**, the
   eyedropper in the colour popover (GPUI has no way to sample the
   screen), and
   **Keyboard shortcuts** — real Studio's own separate

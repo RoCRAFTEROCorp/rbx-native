@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-10-01
+
+- **Script font size.** Studio Settings › Appearance › Script font size is
+  live: the Script Editor's text, 8 to 32 px, saved with the other
+  settings. It sits on top of the UI scale, so the Script Editor now grows
+  and shrinks with the rest of the window too, which it didn't before.
+  — @Vikmanou
+
 ## 2026-09-30
 
 - **Light and High contrast themes.** Studio Settings › Appearance ›

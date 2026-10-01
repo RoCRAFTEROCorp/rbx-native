@@ -274,6 +274,8 @@ pub(crate) struct Shell {
     /// the panel's overflow menu (see `shell::dock`'s `dropdown_menu`) and
     /// Settings. Persisted.
     output_show_timestamps: bool,
+    /// The Script Editor's text size at 1x; see `Settings::script_font_size`.
+    script_font_size: f32,
     output_scroll: ScrollHandle,
     /// The Viewport dock's own, for when it is docked somewhere too short
     /// for its settings — see `shell::viewport_dock`.
@@ -388,6 +390,7 @@ impl Shell {
             icon_pack,
             unfocused_fps,
             font_scale,
+            script_font_size,
             large_targets,
             reduce_motion,
             docks,
@@ -603,6 +606,7 @@ impl Shell {
             output: output::OutputLog::default(),
             output_filter: output::OutputFilter::default(),
             output_show_timestamps: output_timestamps,
+            script_font_size,
             output_scroll: ScrollHandle::new(),
             viewport_scroll: ScrollHandle::new(),
             viewport_rows: Rc::default(),
@@ -1100,6 +1104,22 @@ impl Shell {
         cx.notify();
     }
 
+    pub(super) fn script_font_size(&self) -> f32 {
+        self.script_font_size
+    }
+
+    /// Sets the Script Editor's text size, clamped to what the setting
+    /// accepts, from Studio Settings' Script Font Size field.
+    pub(super) fn set_script_font_size(&mut self, size: f32, cx: &mut Context<Self>) {
+        let size = crate::settings::clamp_script_font_size(size);
+        if size == self.script_font_size {
+            return;
+        }
+        self.script_font_size = size;
+        self.save_settings();
+        cx.notify();
+    }
+
     /// Flips the viewport's main camera between perspective and orthographic
     /// projection — see `WorkspaceView::set_orthographic`.
     fn set_orthographic(&mut self, orthographic: bool, cx: &mut Context<Self>) {
@@ -1240,6 +1260,7 @@ impl Shell {
             icon_pack: self.icon_pack,
             unfocused_fps: self.unfocused_fps,
             font_scale: tokens::font_scale(),
+            script_font_size: self.script_font_size,
             large_targets: tokens::large_targets(),
             reduce_motion: self.reduce_motion,
             docks: self.layout.saved(),
