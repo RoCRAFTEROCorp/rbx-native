@@ -118,20 +118,6 @@ impl MenuNav {
     }
 }
 
-/// Where `movement` takes the highlight over `len` rows. With nothing
-/// highlighted yet, Down and Home start at the top, Up and End at the
-/// bottom. `None` only for an empty menu.
-fn moved(movement: Move, from: Option<usize>, len: usize) -> Option<usize> {
-    if len == 0 {
-        return None;
-    }
-    Some(match (movement, from) {
-        (Move::Previous | Move::Last, None) => len - 1,
-        (_, None) => 0,
-        (movement, Some(from)) => movement.apply(from, len),
-    })
-}
-
 impl Item {
     fn is_enabled(&self) -> bool {
         self.enabled && self.action.is_some()
@@ -230,7 +216,7 @@ pub(super) fn dropdown_at(
                 handle.update(cx, |shell, cx| {
                     shell.open_menu = open.then_some(menu);
                     shell.menu_nav.cursor = (open && keyboard)
-                        .then(|| moved(Move::First, None, len))
+                        .then(|| Move::First.from(None, len))
                         .flatten();
                     cx.notify();
                 });
@@ -252,7 +238,7 @@ pub(super) fn dropdown_at(
                     };
                     cx.stop_propagation();
                     key_shell.update(cx, |shell, cx| {
-                        shell.menu_nav.cursor = moved(movement, shell.menu_nav.cursor, len);
+                        shell.menu_nav.cursor = movement.from(shell.menu_nav.cursor, len);
                         cx.notify();
                     });
                 })
@@ -386,31 +372,4 @@ pub(super) fn row_chrome(
         .when(checked, |this| {
             this.child(Icon::new(IconName::Check).size(px(10.)))
         })
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{moved, Move};
-
-    #[test]
-    fn with_nothing_highlighted_down_starts_at_the_top_and_up_at_the_bottom() {
-        assert_eq!(moved(Move::Next, None, 4), Some(0));
-        assert_eq!(moved(Move::First, None, 4), Some(0));
-        assert_eq!(moved(Move::Previous, None, 4), Some(3));
-        assert_eq!(moved(Move::Last, None, 4), Some(3));
-    }
-
-    #[test]
-    fn a_highlight_moves_and_wraps_like_a_roving_group() {
-        assert_eq!(moved(Move::Next, Some(3), 4), Some(0));
-        assert_eq!(moved(Move::Previous, Some(0), 4), Some(3));
-        assert_eq!(moved(Move::Next, Some(1), 4), Some(2));
-    }
-
-    #[test]
-    fn an_empty_menu_has_nothing_to_highlight() {
-        for movement in [Move::Previous, Move::Next, Move::First, Move::Last] {
-            assert_eq!(moved(movement, None, 0), None);
-        }
-    }
 }
