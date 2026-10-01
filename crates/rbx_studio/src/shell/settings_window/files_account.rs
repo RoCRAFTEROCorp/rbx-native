@@ -1,60 +1,112 @@
-//! The Files & recovery and Account pages. Everything on
-//! them but the key card is on the roadmap: autosave, several accounts,
-//! and Discord presence are each a planned item of their own.
+//! The Files & recovery and Account pages. Auto-Recovery is live; the
+//! test-copy name waits on Play, and on Account everything but the key card
+//! is on the roadmap: several accounts and Discord presence are each a
+//! planned item of their own.
 
+use gpui_kit::component::slider::{SliderEvent, SliderState, SliderValue};
 use gpui_kit::component::{h_flex, v_flex};
 use gpui_kit::*;
 
 use crate::launcher::{self, KeyTag};
+use crate::recovery::{self, INTERVAL_DEFAULT, INTERVAL_MINUTES};
 use crate::tokens;
 
 use super::kit::{
-    icon, mono, readout, secondary_button, still_slider, still_toggle, text, Row, Section,
+    icon, mono, readout, secondary_button, still_toggle, text, ticked_slider, toggle, Row, Section,
 };
 use super::nav::tilde;
-use super::SettingsWindow;
+use super::{SettingsWindow, Shell};
 
-/// Auto-Recovery's interval stops, in minutes.
-const INTERVAL_MINUTES: (u32, u32) = (1, 10);
-/// The interval a first run would get: Studio's own default is five
-/// minutes or so; four sits on a stop and reads as "a few".
-const INTERVAL_DEFAULT: u32 = 4;
+/// The Interval row's slider, one stop per minute.
+pub(super) struct RecoveryControls {
+    interval: Entity<SliderState>,
+}
+
+impl RecoveryControls {
+    pub(super) fn new(
+        shell: &Entity<Shell>,
+        cx: &mut Context<SettingsWindow>,
+    ) -> (Self, Subscription) {
+        let (low, high) = INTERVAL_MINUTES;
+        let minutes = shell.read(cx).recovery.minutes();
+        let interval = cx.new(|_| {
+            SliderState::new()
+                .min(low as f32)
+                .max(high as f32)
+                .step(1.)
+                .default_value(minutes as f32)
+        });
+        let subscription = cx.subscribe(&interval, |this, _, event: &SliderEvent, cx| {
+            if let SliderEvent::Change(SliderValue::Single(value)) = event {
+                let minutes = value.round() as u32;
+                this.shell
+                    .update(cx, |shell, cx| shell.set_recovery_minutes(minutes, cx));
+            }
+        });
+        (RecoveryControls { interval }, subscription)
+    }
+}
 
 impl SettingsWindow {
-    pub(super) fn files_page(&self) -> Vec<Section> {
+    pub(super) fn files_page(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Vec<Section> {
+        let (enabled, minutes) = {
+            let state = &self.shell.read(cx).recovery;
+            (state.enabled(), state.minutes())
+        };
+        // A reset elsewhere moves the setting; the slider follows it.
+        let interval = self.recovery.interval.clone();
+        if (interval.read(cx).value().end() - minutes as f32).abs() > 1e-4 {
+            interval.update(cx, |state, cx| state.set_value(minutes as f32, window, cx));
+        }
         let (low, high) = INTERVAL_MINUTES;
-        let fraction = (INTERVAL_DEFAULT - low) as f32 / (high - low) as f32;
-        let folder = crate::settings::default_config_dir()
-            .map(|dir| tilde(&dir.join("recovery")))
-            .unwrap_or_default();
+        let ticks: Vec<f32> = (low..=high)
+            .map(|stop| (stop - low) as f32 / (high - low) as f32)
+            .collect();
+        let folder = recovery::folder();
+        let shown = folder.as_deref().map(tilde).unwrap_or_default();
         vec![
             Section::new(
                 "Auto-Recovery",
                 vec![
-                    Row::new("Auto-Recovery", still_toggle(true))
-                        .describe("Save a recovery copy of every open place in the background.")
-                        .soon_faded(),
+                    Row::new(
+                        "Auto-Recovery",
+                        toggle(
+                            "auto-recovery",
+                            enabled,
+                            self.set(move |shell, cx| shell.set_auto_recovery(!enabled, cx)),
+                        ),
+                    )
+                    .describe("Save a recovery copy of the open place in the background while it has unsaved changes.")
+                    .changed(!enabled, |shell, cx| shell.set_auto_recovery(true, cx)),
                     Row::new(
                         "Interval",
                         h_flex()
                             .gap(px(10.))
                             .items_center()
-                            .child(still_slider(fraction, 180., (high - low + 1) as usize))
-                            .child(
-                                div()
-                                    .opacity(0.4)
-                                    .child(readout(format!("{INTERVAL_DEFAULT} min"))),
-                            ),
+                            .child(ticked_slider(&interval, 180., &ticks, cx))
+                            .child(readout(format!("{minutes} min"))),
                     )
-                    .describe("How often a recovery copy is written.")
+                    .describe("How often a recovery copy is written. Ctrl+S deletes it.")
                     .indent()
-                    .soon_faded(),
+                    .changed(minutes != INTERVAL_DEFAULT, |shell, cx| {
+                        shell.set_recovery_minutes(INTERVAL_DEFAULT, cx)
+                    }),
                     Row::new(
                         "Recovery folder",
-                        secondary_button("open-auto-saves", "folder", "Open auto-saves"),
+                        secondary_button("open-auto-saves", "folder", "Open auto-saves").on_click(
+                            move |_, _, cx| {
+                                if let Some(folder) = &folder {
+                                    let _ = std::fs::create_dir_all(folder);
+                                    cx.open_with_system(folder);
+                                }
+                            },
+                        ),
                     )
-                    .describe_mono(folder)
-                    .soon(),
+                    .describe_mono(shown),
                 ],
             ),
             Section::new(

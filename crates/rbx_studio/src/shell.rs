@@ -32,6 +32,7 @@ mod panel_window;
 mod panels;
 mod property_element;
 mod quality;
+mod recovery;
 mod reparent;
 mod ribbon;
 mod roving;
@@ -347,6 +348,8 @@ pub(crate) struct Shell {
     /// popover so that opening one closes the last, and so a menu item can
     /// close the menu it was clicked in (see `shell::menu`).
     open_menu: Option<MenuId>,
+    /// Auto-Recovery's switch, interval and progress (see `shell::recovery`).
+    recovery: recovery::Recovery,
     /// Which panel is on which edge and how big each edge is — the data
     /// that used to be the order of three `.child()` calls (see
     /// `shell::layout`). Persisted, along with the drag in progress if
@@ -388,6 +391,8 @@ impl Shell {
             icon_pack,
             unfocused_fps,
             font_scale,
+            auto_recovery,
+            recovery_minutes,
             large_targets,
             reduce_motion,
             docks,
@@ -626,6 +631,7 @@ impl Shell {
             ribbon_tab: ribbon::Tab::default(),
             document: Document::default(),
             open_menu: None,
+            recovery: recovery::Recovery::new(auto_recovery, recovery_minutes),
             // A saved layout wins over the default, and is total over
             // whatever the file actually held (see `layout::Layout::restore`).
             layout: layout::Layout::restore(&docks),
@@ -804,6 +810,7 @@ impl Shell {
         shell.apply_debug_save(cx);
 
         shell.watch_theme(cx);
+        shell.watch_recovery(cx);
 
         shell
     }
@@ -1240,6 +1247,8 @@ impl Shell {
             icon_pack: self.icon_pack,
             unfocused_fps: self.unfocused_fps,
             font_scale: tokens::font_scale(),
+            auto_recovery: self.recovery.enabled(),
+            recovery_minutes: self.recovery.minutes(),
             large_targets: tokens::large_targets(),
             reduce_motion: self.reduce_motion,
             docks: self.layout.saved(),

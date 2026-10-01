@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-10-01
+
+- **Auto-Recovery.** While a place has unsaved changes, the editor now
+  writes a copy of it in the background every few minutes, so a crash or a
+  killed window costs minutes of work instead of everything since the last
+  Ctrl+S. Studio Settings › Files & recovery turns it on or off (on by
+  default), sets the interval (1 to 10 minutes, four by default) and opens
+  the folder the copies are in. Saving deletes the place's copy. — @Vikmanou
+
 ## 2026-09-30
 
 - **Light and High contrast themes.** Studio Settings › Appearance ›

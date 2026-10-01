@@ -13,8 +13,8 @@ mod controls;
 mod row;
 
 pub(super) use controls::{
-    ghost_icon, readout, secondary_button, segmented, slider, still_slider, still_toggle,
-    ticked_slider, toggle, OnPick,
+    ghost_icon, readout, secondary_button, segmented, slider, still_toggle, ticked_slider, toggle,
+    OnPick,
 };
 pub(super) use row::{section, section_card, Reset, Row, Section};
 

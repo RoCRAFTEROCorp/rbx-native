@@ -70,7 +70,9 @@ impl Shell {
     /// entry point, so a menu click runs the exact same path Ctrl+S does.
     pub(crate) fn save(&mut self, cx: &mut Context<Self>) {
         let path = self.path.clone();
-        self.write_to(&path, cx);
+        if self.write_to(&path, cx) {
+            self.saved();
+        }
     }
 
     /// `RBX_STUDIO_SAVE_AS=<path>`: documented in `save`'s module doc
@@ -89,15 +91,17 @@ impl Shell {
     /// Command Bar's own feedback label (see [`record_outcome`]). On failure
     /// the on-disk file at `path` is left exactly as it was (see
     /// `save::save`).
-    fn write_to(&mut self, path: &std::path::Path, cx: &mut Context<Self>) {
+    fn write_to(&mut self, path: &std::path::Path, cx: &mut Context<Self>) -> bool {
         // An open script editor's text reaches the DOM on a debounce (see
         // `shell::scripts`); saving must write what is on screen, not what
         // the DOM happened to hold when typing last paused.
         self.flush_script_edits(cx);
         let result = save::save(&self.dom, self.format, path);
+        let saved = result.is_ok();
         let feedback = record_outcome(&mut self.output, result, path);
         self.command_bar.set_feedback(feedback);
         cx.notify();
+        saved
     }
 }
 

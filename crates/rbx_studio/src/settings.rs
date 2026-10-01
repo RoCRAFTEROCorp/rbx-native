@@ -56,6 +56,10 @@ pub(crate) struct Settings {
     /// WCAG 1.4.4's 200% resize, since there is no browser zoom to lean on;
     /// the range is Blender's Resolution Scale range, for the same reason.
     pub(crate) font_scale: f32,
+    /// Whether Auto-Recovery writes a background copy of the open place
+    /// (see `crate::recovery`), and how many minutes apart.
+    pub(crate) auto_recovery: bool,
+    pub(crate) recovery_minutes: u32,
     /// Raises the minimum pointer target from WCAG 2.5.8's 24px floor to
     /// 2.5.5's 44px one — Blender's "editor-area padding" idea, which its
     /// own manual describes as improving usability "on pen tablets, touch
@@ -112,6 +116,8 @@ impl Default for Settings {
             icon_pack: IconPack::Dark,
             unfocused_fps: UnfocusedFps::DEFAULT,
             font_scale: 1.,
+            auto_recovery: true,
+            recovery_minutes: crate::recovery::INTERVAL_DEFAULT,
             large_targets: false,
             reduce_motion: None,
             argon_address: String::new(),
@@ -263,6 +269,15 @@ fn load_from(path: &Path) -> Settings {
         icon_pack,
         unfocused_fps,
         font_scale,
+        auto_recovery: value
+            .get("auto_recovery")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(true),
+        recovery_minutes: value
+            .get("recovery_minutes")
+            .and_then(|v| v.as_u64())
+            .map(crate::recovery::clamp_minutes)
+            .unwrap_or(crate::recovery::INTERVAL_DEFAULT),
         large_targets: value
             .get("large_targets")
             .and_then(|v| v.as_bool())
@@ -396,6 +411,8 @@ fn save_to(settings: &Settings, path: &Path) -> Result<(), SettingsError> {
         "icon_pack": format_icon_pack(settings.icon_pack),
         "unfocused_fps": settings.unfocused_fps.fps(),
         "font_scale": settings.font_scale,
+        "auto_recovery": settings.auto_recovery,
+        "recovery_minutes": settings.recovery_minutes,
         "large_targets": settings.large_targets,
         "reduce_motion": settings.reduce_motion,
         "docks": {
@@ -757,6 +774,31 @@ mod tests {
 
         save_to(&settings, &path).expect("save settings");
         assert_eq!(load_from(&path).font_scale, 1.5);
+    }
+
+    #[test]
+    fn auto_recovery_round_trips_and_defaults_on_every_four_minutes() {
+        let path = temp_settings_path();
+        let settings = Settings {
+            auto_recovery: false,
+            recovery_minutes: 9,
+            ..Settings::default()
+        };
+        save_to(&settings, &path).expect("save settings");
+        let loaded = load_from(&path);
+        assert!(!loaded.auto_recovery);
+        assert_eq!(loaded.recovery_minutes, 9);
+
+        std::fs::write(&path, br#"{"recovery_minutes": 60}"#).expect("write settings");
+        let loaded = load_from(&path);
+        assert!(loaded.auto_recovery);
+        assert_eq!(loaded.recovery_minutes, 10);
+
+        std::fs::write(&path, b"{}").expect("write settings");
+        assert_eq!(
+            load_from(&path).recovery_minutes,
+            crate::recovery::INTERVAL_DEFAULT
+        );
     }
 
     /// The dock layout is the one preference a user can wreck by accident
