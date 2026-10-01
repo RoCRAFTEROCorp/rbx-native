@@ -252,11 +252,11 @@ fn mapped_shade(mapped: Mapped) -> vec3<f32> {
     surface.world_position = mapped.world_position;
     surface.roughness = mapped.roughness;
     surface.shininess = exp2(mix(SHININESS_MAX, SHININESS_MIN, mapped.roughness));
-    // `PLASTIC_SPEC_STRENGTH`, from `lighting.wgsl` (concatenated ahead of this
-    // file): every textured material is scaled from Plastic's own strength so
-    // the two never look like they belong to different renderers. The two used
-    // to drift — this file kept its own stale copy of the number.
-    surface.spec_strength = PLASTIC_SPEC_STRENGTH * (1.0 - mapped.roughness);
+    // Plastic's strength, `lighting.calibration.y` (see `lighting.wgsl`):
+    // every textured material is scaled from Plastic's own strength so the two
+    // never look like they belong to different renderers. The two used to
+    // drift — this file kept its own stale copy of the number.
+    surface.spec_strength = lighting.calibration.y * (1.0 - mapped.roughness);
     // A metal reflects its own colour where a dielectric reflects white, and
     // the smoother it is the more of the sky it shows.
     surface.spec_tint = mix(vec3<f32>(1.0), surface.albedo, mapped.metalness);

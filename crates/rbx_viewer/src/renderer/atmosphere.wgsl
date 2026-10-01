@@ -11,7 +11,8 @@
 // Quartered from the initial fit across three captures, and still a trade-off —
 // a Density 0.2 canyon wants no haze at 200 studs while a Density 0.3 plate
 // wants more at 300, which no linear-in-Density exponential can give both.
-const ATMOSPHERE_DENSITY_SCALE: f32 = 0.0013;
+// The scale itself, 0.0013 as tuned, is `lighting.calibration.x`, which the
+// user can recalibrate (Studio Settings › Viewport › Advanced).
 const ATMOSPHERE_SCATTER: vec3<f32> = vec3<f32>(0.389, 0.641, 1.0);
 // Offset is a 0-1 dial in Studio; this is the clear radius it buys at 1.
 const ATMOSPHERE_OFFSET_STUDS: f32 = 400.0;
@@ -39,7 +40,7 @@ fn haze_color(direction: vec3<f32>) -> vec3<f32> {
 
 /// What fraction of a ray survives `studs` of atmosphere, per channel.
 fn transmittance(studs: f32) -> vec3<f32> {
-    return exp2(-studs * lighting.fog_range.z * ATMOSPHERE_DENSITY_SCALE * ATMOSPHERE_SCATTER);
+    return exp2(-studs * lighting.fog_range.z * lighting.calibration.x * ATMOSPHERE_SCATTER);
 }
 
 /// What the far end of the world looks like: the atmosphere's own haze where the

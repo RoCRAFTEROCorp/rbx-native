@@ -773,6 +773,12 @@ impl WorkspaceView {
         self.pump.camera_feel(feel);
     }
 
+    /// The renderer's tuned constants, taken between two frames like the
+    /// camera feel.
+    pub(crate) fn set_calibration(&self, calibration: rbx_viewer::Calibration) {
+        self.pump.calibration(calibration);
+    }
+
     /// Swaps the main camera between perspective and orthographic (parallel)
     /// projection at runtime, the same way `set_quality` above switches
     /// levels: the render thread owns the viewer, so the switch happens

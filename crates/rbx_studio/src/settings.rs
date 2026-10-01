@@ -56,6 +56,9 @@ pub(crate) struct Settings {
     /// WCAG 1.4.4's 200% resize, since there is no browser zoom to lean on;
     /// the range is Blender's Resolution Scale range, for the same reason.
     pub(crate) font_scale: f32,
+    /// The renderer's tuned constants (Studio Settings › Viewport ›
+    /// Advanced). The default is the tuned set; see `rbx_viewer::Calibration`.
+    pub(crate) calibration: rbx_viewer::Calibration,
     /// Raises the minimum pointer target from WCAG 2.5.8's 24px floor to
     /// 2.5.5's 44px one — Blender's "editor-area padding" idea, which its
     /// own manual describes as improving usability "on pen tablets, touch
@@ -112,6 +115,7 @@ impl Default for Settings {
             icon_pack: IconPack::Dark,
             unfocused_fps: UnfocusedFps::DEFAULT,
             font_scale: 1.,
+            calibration: rbx_viewer::Calibration::default(),
             large_targets: false,
             reduce_motion: None,
             argon_address: String::new(),
@@ -263,6 +267,7 @@ fn load_from(path: &Path) -> Settings {
         icon_pack,
         unfocused_fps,
         font_scale,
+        calibration: read_calibration(&value),
         large_targets: value
             .get("large_targets")
             .and_then(|v| v.as_bool())
@@ -384,6 +389,37 @@ fn parse_unfocused_fps(fps: u64) -> UnfocusedFps {
     }
 }
 
+/// The calibration, each value falling back to its tuned default when
+/// missing, not a number, or outside [`calibration_range`].
+fn read_calibration(value: &serde_json::Value) -> rbx_viewer::Calibration {
+    let tuned = rbx_viewer::Calibration::default();
+    let read = |key: &str, default: f32| {
+        value
+            .get("calibration")
+            .and_then(|calibration| calibration.get(key))
+            .and_then(serde_json::Value::as_f64)
+            .map(|number| number as f32)
+            .filter(|number| {
+                let (low, high) = calibration_range(default);
+                number.is_finite() && (low..=high).contains(number)
+            })
+            .unwrap_or(default)
+    };
+    rbx_viewer::Calibration {
+        sun_base: read("sun_base", tuned.sun_base),
+        atmosphere_density_scale: read("atmosphere_density_scale", tuned.atmosphere_density_scale),
+        plastic_spec_strength: read("plastic_spec_strength", tuned.plastic_spec_strength),
+    }
+}
+
+/// What a calibration value may be: above zero, and within ten times its
+/// tuned value either way. These are nudges for a place lit unlike the
+/// captures they were tuned against; a value past that is a typo, and the
+/// render it gives (a black sun, a white-out fog) is no calibration at all.
+pub(crate) fn calibration_range(tuned: f32) -> (f32, f32) {
+    (tuned / 10., tuned * 10.)
+}
+
 fn save_to(settings: &Settings, path: &Path) -> Result<(), SettingsError> {
     let [camera, snap] = settings.controls.json();
     let value = serde_json::json!({
@@ -396,6 +432,11 @@ fn save_to(settings: &Settings, path: &Path) -> Result<(), SettingsError> {
         "icon_pack": format_icon_pack(settings.icon_pack),
         "unfocused_fps": settings.unfocused_fps.fps(),
         "font_scale": settings.font_scale,
+        "calibration": {
+            "sun_base": settings.calibration.sun_base,
+            "atmosphere_density_scale": settings.calibration.atmosphere_density_scale,
+            "plastic_spec_strength": settings.calibration.plastic_spec_strength,
+        },
         "large_targets": settings.large_targets,
         "reduce_motion": settings.reduce_motion,
         "docks": {
@@ -757,6 +798,36 @@ mod tests {
 
         save_to(&settings, &path).expect("save settings");
         assert_eq!(load_from(&path).font_scale, 1.5);
+    }
+
+    #[test]
+    fn calibration_round_trips_and_a_value_out_of_range_falls_back_alone() {
+        let path = temp_settings_path();
+        let calibration = rbx_viewer::Calibration {
+            sun_base: 0.6,
+            atmosphere_density_scale: 0.002,
+            plastic_spec_strength: 0.2,
+        };
+        let settings = Settings {
+            calibration,
+            ..Settings::default()
+        };
+        save_to(&settings, &path).expect("save settings");
+        assert_eq!(load_from(&path).calibration, calibration);
+
+        std::fs::write(
+            &path,
+            br#"{"calibration": {"sun_base": 50, "plastic_spec_strength": 0.3}}"#,
+        )
+        .expect("write settings");
+        let tuned = rbx_viewer::Calibration::default();
+        let loaded = load_from(&path).calibration;
+        assert_eq!(loaded.sun_base, tuned.sun_base);
+        assert_eq!(
+            loaded.atmosphere_density_scale,
+            tuned.atmosphere_density_scale
+        );
+        assert_eq!(loaded.plastic_spec_strength, 0.3);
     }
 
     /// The dock layout is the one preference a user can wreck by accident

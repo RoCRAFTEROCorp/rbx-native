@@ -45,7 +45,33 @@ const DEFAULT_SHADOW_SOFTNESS: f32 = 0.2;
 /// 70/255, sun 46 degrees up at 14:30, EnvironmentDiffuseScale 1. The value
 /// 0.45 matches measured grey face outputs to Studio when tone mapping
 /// differences are accounted for.
-const SUN_BASE: f32 = 0.45;
+pub(crate) const SUN_BASE: f32 = 0.45;
+
+/// The renderer's three empirically tuned constants, as values a user can
+/// nudge for a place lit unlike the captures they were tuned against.
+/// [`Calibration::default`] is the tuned set, so a viewer nobody calibrates
+/// draws exactly as before.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Calibration {
+    /// [`SUN_BASE`]: the sun lamp's radiance at `Brightness = 1`.
+    pub sun_base: f32,
+    /// `ATMOSPHERE_DENSITY_SCALE` in `renderer/atmosphere.wgsl`'s terms:
+    /// optical depth per stud per unit `Atmosphere.Density`.
+    pub atmosphere_density_scale: f32,
+    /// Plastic's highlight strength at full `EnvironmentSpecularScale`, which
+    /// every textured material is scaled from (`renderer/lighting.wgsl`).
+    pub plastic_spec_strength: f32,
+}
+
+impl Default for Calibration {
+    fn default() -> Self {
+        Calibration {
+            sun_base: SUN_BASE,
+            atmosphere_density_scale: 0.0013,
+            plastic_spec_strength: 0.28,
+        }
+    }
+}
 /// The second lamp, opposite the sun: what keeps a shaded face from reading as a
 /// flat silhouette. Roblox feeds it from its own constant buffer; a tenth of the
 /// sun, tinted cool, is what lands the shaded side of that same 163-grey part

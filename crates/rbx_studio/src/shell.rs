@@ -163,6 +163,8 @@ pub(crate) struct Shell {
     /// The free camera's feel (see `settings::Controls`). Persisted, with
     /// the snap increments, which live in [`Shell::transform`].
     camera_feel: rbx_viewer::CameraFeel,
+    /// See `Settings::calibration`; persisted.
+    calibration: rbx_viewer::Calibration,
     /// The three composite widgets that are one Tab stop each: the
     /// document tab strip, the ribbon's category tabs, and the ribbon's own
     /// controls. See `shell::roving`.
@@ -388,6 +390,7 @@ impl Shell {
             icon_pack,
             unfocused_fps,
             font_scale,
+            calibration,
             large_targets,
             reduce_motion,
             docks,
@@ -506,6 +509,7 @@ impl Shell {
             view.set_dragger(dragger);
             view.set_transform(transform);
             view.set_camera_feel(controls.camera);
+            view.set_calibration(calibration);
             view
         });
         let camera_synced = cx.subscribe(&viewport, |shell, _, event: &PoseSynced, cx| {
@@ -561,6 +565,7 @@ impl Shell {
             unfocused_fps,
             dragger,
             camera_feel: controls.camera,
+            calibration,
             document_nav: roving::Roving::horizontal(),
             ribbon_tabs_nav: roving::Roving::horizontal(),
             ribbon_nav: roving::Roving::horizontal(),
@@ -930,6 +935,27 @@ impl Shell {
         cx.notify();
     }
 
+    pub(super) fn calibration(&self) -> rbx_viewer::Calibration {
+        self.calibration
+    }
+
+    /// Recalibrates the renderer's tuned constants, from Studio Settings ›
+    /// Viewport › Advanced.
+    pub(super) fn set_calibration(
+        &mut self,
+        calibration: rbx_viewer::Calibration,
+        cx: &mut Context<Self>,
+    ) {
+        if calibration == self.calibration {
+            return;
+        }
+        self.calibration = calibration;
+        self.viewport
+            .update(cx, |viewport, _| viewport.set_calibration(calibration));
+        self.save_settings();
+        cx.notify();
+    }
+
     /// How the free camera turns, flies and eases.
     fn set_camera_feel(&mut self, feel: rbx_viewer::CameraFeel, cx: &mut Context<Self>) {
         if feel == self.camera_feel {
@@ -1240,6 +1266,7 @@ impl Shell {
             icon_pack: self.icon_pack,
             unfocused_fps: self.unfocused_fps,
             font_scale: tokens::font_scale(),
+            calibration: self.calibration,
             large_targets: tokens::large_targets(),
             reduce_motion: self.reduce_motion,
             docks: self.layout.saved(),
