@@ -1382,6 +1382,13 @@ Roblox's own engine.
   description or `settings.json` key and shows it live. Keyboard shortcuts
   stay a window of their own, as in Studio; what the screen still shows as
   `SOON` is its own bullet under "What's planned".
+- [x] **Named dock layouts** in Studio Settings › Layout (Blender's
+  workspaces): the current arrangement saved under a name — every edge's
+  docks, tabs and size, and which panels float or are shut — and switched
+  back to with a click, through the same `Layout::restore` a launch uses,
+  so a floating panel gets its window back. The one matching the docks is
+  marked Active; saving under a used name replaces it, and each has a
+  delete. Kept in `settings.json` as `named_layouts`.
 
 ### Platform
 - [x] Linux (X11) — the daily-driven target.
@@ -1826,8 +1833,6 @@ against `Roblox/creator-docs` rather than assumed:
   - **A separate editor/viewport font size**, independent of the UI scale —
     VS Code's split between `window.zoomLevel` and `editor.fontSize`.
     Nothing needs it yet; the moment the script editor grows, it will.
-  - **Named dock layouts.** Sizes persist and Reset Layout exists; saving
-    several under names (Blender's "workspaces") is the piece that does not.
   - **44×44 targets on primary and destructive controls by default** (2.5.5),
     rather than only when Large Click Targets is on — Save, Delete, and
     Play/Stop once they exist.
@@ -1966,7 +1971,7 @@ against `Roblox/creator-docs` rather than assumed:
   **default services** (which services the Explorer lists when Show all
   services is off), the **Auto-Recovery** toggle, interval and folder and
   Play's **test-copy name** (waiting on the autosave item below),
-  **several accounts**, **named layouts**, **script font size**, the
+  **several accounts**, **script font size**, the
   eyedropper in the colour popover (GPUI has no way to sample the
   screen), and
   **Keyboard shortcuts** — real Studio's own separate

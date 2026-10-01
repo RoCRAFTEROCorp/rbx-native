@@ -352,6 +352,8 @@ pub(crate) struct Shell {
     /// `shell::layout`). Persisted, along with the drag in progress if
     /// there is one.
     layout: layout::Layout,
+    /// See `Settings::named_layouts`; persisted.
+    named_layouts: Vec<crate::settings::NamedLayout>,
     output_collapsed: bool,
     drag: Option<Drag>,
     /// The dock currently being dragged by its tab, which is what puts the
@@ -391,6 +393,7 @@ impl Shell {
             large_targets,
             reduce_motion,
             docks,
+            named_layouts,
             output_collapsed,
             output_timestamps,
             increment_names,
@@ -629,6 +632,7 @@ impl Shell {
             // A saved layout wins over the default, and is total over
             // whatever the file actually held (see `layout::Layout::restore`).
             layout: layout::Layout::restore(&docks),
+            named_layouts,
             dragging_panel: None,
             panel_windows: HashMap::new(),
             window_was_active: true,
@@ -1006,6 +1010,60 @@ impl Shell {
     /// The companion every persisted layout needs: a dock dragged to a few
     /// pixels wide is saved that way, and without this the only way back is
     /// to find and delete the settings file.
+    pub(super) fn named_layouts(&self) -> &[crate::settings::NamedLayout] {
+        &self.named_layouts
+    }
+
+    /// Whether the docks are arranged exactly as `named` was saved.
+    pub(super) fn is_current_layout(&self, named: &crate::settings::NamedLayout) -> bool {
+        self.layout.saved() == named.layout
+    }
+
+    /// Saves the current dock arrangement as `name`, replacing a layout
+    /// already saved under it. A blank name saves nothing.
+    pub(super) fn save_named_layout(&mut self, name: &str, cx: &mut Context<Self>) {
+        let name = name.trim();
+        if name.is_empty() {
+            return;
+        }
+        let layout = self.layout.saved();
+        match self
+            .named_layouts
+            .iter_mut()
+            .find(|named| named.name == name)
+        {
+            Some(named) => named.layout = layout,
+            None => self.named_layouts.push(crate::settings::NamedLayout {
+                name: name.to_owned(),
+                layout,
+            }),
+        }
+        self.save_settings();
+        cx.notify();
+    }
+
+    /// Arranges the docks as `name` was saved. Restored through the same
+    /// `Layout::restore` a launch uses, so a panel the saved layout does not
+    /// mention lands on its own edge, and a floating one gets its window
+    /// from `sync_panel_windows` on the next render.
+    pub(super) fn apply_named_layout(&mut self, name: &str, cx: &mut Context<Self>) {
+        let Some(named) = self.named_layouts.iter().find(|named| named.name == name) else {
+            return;
+        };
+        self.layout = layout::Layout::restore(&named.layout);
+        self.save_settings();
+        cx.notify();
+    }
+
+    pub(super) fn delete_named_layout(&mut self, name: &str, cx: &mut Context<Self>) {
+        let before = self.named_layouts.len();
+        self.named_layouts.retain(|named| named.name != name);
+        if self.named_layouts.len() != before {
+            self.save_settings();
+            cx.notify();
+        }
+    }
+
     pub(crate) fn reset_layout(&mut self, cx: &mut Context<Self>) {
         self.layout = layout::Layout::default();
         self.output_collapsed = false;
@@ -1243,6 +1301,7 @@ impl Shell {
             large_targets: tokens::large_targets(),
             reduce_motion: self.reduce_motion,
             docks: self.layout.saved(),
+            named_layouts: self.named_layouts.clone(),
             output_collapsed: self.output_collapsed,
             output_timestamps: self.output_show_timestamps,
             increment_names: self.increment_names,

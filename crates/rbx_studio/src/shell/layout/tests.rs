@@ -753,3 +753,19 @@ fn an_unset_size_falls_back_to_the_default() {
 
     assert_eq!(Layout::restore(&file), Layout::default());
 }
+
+/// A named layout is marked Active when the docks match it exactly, which
+/// only works if applying one gives back what was saved.
+#[test]
+fn a_saved_layout_restores_to_itself() {
+    let mut layout = Layout::default();
+    layout.resize(Edge::Left, 333.);
+    layout.float(Panel::Output);
+    layout.close(Panel::Watch);
+    let saved = layout.saved();
+    assert_eq!(Layout::restore(&saved).saved(), saved);
+    assert_eq!(
+        Layout::restore(&Layout::default().saved()).saved(),
+        Layout::default().saved()
+    );
+}
