@@ -165,9 +165,11 @@ impl TabOrder {
     }
 }
 
-/// What a keystroke asked a roving group to do.
+/// What a keystroke asked a roving group to do. Also what moves an open
+/// menu's highlight (see `shell::menu`), which is the same vertical group
+/// with a highlight standing in for focus.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Move {
+pub(super) enum Move {
     Previous,
     Next,
     First,
@@ -175,7 +177,7 @@ enum Move {
 }
 
 impl Move {
-    fn of(keystroke: &Keystroke, vertical: bool) -> Option<Move> {
+    pub(super) fn of(keystroke: &Keystroke, vertical: bool) -> Option<Move> {
         if keystroke.modifiers.modified() {
             return None;
         }
@@ -196,7 +198,7 @@ impl Move {
     /// and tab lists — taken here because these strips are short and
     /// circular, so running off the end and stopping reads as the key
     /// having failed rather than as a boundary.
-    fn apply(self, current: usize, len: usize) -> usize {
+    pub(super) fn apply(self, current: usize, len: usize) -> usize {
         let last = len.saturating_sub(1);
         match self {
             Move::Previous if current == 0 => last,
