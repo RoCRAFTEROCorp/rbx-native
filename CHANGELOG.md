@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-10-01
+
+- **Renderer calibration.** Studio Settings › Viewport › Advanced now lets
+  you nudge the three constants the renderer was tuned with — the sun's
+  base strength, how thick Atmosphere haze is per stud, and Plastic's
+  highlight — for a place that looks off against Roblox. The defaults
+  render exactly as before, and each has a reset. — @Vikmanou
+
 ## 2026-09-30
 
 - **Light and High contrast themes.** Studio Settings › Appearance ›

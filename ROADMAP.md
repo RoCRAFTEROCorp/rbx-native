@@ -1382,6 +1382,15 @@ Roblox's own engine.
   description or `settings.json` key and shows it live. Keyboard shortcuts
   stay a window of their own, as in Studio; what the screen still shows as
   `SOON` is its own bullet under "What's planned".
+- [x] **Renderer calibration** in Studio Settings › Viewport › Advanced:
+  `SUN_BASE`, `ATMOSPHERE_DENSITY_SCALE` and `PLASTIC_SPEC_STRENGTH` are
+  settings (`rbx_viewer::Calibration`, defaulting to the tuned values and
+  kept within ten times them either way), for a place lit unlike the
+  captures they were tuned against. The two that were WGSL constants are
+  read from a `calibration` row on the lighting uniform; `SUN_BASE` scales
+  the sun colour by its ratio to the tuned base. The default renders
+  pixel-identical to before; `ViewportFrame`s keep the tuned set, since
+  they are lit by their own properties.
 
 ### Platform
 - [x] Linux (X11) — the daily-driven target.
@@ -1960,9 +1969,8 @@ against `Roblox/creator-docs` rather than assumed:
 - [ ] 📋 **What Studio Settings still shows as `SOON`.** The screen itself
   shipped (see "What's been implemented" → Editor); these rows are drawn
   there, faded and inert, until what they stand for exists:
-  **renderer calibration** (`SUN_BASE`, `ATMOSPHERE_DENSITY_SCALE`,
-  `PLASTIC_SPEC_STRENGTH` and the quality bands as real settings; the two
-  WGSL ones are compile-time shader constants today and need a uniform),
+  the **quality bands** under renderer calibration (the three tuned
+  constants beside them are settings now),
   **default services** (which services the Explorer lists when Show all
   services is off), the **Auto-Recovery** toggle, interval and folder and
   Play's **test-copy name** (waiting on the autosave item below),
