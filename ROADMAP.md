@@ -1628,13 +1628,12 @@ Roblox's own engine.
   box's center. Assigning a `Class.Model.PrimaryPart` moves the pivot to
   that part's own pivot and — deliberately, per the docs, to avoid a
   sudden jump — does **not** snap back if the `PrimaryPart` is later
-  deleted. Also needs `PVInstance:GetPivot()`/`PVInstance:PivotTo()`/
-  `BasePart.PivotOffset` exposed to the Command Bar and scripts generally
-  (today's Luau DataModel has no pivot-specific API at all), not just the
-  interactive tool, since real Studio exposes both. Landed so far: the
-  Properties panel's `Origin` row reads a part's or model's pivot the way
-  `GetPivot` does and moves the instance the way `PivotTo` does (see
-  "What's been implemented" → Editor).
+  deleted. Landed so far: the Properties panel's `Origin` row reads a
+  part's or model's pivot the way `GetPivot` does and moves the instance
+  the way `PivotTo` does (see "What's been implemented" → Editor), and
+  Luau — the Command Bar and scripts — has `PVInstance:GetPivot()` and
+  `PVInstance:PivotTo()` through the same pivot (`rbx_lua::pivot`), with
+  `BasePart.PivotOffset` readable and writable like any property.
 - [ ] 📋 **Explorer export and searchable-tree browsing** — the two halves
   of Explorer DOM editing that did not land with the row affordances
   above:

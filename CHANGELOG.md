@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-10-01
+
+- **`GetPivot` and `PivotTo` in Luau.** The Command Bar and scripts can now
+  read a part's or model's pivot with `:GetPivot()` and move it with
+  `:PivotTo(cframe)` — a model carries all its parts along — using the same
+  pivot the Properties panel's Origin row already showed. — @Vikmanou
+
 ## 2026-09-30
 
 - **Light and High contrast themes.** Studio Settings › Appearance ›
