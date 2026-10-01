@@ -8,6 +8,8 @@
   Ctrl+S. Studio Settings › Files & recovery turns it on or off (on by
   default), sets the interval (1 to 10 minutes, four by default) and opens
   the folder the copies are in. Saving deletes the place's copy. — @Vikmanou
+- **File › Open Auto Saves** opens the folder Auto-Recovery's copies are
+  in, the way Studio's own File menu does. — @Vikmanou
 
 ## 2026-09-30
 

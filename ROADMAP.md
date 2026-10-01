@@ -1392,7 +1392,10 @@ Roblox's own engine.
   one; a successful Ctrl+S deletes it, since nothing is left to recover. A
   copy is a plain place file in the place's own format, so — unlike a
   recovered Studio file, which loses its place link — it opens like any
-  other. A failed copy is a warning in Output and is tried again.
+  other. A failed copy is a warning in Output and is tried again. The
+  copies are reached from Settings' Open auto-saves or File › Open Auto
+  Saves (Studio's own name; Studio files it under File › Advanced, but this
+  menu bar draws no submenus), both of which open the folder.
 
 ### Platform
 - [x] Linux (X11) — the daily-driven target.
@@ -2019,11 +2022,6 @@ against `Roblox/creator-docs` rather than assumed:
   this one: a real, in-app way to ship a half-finished feature switched
   off by default instead of either blocking a merge on it being complete
   or shipping it fully live before it's ready.
-- [ ] 📋 **A File-menu way to the recovery copies**, matching real Studio's
-  `File > Advanced > Open Auto Saves`. Auto-Recovery itself shipped (see
-  "What's been implemented" → Editor); its copies are reached from Studio
-  Settings › Files & recovery › Open auto-saves, which opens the folder,
-  and nothing in the File menu leads there yet.
 - [ ] 📋 **More New templates on Home.** Home's New section has Baseplate
   only. Flat Terrain needs a `Terrain.SmoothGrid` writer, which nothing
   in the tree has yet; a terrain template without its voxels would be a
