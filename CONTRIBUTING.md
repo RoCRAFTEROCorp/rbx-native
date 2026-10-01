@@ -17,16 +17,19 @@ keep changes small and verified, and ask before doing something big.
 - For anything non-trivial (a new feature, a change to the architecture, a
   new dependency), open an issue or a discussion first. Saves everyone a
   round-trip if the direction turns out to be wrong.
-- **On Windows?** The project has never been built there — see the
-  "Platform support" section of [README.md](README.md). Trying a build and
-  reporting exactly what breaks is genuinely one of the most valuable things
-  you can contribute right now, even without fixing anything yourself.
+- **On Windows?** CI builds and tests it there on every change, but very
+  few people run the editor on it day to day — see the "Platform support"
+  section of [README.md](README.md). Reporting exactly what breaks on your
+  machine is one of the most useful things you can contribute, even without
+  fixing anything yourself.
 
 ## Setting up
 
+Fork the repository, clone your fork and add this one as `upstream` —
+[README.md](README.md#contributing) walks through it, along with keeping
+your fork in sync and opening the pull request. Then:
+
 ```sh
-git clone <this repo's URL>
-cd rbx-native
 cargo build --release
 ./scripts/check.sh
 ```
@@ -46,8 +49,9 @@ don't have one — you don't need Roblox assets on hand to contribute.
 
 1. **Every change gets its own branch off `dev`** — a feature, a bug fix,
    a docs tweak, all of it. `dev` is where every pull request targets;
-   `main` tracks production and only ever receives `dev` once it's ready
-   to release, never a feature branch directly. Never commit straight to
+   `main` tracks releases and only ever receives `dev`, merged by the
+   maintainer alone (a ruleset blocks everyone else, collaborators
+   included), never a feature branch directly. Never commit straight to
    either. A short, descriptive name is enough:
    `fix/beam-texture-orientation`, `feat/surfacegui-text`,
    `docs/windows-build-steps`.
