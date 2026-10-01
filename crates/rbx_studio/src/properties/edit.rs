@@ -9,11 +9,13 @@ use rbx_dom::{
 };
 use rbx_reflection::ReflectionDatabase;
 
+mod content;
 mod font;
 mod many;
 pub(super) mod pivot;
 mod sequence;
 
+use content::{content_text, parse_content};
 use font::{font_text, parse_font, synced};
 pub(crate) use many::commit_all;
 use many::stored_or_default;
@@ -99,6 +101,7 @@ pub(crate) fn edit_text(value: &Variant) -> Option<String> {
             rect.min.x, rect.min.y, rect.max.x, rect.max.y
         )),
         Variant::Font(font) => Some(font_text(font)),
+        Variant::Content(content) => content_text(content),
         // Keypoints along a `;`, each one's numbers along a `,`. Nobody
         // types this — `crate::sequence_window`'s graph is the editor; see
         // `sequence` for why its commits still come through here.
@@ -362,6 +365,7 @@ pub(crate) fn parse(
             }))
         }
         Variant::Font(_) => parse_font(text).map(Variant::Font),
+        Variant::Content(_) => Ok(parse_content(text)),
         Variant::NumberSequence(_) => parse_number_sequence(text).map(Variant::NumberSequence),
         Variant::ColorSequence(current) => {
             parse_color_sequence(current, text).map(Variant::ColorSequence)
