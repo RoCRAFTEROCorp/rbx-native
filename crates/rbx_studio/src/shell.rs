@@ -1014,9 +1014,13 @@ impl Shell {
         &self.named_layouts
     }
 
-    /// Whether the docks are arranged exactly as `named` was saved.
+    /// Whether the docks are arranged as applying `named` would leave them.
+    /// Compared after a restore rather than as saved: a layout that leaves
+    /// panels out (a hand-edited one, or one saved before a panel existed)
+    /// gets them back on their own edges when applied, and is still the
+    /// layout in use.
     pub(super) fn is_current_layout(&self, named: &crate::settings::NamedLayout) -> bool {
-        self.layout.saved() == named.layout
+        self.layout.saved() == layout::Layout::restore(&named.layout).saved()
     }
 
     /// Saves the current dock arrangement as `name`, replacing a layout

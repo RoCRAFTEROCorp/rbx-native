@@ -769,3 +769,17 @@ fn a_saved_layout_restores_to_itself() {
         Layout::default().saved()
     );
 }
+
+/// A saved layout that names only some panels restores to one holding all
+/// of them, and that restored form is stable: what the Active mark compares.
+#[test]
+fn a_partial_layout_restores_to_a_whole_one_that_restores_to_itself() {
+    let partial = SavedLayout {
+        edges: vec![edge(Edge::Left, &[&["Explorer"]], 280.)],
+        floating: Vec::new(),
+        closed: Vec::new(),
+    };
+    let whole = Layout::restore(&partial).saved();
+    assert_ne!(whole, partial);
+    assert_eq!(Layout::restore(&whole).saved(), whole);
+}
