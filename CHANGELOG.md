@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-10-01
+
+- **Choose the Explorer's default services.** Studio Settings › Explorer &
+  Output › Default services is live: click a service to list or hide it in
+  the Explorer while Show all services is off, and reset to go back to
+  Studio's own set. Only what you change is saved. — @Vikmanou
+
 ## 2026-09-30
 
 - **Light and High contrast themes.** Studio Settings › Appearance ›

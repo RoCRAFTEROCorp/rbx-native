@@ -1382,6 +1382,13 @@ Roblox's own engine.
   description or `settings.json` key and shows it live. Keyboard shortcuts
   stay a window of their own, as in Studio; what the screen still shows as
   `SOON` is its own bullet under "What's planned".
+- [x] **Default services** in Studio Settings › Explorer & Output: which
+  services the Explorer lists while Show all services is off. Each service
+  in the grid is ticked when the default view lists it and flips on a
+  click; only the differences from Studio's own default are saved
+  (`service_overrides`), so a service Studio later starts or stops listing
+  still follows Studio unless it was chosen here. The row's reset puts
+  Studio's set back.
 
 ### Platform
 - [x] Linux (X11) — the daily-driven target.
@@ -1963,8 +1970,7 @@ against `Roblox/creator-docs` rather than assumed:
   **renderer calibration** (`SUN_BASE`, `ATMOSPHERE_DENSITY_SCALE`,
   `PLASTIC_SPEC_STRENGTH` and the quality bands as real settings; the two
   WGSL ones are compile-time shader constants today and need a uniform),
-  **default services** (which services the Explorer lists when Show all
-  services is off), the **Auto-Recovery** toggle, interval and folder and
+  the **Auto-Recovery** toggle, interval and folder and
   Play's **test-copy name** (waiting on the autosave item below),
   **several accounts**, **named layouts**, **script font size**, the
   eyedropper in the colour popover (GPUI has no way to sample the
