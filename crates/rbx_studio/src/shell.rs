@@ -32,6 +32,8 @@ mod panel_window;
 mod panels;
 mod property_element;
 mod quality;
+mod recovery;
+mod ref_pick;
 mod reparent;
 mod ribbon;
 mod roving;
@@ -120,6 +122,8 @@ pub(crate) struct Shell {
     /// Studio's default service set. Persisted (see `settings`); every write
     /// goes through [`Shell::save_settings`].
     show_all_services: bool,
+    /// See `explorer::ServiceOverrides`; persisted.
+    service_overrides: crate::explorer::ServiceOverrides,
     /// The dropdown's current pick, kept alongside the `Select` entity itself
     /// so a settings write never has to reach into GPUI state to read it back.
     quality_choice: QualityLevel,
@@ -277,6 +281,8 @@ pub(crate) struct Shell {
     /// the panel's overflow menu (see `shell::dock`'s `dropdown_menu`) and
     /// Settings. Persisted.
     output_show_timestamps: bool,
+    /// The Script Editor's text size at 1x; see `Settings::script_font_size`.
+    script_font_size: f32,
     output_scroll: ScrollHandle,
     /// The Viewport dock's own, for when it is docked somewhere too short
     /// for its settings — see `shell::viewport_dock`.
@@ -350,11 +356,17 @@ pub(crate) struct Shell {
     /// popover so that opening one closes the last, and so a menu item can
     /// close the menu it was clicked in (see `shell::menu`).
     open_menu: Option<MenuId>,
+    /// Auto-Recovery's switch, interval and progress (see `shell::recovery`).
+    recovery: recovery::Recovery,
+    /// The open menu's keyboard focus and highlighted row (see `shell::menu`).
+    menu_nav: menu::MenuNav,
     /// Which panel is on which edge and how big each edge is — the data
     /// that used to be the order of three `.child()` calls (see
     /// `shell::layout`). Persisted, along with the drag in progress if
     /// there is one.
     layout: layout::Layout,
+    /// See `Settings::named_layouts`; persisted.
+    named_layouts: Vec<crate::settings::NamedLayout>,
     output_collapsed: bool,
     drag: Option<Drag>,
     /// The dock currently being dragged by its tab, which is what puts the
@@ -384,6 +396,7 @@ impl Shell {
         let Settings {
             quality,
             show_all_services,
+            service_overrides,
             orthographic,
             axis_indicator,
             selection_occluded,
@@ -391,9 +404,13 @@ impl Shell {
             icon_pack,
             unfocused_fps,
             font_scale,
+            auto_recovery,
+            recovery_minutes,
+            script_font_size,
             large_targets,
             reduce_motion,
             docks,
+            named_layouts,
             output_collapsed,
             output_timestamps,
             increment_names,
@@ -423,7 +440,7 @@ impl Shell {
             format,
             folder_colors,
         } = place;
-        let items = explorer.items(show_all_services);
+        let items = explorer.items(show_all_services, &service_overrides);
 
         let selector = cx.new(|cx| {
             let row = IndexPath::new(quality_row(quality));
@@ -544,13 +561,14 @@ impl Shell {
         // Built last of Shell::new's entities: its `Action` handlers close
         // over `cx.entity()`, so `Shell` must already be constructible —
         // valid as soon as `cx.new` starts building it.
-        let menu_bar = crate::menu_bar::build(cx.entity(), cx);
+        let menu_bar = crate::menu_bar::build(cx.entity(), user.script_templates.extras(), cx);
 
         let (snap_fields, [translate_typed, rotate_typed, translate_stepped, rotate_stepped]) =
             SnapFields::new(transform, window, cx);
 
         let initial_targets = Targets::read(&dom, &database, &Vec::from_iter(selected));
         let ui = ui_editor::UiEditor::new(window, cx);
+        let recovery = recovery::Recovery::new(auto_recovery, recovery_minutes, &path);
         let mut shell = Shell {
             menu_bar,
             title: title.into(),
@@ -558,6 +576,7 @@ impl Shell {
             explorer: Rc::new(explorer),
             tree,
             show_all_services,
+            service_overrides,
             quality_choice: quality,
             orthographic,
             axis_indicator,
@@ -615,6 +634,7 @@ impl Shell {
             output: output::OutputLog::default(),
             output_filter: output::OutputFilter::default(),
             output_show_timestamps: output_timestamps,
+            script_font_size,
             output_scroll: ScrollHandle::new(),
             viewport_scroll: ScrollHandle::new(),
             viewport_rows: Rc::default(),
@@ -638,9 +658,12 @@ impl Shell {
             ribbon_tab: ribbon::Tab::default(),
             document: Document::default(),
             open_menu: None,
+            recovery,
+            menu_nav: menu::MenuNav::new(cx),
             // A saved layout wins over the default, and is total over
             // whatever the file actually held (see `layout::Layout::restore`).
             layout: layout::Layout::restore(&docks),
+            named_layouts,
             dragging_panel: None,
             panel_windows: HashMap::new(),
             window_was_active: true,
@@ -817,6 +840,7 @@ impl Shell {
         shell.apply_debug_save(cx);
 
         shell.watch_theme(cx);
+        shell.watch_recovery(cx);
 
         shell
     }
@@ -980,8 +1004,7 @@ impl Shell {
         }
 
         self.show_all_services = show_all;
-        self.push_root_rows(cx);
-        self.save_settings();
+        self.refresh_root_rows(cx);
     }
 
     /// Filters the Explorer by what its search field holds, as it is typed.
@@ -990,6 +1013,33 @@ impl Shell {
             self.explorer_query = query;
             self.push_root_rows(cx);
         }
+    }
+
+    /// Lists or hides one service in the Explorer's default view, from
+    /// Studio Settings' Default services grid.
+    pub(super) fn toggle_default_service(&mut self, class: &str, cx: &mut Context<Self>) {
+        let overrides = std::mem::take(&mut self.service_overrides);
+        self.service_overrides = crate::explorer::toggled(overrides, class);
+        self.refresh_root_rows(cx);
+    }
+
+    pub(super) fn service_overrides(&self) -> &crate::explorer::ServiceOverrides {
+        &self.service_overrides
+    }
+
+    /// Back to Studio's own default services.
+    pub(super) fn reset_service_overrides(&mut self, cx: &mut Context<Self>) {
+        if !self.service_overrides.is_empty() {
+            self.service_overrides.clear();
+            self.refresh_root_rows(cx);
+        }
+    }
+
+    /// Pushes the root rows the visibility settings now call for into the
+    /// tree, and saves the settings that chose them.
+    fn refresh_root_rows(&mut self, cx: &mut Context<Self>) {
+        self.push_root_rows(cx);
+        self.save_settings();
     }
 
     /// Pushes the root rows the visibility settings and the search now call
@@ -1036,6 +1086,64 @@ impl Shell {
         tokens::set_large_targets(!tokens::large_targets());
         self.save_settings();
         cx.notify();
+    }
+
+    pub(super) fn named_layouts(&self) -> &[crate::settings::NamedLayout] {
+        &self.named_layouts
+    }
+
+    /// Whether the docks are arranged as applying `named` would leave them.
+    /// Compared after a restore rather than as saved: a layout that leaves
+    /// panels out (a hand-edited one, or one saved before a panel existed)
+    /// gets them back on their own edges when applied, and is still the
+    /// layout in use.
+    pub(super) fn is_current_layout(&self, named: &crate::settings::NamedLayout) -> bool {
+        self.layout.saved() == layout::Layout::restore(&named.layout).saved()
+    }
+
+    /// Saves the current dock arrangement as `name`, replacing a layout
+    /// already saved under it. A blank name saves nothing.
+    pub(super) fn save_named_layout(&mut self, name: &str, cx: &mut Context<Self>) {
+        let name = name.trim();
+        if name.is_empty() {
+            return;
+        }
+        let layout = self.layout.saved();
+        match self
+            .named_layouts
+            .iter_mut()
+            .find(|named| named.name == name)
+        {
+            Some(named) => named.layout = layout,
+            None => self.named_layouts.push(crate::settings::NamedLayout {
+                name: name.to_owned(),
+                layout,
+            }),
+        }
+        self.save_settings();
+        cx.notify();
+    }
+
+    /// Arranges the docks as `name` was saved. Restored through the same
+    /// `Layout::restore` a launch uses, so a panel the saved layout does not
+    /// mention lands on its own edge, and a floating one gets its window
+    /// from `sync_panel_windows` on the next render.
+    pub(super) fn apply_named_layout(&mut self, name: &str, cx: &mut Context<Self>) {
+        let Some(named) = self.named_layouts.iter().find(|named| named.name == name) else {
+            return;
+        };
+        self.layout = layout::Layout::restore(&named.layout);
+        self.save_settings();
+        cx.notify();
+    }
+
+    pub(super) fn delete_named_layout(&mut self, name: &str, cx: &mut Context<Self>) {
+        let before = self.named_layouts.len();
+        self.named_layouts.retain(|named| named.name != name);
+        if self.named_layouts.len() != before {
+            self.save_settings();
+            cx.notify();
+        }
     }
 
     /// Puts the docks back where they started.
@@ -1133,6 +1241,22 @@ impl Shell {
         // The docks are sized in state, not in tokens, so they have to be
         // re-derived or a 2x scale leaves a 300px dock holding 600px rows.
         self.layout.reset_sizes();
+        self.save_settings();
+        cx.notify();
+    }
+
+    pub(super) fn script_font_size(&self) -> f32 {
+        self.script_font_size
+    }
+
+    /// Sets the Script Editor's text size, clamped to what the setting
+    /// accepts, from Studio Settings' Script Font Size field.
+    pub(super) fn set_script_font_size(&mut self, size: f32, cx: &mut Context<Self>) {
+        let size = crate::settings::clamp_script_font_size(size);
+        if size == self.script_font_size {
+            return;
+        }
+        self.script_font_size = size;
         self.save_settings();
         cx.notify();
     }
@@ -1270,6 +1394,7 @@ impl Shell {
         let settings = Settings {
             quality: self.quality_choice,
             show_all_services: self.show_all_services,
+            service_overrides: self.service_overrides.clone(),
             orthographic: self.orthographic,
             axis_indicator: self.axis_indicator,
             selection_occluded: self.selection_occluded,
@@ -1277,9 +1402,13 @@ impl Shell {
             icon_pack: self.icon_pack,
             unfocused_fps: self.unfocused_fps,
             font_scale: tokens::font_scale(),
+            auto_recovery: self.recovery.enabled(),
+            recovery_minutes: self.recovery.minutes(),
+            script_font_size: self.script_font_size,
             large_targets: tokens::large_targets(),
             reduce_motion: self.reduce_motion,
             docks: self.layout.saved(),
+            named_layouts: self.named_layouts.clone(),
             output_collapsed: self.output_collapsed,
             output_timestamps: self.output_show_timestamps,
             increment_names: self.increment_names,

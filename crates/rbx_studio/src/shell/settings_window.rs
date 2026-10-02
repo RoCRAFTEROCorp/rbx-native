@@ -57,12 +57,15 @@ pub(crate) struct SettingsWindow {
     shell: Entity<Shell>,
     page: Page,
     search: Entity<InputState>,
+    /// Layout's name field for a new named layout.
+    layout_name: Entity<InputState>,
     sliders: viewport::Sliders,
     /// Matching rows per page while a search is typed, for the nav.
     search_counts: Vec<(Page, usize)>,
     increments: dragger::Increments,
     argon: argon::ArgonControls,
     appearance: appearance::AppearanceControls,
+    recovery: files_account::RecoveryControls,
     /// The colour popover, while open.
     picker: Option<appearance::Picker>,
     /// Where the Custom accent swatch was laid out, to open the popover
@@ -146,6 +149,8 @@ impl SettingsWindow {
         subscriptions.extend(picked);
         let (appearance, chosen) = appearance::AppearanceControls::new(&shell, window, cx);
         subscriptions.extend(chosen);
+        let (recovery, moved) = files_account::RecoveryControls::new(&shell, cx);
+        subscriptions.push(moved);
         let search = cx.new(|cx| {
             let mut state = InputState::new(window, cx).placeholder("Search settings");
             if let Ok(query) = std::env::var(SEARCH_VARIABLE) {
@@ -153,6 +158,16 @@ impl SettingsWindow {
             }
             state
         });
+        let layout_name = cx.new(|cx| InputState::new(window, cx).placeholder("Name this layout"));
+        subscriptions.push(cx.subscribe_in(
+            &layout_name,
+            window,
+            |this, _, event: &InputEvent, window, cx| {
+                if matches!(event, InputEvent::PressEnter { .. }) {
+                    this.save_named_layout(window, cx);
+                }
+            },
+        ));
         // Anything that changes a setting elsewhere — the dock, a menu —
         // notifies the shell; this window has nothing of its own to redraw
         // from.
@@ -170,11 +185,13 @@ impl SettingsWindow {
             shell,
             page,
             search,
+            layout_name,
             sliders,
             search_counts: Vec::new(),
             increments,
             argon,
             appearance,
+            recovery,
             picker: None,
             custom_swatch: Default::default(),
             pending_picker: std::env::var("RBX_STUDIO_SETTINGS_PICKER")
@@ -218,7 +235,7 @@ impl SettingsWindow {
             Page::ExplorerOutput => self.explorer_output_page(cx),
             Page::Layout => self.layout_page(cx),
             Page::Accessibility => self.accessibility_page(cx),
-            Page::Files => self.files_page(),
+            Page::Files => self.files_page(window, cx),
             Page::Argon => self.argon_page(window, cx),
             Page::Appearance => self.appearance_page(window, cx),
             Page::Account => self.account_page(cx),
