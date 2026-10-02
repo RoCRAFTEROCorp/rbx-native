@@ -1758,15 +1758,17 @@ Roblox's own engine.
   yet wired into `rbx_cloud` at all; worth treating as its own follow-up
   rather than assuming the existing client already covers it.
 #### Properties panel — remaining type editors
-- [x] **Category order in the panel.** Categories are sorted in Studio's
-  own logical order — Data first, then Appearance, Transform, Pivot, Part,
-  Assembly, Collision, Surface, Behavior — rather than alphabetically.
-  Categories the known list does not cover sort alphabetically after the
-  known ones, and uncategorized properties always trail. The two papercuts
-  first filed with it — tight rows, and a numeric value clipped by a narrow
-  field — went with the panel's rework: hairline seams between rows, and a
-  numeric value shown whole on its own row with its components behind an
-  expander.
+- [x] **Category order in the panel.** Categories follow Studio's own
+  order rather than the alphabet: Appearance, Data, Transform, Pivot,
+  Behavior, Collision, Part, then every other category by name, then Tags,
+  then Attributes. The ranked list is the one Studio's built-in Properties
+  plugin sorts by (`createGeneralFilter` in Roblox-Client-Tracker's
+  `CompiledPackages/Properties`), and creator-docs' `studio/properties.md`
+  screenshot shows the same Appearance, Data, Transform start. The two
+  papercuts first filed with it — tight rows, and a numeric value clipped
+  by a narrow field — went with the panel's rework: hairline seams between
+  rows, and a numeric value shown whole on its own row with its components
+  behind an expander.
 - [ ] 📋 **A general pass on how Studio renders each type**, rather than
   a generic fallback: go through the API dump's actual type/category
   coverage (`assets/API-Dump.json`, kept current by the daily sync) rather

@@ -991,91 +991,43 @@ fn rows_group_by_category_in_studio_order_with_no_empty_groups() {
         .iter()
         .map(|(category, _)| category.as_str())
         .collect();
-    // Studio's logical order: Data first, then Appearance, Transform,
-    // spatial, physics, behavior — not alphabetical.
+    // Studio's ranked categories first, then the rest by name.
     assert_eq!(
         categories,
         [
-            "Data",
             "Appearance",
+            "Data",
             "Transform",
             "Pivot",
+            "Behavior",
+            "Collision",
             "Part",
             "Assembly",
-            "Collision",
             "Surface",
-            "Behavior",
         ]
     );
     assert!(groups.iter().all(|(_, rows)| !rows.is_empty()));
 }
 
 #[test]
-fn unknown_categories_sort_alphabetically_after_known_ones() {
-    let rows = vec![
-        PropertyRow {
-            name: "X".into(),
+fn unranked_categories_sort_by_name_after_ranked_ones() {
+    let rows = ["Zzz", UNCATEGORIZED, "Aaa", "Part", "Data"]
+        .into_iter()
+        .map(|category| PropertyRow {
+            name: category.into(),
             value: String::new(),
-            category: "Zzz".into(),
+            category: category.into(),
             edit: None,
             mixed: false,
-        },
-        PropertyRow {
-            name: "Y".into(),
-            value: String::new(),
-            category: "Aaa".into(),
-            edit: None,
-            mixed: false,
-        },
-        PropertyRow {
-            name: "Z".into(),
-            value: String::new(),
-            category: "Data".into(),
-            edit: None,
-            mixed: false,
-        },
-    ];
+        })
+        .collect();
 
     let groups = group_by_category(rows);
     let categories: Vec<&str> = groups
         .iter()
         .map(|(category, _)| category.as_str())
         .collect();
-    assert_eq!(categories, ["Data", "Aaa", "Zzz"]);
-}
-
-#[test]
-fn uncategorized_sorts_last() {
-    let rows = vec![
-        PropertyRow {
-            name: "A".into(),
-            value: String::new(),
-            category: UNCATEGORIZED.into(),
-            edit: None,
-            mixed: false,
-        },
-        PropertyRow {
-            name: "B".into(),
-            value: String::new(),
-            category: "Data".into(),
-            edit: None,
-            mixed: false,
-        },
-        PropertyRow {
-            name: "C".into(),
-            value: String::new(),
-            category: "Zzz".into(),
-            edit: None,
-            mixed: false,
-        },
-    ];
-
-    let groups = group_by_category(rows);
-    let categories: Vec<&str> = groups
-        .iter()
-        .map(|(category, _)| category.as_str())
-        .collect();
-    assert_eq!(categories, ["Data", "Zzz", UNCATEGORIZED]);
+    assert_eq!(categories, ["Data", "Part", "Aaa", UNCATEGORIZED, "Zzz"]);
 }
 
 /// A Workspace holding one instance of `class` carrying `values`, for the
