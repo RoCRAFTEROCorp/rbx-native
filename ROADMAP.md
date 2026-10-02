@@ -56,9 +56,10 @@ Roblox's own engine.
   constructor over a metatable. The set is user-extensible now: a
   `script_templates` folder in the config directory holds one `.luau` file
   per template under `Script/`, `LocalScript/` or `ModuleScript/`
-  (`script_templates.rs`), each listed in the ribbon's Script menu by its
-  file name, and a `Default.luau` in a class's folder replaces the built-in
-  starter every new script of that class gets.
+  (`script_templates.rs`), each listed by its file name in the ribbon's
+  Script menu and at the end of the menu bar's Model menu. A `Default.luau`
+  in a class's folder replaces the built-in starter every new script of
+  that class gets.
 
 ### Renderer (`rbx_viewer`)
 - [x] Lighting model reverse-engineered from Roblox's own decompiled
@@ -1388,6 +1389,13 @@ Roblox's own engine.
   description or `settings.json` key and shows it live. Keyboard shortcuts
   stay a window of their own, as in Studio; what the screen still shows as
   `SOON` is its own bullet under "What's planned".
+- [x] **Default services** in Studio Settings › Explorer & Output: which
+  services the Explorer lists while Show all services is off. Each service
+  in the grid is ticked when the default view lists it and flips on a
+  click; only the differences from Studio's own default are saved
+  (`service_overrides`), so a service Studio later starts or stops listing
+  still follows Studio unless it was chosen here. The row's reset puts
+  Studio's set back.
 
 ### Platform
 - [x] Linux (X11) — the daily-driven target.
@@ -1497,9 +1505,7 @@ Roblox's own engine.
   not a default this project should ship opinionated about.
 - [ ] 📋 **Managing script templates from inside the editor.** Authoring
   one today means a file manager and a text editor; there is no UI for
-  adding, renaming or deleting a template. The user's extras also appear
-  in the ribbon's Script menu but not the menu bar's Model menu, whose
-  items are fixed actions rather than a list built at runtime.
+  adding, renaming or deleting a template.
 - [ ] 📋 **Optional, bundled `Fragment` UI framework.** [`Fragment`](https://github.com/chteau/Fragment)
   (MIT, single-file Luau `ModuleScript`, React-inspired: local/global
   state, contexts, reusable components over plain `GuiObject`s) offered as
@@ -1971,8 +1977,7 @@ against `Roblox/creator-docs` rather than assumed:
   **renderer calibration** (`SUN_BASE`, `ATMOSPHERE_DENSITY_SCALE`,
   `PLASTIC_SPEC_STRENGTH` and the quality bands as real settings; the two
   WGSL ones are compile-time shader constants today and need a uniform),
-  **default services** (which services the Explorer lists when Show all
-  services is off), the **Auto-Recovery** toggle, interval and folder and
+  the **Auto-Recovery** toggle, interval and folder and
   Play's **test-copy name** (waiting on the autosave item below),
   **several accounts**, **named layouts**, **script font size**, the
   eyedropper in the colour popover (GPUI has no way to sample the
