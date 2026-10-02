@@ -6,6 +6,8 @@ use mlua::{IntoLua, Lua, MetaMethod, Result, Table, UserData, UserDataMethods, V
 use rbx_dom::Ref;
 
 use crate::ctx::Ctx;
+use crate::datatypes::cframe::LuaCFrame;
+use crate::datatypes::from_userdata;
 use crate::defaults;
 use crate::game::LuaGame;
 use crate::not_creatable;
@@ -105,6 +107,30 @@ impl UserData for LuaInstance {
         methods.add_method("GetDescendants", |lua, this, ()| {
             let found = tree::descendants(&this.ctx.dom(), this.referent);
             instance_list(lua, &this.ctx, found)
+        });
+        // `PVInstance:GetPivot`/`PivotTo`, through the same pivot the
+        // editor's `Origin` row reads (see `crate::pivot`). Anything that is
+        // not a part or model has no pivot, and Roblox has no such member on
+        // it: the same error the index metamethod gives for one.
+        methods.add_method("GetPivot", |_, this, ()| {
+            let found = crate::pivot::pivot(&this.ctx.dom(), this.ctx.database(), this.referent);
+            match found {
+                Some(frame) => Ok(LuaCFrame(frame)),
+                None => Err(not_a_member("GetPivot", &this.class()?)),
+            }
+        });
+        methods.add_method("PivotTo", |_, this, target: Value| {
+            let target: LuaCFrame = from_userdata(&target, "CFrame")?;
+            let moved = crate::pivot::pivot_to(
+                &mut this.ctx.dom_mut(),
+                this.ctx.database(),
+                this.referent,
+                &target.0,
+            );
+            match moved {
+                Some(result) => result.map_err(mlua::Error::runtime),
+                None => Err(not_a_member("PivotTo", &this.class()?)),
+            }
         });
         methods.add_method("Destroy", |_, this, ()| {
             this.ctx.dom_mut().remove(this.referent);
@@ -230,4 +256,8 @@ pub(crate) fn constructors(lua: &Lua, ctx: Ctx) -> Result<Table> {
         )?,
     )?;
     Ok(table)
+}
+
+fn not_a_member(member: &str, class: &str) -> mlua::Error {
+    mlua::Error::runtime(format!("{member} is not a valid member of {class}"))
 }

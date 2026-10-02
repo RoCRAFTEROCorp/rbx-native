@@ -2,6 +2,10 @@
 
 ## 2026-10-01
 
+- **`GetPivot` and `PivotTo` in Luau.** The Command Bar and scripts can now
+  read a part's or model's pivot with `:GetPivot()` and move it with
+  `:PivotTo(cframe)` — a model carries all its parts along — using the same
+  pivot the Properties panel's Origin row already showed. — @Vikmanou
 - **Renderer calibration.** Studio Settings › Viewport › Advanced now lets
   you nudge the three constants the renderer was tuned with — the sun's
   base strength, how thick Atmosphere haze is per stud, and Plastic's

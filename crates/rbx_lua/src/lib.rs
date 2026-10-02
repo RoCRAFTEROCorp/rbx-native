@@ -13,6 +13,7 @@ mod game;
 mod instance;
 mod lua_enum;
 mod not_creatable;
+pub mod pivot;
 mod property;
 mod runtime;
 

@@ -1,4 +1,4 @@
-use rbx_dom::Instance;
+use rbx_dom::{Instance, Vector3Data};
 
 use super::*;
 
@@ -13,7 +13,7 @@ fn db() -> ReflectionDatabase {
 fn at(x: f32, y: f32, z: f32) -> CFrameData {
     CFrameData {
         position: Vector3Data { x, y, z },
-        rotation: IDENTITY.rotation,
+        rotation: [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0],
     }
 }
 
