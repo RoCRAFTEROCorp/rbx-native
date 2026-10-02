@@ -318,6 +318,7 @@ pub(crate) fn topbar_frame(title: SharedString) -> Div {
         .bg(tokens::black())
         .border_b(px(1.))
         .border_color(tokens::border())
+        .child(super::tooltip::rehover_on_scroll())
         .child(
             h_flex()
                 .flex_none()
@@ -500,6 +501,7 @@ pub(crate) fn panel_topbar(
         .flex_none()
         .items_center()
         .bg(tokens::black())
+        .child(super::tooltip::rehover_on_scroll())
         .child(
             h_flex()
                 .flex_none()
