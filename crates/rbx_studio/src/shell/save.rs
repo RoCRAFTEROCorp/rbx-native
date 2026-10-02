@@ -50,7 +50,7 @@ impl Shell {
         // The Explorer's own popups are not dropdowns and are not on
         // `open_menu`, so the same key has to reach them separately (see
         // `shell::explorer_edit`).
-        if keystroke.key == "escape" && self.close_explorer_popups() {
+        if keystroke.key == "escape" && self.close_explorer_popups(window, cx) {
             cx.notify();
         }
         // An armed `Ref` pick is a mode the Explorer is in; Escape leaves it.

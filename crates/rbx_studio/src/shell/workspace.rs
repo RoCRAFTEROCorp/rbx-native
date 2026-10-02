@@ -196,11 +196,7 @@ impl Shell {
         let overflow = menu::dropdown(
             self,
             MenuId::ExplorerOverflow,
-            chrome::Trigger::new(chrome::icon_button(
-                "explorer-overflow",
-                IconName::Ellipsis,
-                "Explorer settings",
-            )),
+            chrome::icon_trigger("explorer-overflow", IconName::Ellipsis, "Explorer settings"),
             items,
             cx,
         );
@@ -245,11 +241,11 @@ impl Shell {
         let overflow = menu::dropdown(
             self,
             MenuId::PropertiesOverflow,
-            chrome::Trigger::new(chrome::icon_button(
+            chrome::icon_trigger(
                 "properties-overflow",
                 IconName::Ellipsis,
                 "Properties settings",
-            )),
+            ),
             items,
             cx,
         );
@@ -307,11 +303,7 @@ impl Shell {
         let overflow = menu::dropdown(
             self,
             MenuId::OutputOverflow,
-            chrome::Trigger::new(chrome::icon_button(
-                "output-overflow",
-                IconName::Ellipsis,
-                "Output settings",
-            )),
+            chrome::icon_trigger("output-overflow", IconName::Ellipsis, "Output settings"),
             items,
             cx,
         );

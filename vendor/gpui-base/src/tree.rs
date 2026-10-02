@@ -186,6 +186,10 @@ pub struct TreeState {
     entries: Vec<TreeEntry>,
     scroll_handle: UniformListScrollHandle,
     selected_ix: Option<usize>,
+    // rbx-native addition: the selected item while a collapsed parent hides
+    // its row, so expanding the parent again selects it again (see
+    // `rebuild_entries`). Cleared by any explicit selection or new items.
+    hidden_selection: Option<SharedString>,
     right_clicked_ix: Option<usize>,
     render_item: Rc<RenderItem>,
     list_style: StyleRefinement,
@@ -200,6 +204,7 @@ impl TreeState {
             entries: Vec::new(),
             scroll_handle: UniformListScrollHandle::default(),
             selected_ix: None,
+            hidden_selection: None,
             right_clicked_ix: None,
             render_item: Rc::new(|_, _, _, _, _| div().into_any_element()),
             list_style: StyleRefinement::default(),
@@ -214,6 +219,7 @@ impl TreeState {
     pub fn set_items(&mut self, items: impl Into<Vec<TreeItem>>, cx: &mut Context<Self>) {
         self.replace_items(items.into());
         self.selected_ix = None;
+        self.hidden_selection = None;
         self.right_clicked_ix = None;
         cx.notify();
     }
@@ -224,10 +230,12 @@ impl TreeState {
 
     pub fn set_selected_index(&mut self, ix: Option<usize>, cx: &mut Context<Self>) {
         self.selected_ix = ix;
+        self.hidden_selection = None;
         cx.notify();
     }
 
     pub fn set_selected_item(&mut self, item: Option<&TreeItem>, cx: &mut Context<Self>) {
+        self.hidden_selection = None;
         if let Some(item) = item {
             self.selected_ix = self.index_of(&item.id);
             if self.selected_ix.is_none() {
@@ -337,7 +345,17 @@ impl TreeState {
         self.rebuild_entries();
     }
 
+    // rbx-native addition: the selection follows its item, not its index.
+    // Expanding or collapsing a row above the selected one shifts every row
+    // under it, and upstream kept the bare index, so the selection jumped to
+    // whatever row landed there. An item now hidden under a collapsed parent
+    // leaves no row selected but is remembered in `hidden_selection`, and
+    // selected again once a rebuild shows its row.
     fn rebuild_entries(&mut self) {
+        let selected = self
+            .selected_item()
+            .map(|item| item.id.clone())
+            .or(self.hidden_selection.take());
         let roots = self
             .entries
             .iter()
@@ -345,6 +363,10 @@ impl TreeState {
             .map(|entry| entry.item.clone())
             .collect::<Vec<_>>();
         self.replace_items(roots);
+        self.selected_ix = selected.as_ref().and_then(|id| self.index_of(id));
+        if self.selected_ix.is_none() {
+            self.hidden_selection = selected;
+        }
     }
 
     fn on_action_confirm(&mut self, _: &Confirm, _: &mut Window, cx: &mut Context<Self>) {
@@ -410,8 +432,17 @@ impl TreeState {
         cx.notify();
     }
 
+    // rbx-native addition: a click on a row only selects it, as in Roblox
+    // Studio's Explorer; the row's own chevron expands it, through
+    // `toggle_expanded` below. Upstream expands on any click on the row.
     fn on_entry_click(&mut self, ix: usize, cx: &mut Context<Self>) {
         self.selected_ix = Some(ix);
+        cx.notify();
+    }
+
+    // rbx-native addition: expands or collapses the folder at `ix`, for a
+    // chevron drawn by the row renderer.
+    pub fn toggle_expanded(&mut self, ix: usize, cx: &mut Context<Self>) {
         self.toggle_expand(ix, cx);
         cx.notify();
     }

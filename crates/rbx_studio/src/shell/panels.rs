@@ -21,7 +21,7 @@ impl Shell {
     /// The instance tree, built on the unstyled `gpui_base` element rather than
     /// the styled `tree()` wrapper: that wrapper also paints a right-click
     /// style and a popup menu hook, and the Explorer has neither — a click
-    /// selects (and may expand) a row, nothing more.
+    /// selects a row, and its chevron expands it (see `rows::row`).
     ///
     /// `on_key_down` sits on this outer div rather than inside `base::Tree`
     /// itself (out of reach, in `gpui_base`): GPUI dispatches a key event
@@ -59,6 +59,7 @@ impl Shell {
         let tree_focus = self.tree_focus_handle.clone();
         self.tab_order.register(&tree_focus);
         let tree_entity = self.tree.clone();
+        let tree = self.tree.clone();
 
         super::tree_keys::intercept_arrows(
             div()
@@ -101,6 +102,7 @@ impl Shell {
                             // nothing to drag or drop onto; it still has to draw.
                             let Some(reference) = explorer::item_ref(&item.id) else {
                                 return row(
+                                    &tree,
                                     index,
                                     entry,
                                     false,
@@ -118,7 +120,7 @@ impl Shell {
                                 index,
                                 reference,
                                 dragged,
-                                row(index, entry, highlighted, icon, tint, guide, widgets),
+                                row(&tree, index, entry, highlighted, icon, tint, guide, widgets),
                             )
                         })
                         .list_style(StyleRefinement::default().flex_grow_1().size_full())
