@@ -9,6 +9,21 @@
   Explorer, and the property points there — the way Studio does it. Escape
   backs out, `×` clears it, and a pick of the wrong kind of instance (a
   `Folder` for a `Part0`) is refused with a message. — @Vikmanou
+- **Edit a `Content` property as an asset URI.** A `Decal`'s `Texture` or a
+  `MeshPart`'s `MeshId` was read-only in the Properties panel; it is now a
+  field. An empty field (or `0`) clears it, a bare number becomes
+  `rbxassetid://<id>` the way Roblox's own `Content.fromAssetId` does, a
+  number that is no asset id is refused, and any other URI is kept as typed.
+  A `Content` pointing at an instance in the place stays read-only; wiring
+  an instance picker to it is what is left. — @Vikmanou
+- **Your script templates in the Model menu.** Templates in the
+  `script_templates` folder were only in the ribbon's Script menu; the menu
+  bar's Model menu now lists them too, at its end after Group/Ungroup,
+  named the same way (`Insert Enemy AI (Script)`). — @Vikmanou
+- **Choose the Explorer's default services.** Studio Settings › Explorer &
+  Output › Default services is live: click a service to list or hide it in
+  the Explorer while Show all services is off, and reset to go back to
+  Studio's own set. Only what you change is saved. — @Vikmanou
 
 ## 2026-09-30
 
