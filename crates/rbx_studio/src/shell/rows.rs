@@ -10,7 +10,7 @@ use gpui_kit::assets::IconName;
 use gpui_kit::component::color_picker::ColorPicker;
 use gpui_kit::component::input::{Input, InputState};
 use gpui_kit::component::select::Select;
-use gpui_kit::component::tree::TreeEntry;
+use gpui_kit::component::tree::{TreeEntry, TreeState};
 use gpui_kit::component::{h_flex, v_flex, Icon, Sizable};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
@@ -91,7 +91,13 @@ pub(super) fn guide_mask(depths: &[usize]) -> Vec<Guides> {
 /// `widgets` carries the two things a row cannot build for itself — the
 /// name box while it is being renamed, the `+` while it is hovered — since
 /// only `shell::explorer_edit` knows which row is which.
+///
+/// Only the chevron expands a row; a click anywhere else on it selects, as
+/// in Studio (creator-docs, `studio/explorer.md`: "Click the arrow next to
+/// a parent branch … to expand/collapse only that branch").
+#[allow(clippy::too_many_arguments)]
 pub(super) fn row(
+    tree: &Entity<TreeState>,
     index: usize,
     entry: &TreeEntry,
     selected: bool,
@@ -188,7 +194,15 @@ pub(super) fn row(
                         // correctness, and the guides are quiet enough now
                         // that the collision does not read.
                         .when(entry.is_folder(), |this| {
-                            this.child(Icon::new(chevron).xsmall())
+                            let tree = tree.clone();
+                            // Lets the press go on to the tree, which selects
+                            // the row as it would for a click on its name.
+                            this.child(Icon::new(chevron).xsmall()).on_mouse_down(
+                                MouseButton::Left,
+                                move |_, _, cx| {
+                                    tree.update(cx, |tree, cx| tree.toggle_expanded(index, cx))
+                                },
+                            )
                         }),
                 )
                 .child(class_icon)

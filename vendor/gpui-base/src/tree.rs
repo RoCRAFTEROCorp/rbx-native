@@ -410,8 +410,17 @@ impl TreeState {
         cx.notify();
     }
 
+    // rbx-native addition: a click on a row only selects it, as in Roblox
+    // Studio's Explorer; the row's own chevron expands it, through
+    // `toggle_expanded` below. Upstream expands on any click on the row.
     fn on_entry_click(&mut self, ix: usize, cx: &mut Context<Self>) {
         self.selected_ix = Some(ix);
+        cx.notify();
+    }
+
+    // rbx-native addition: expands or collapses the folder at `ix`, for a
+    // chevron drawn by the row renderer.
+    pub fn toggle_expanded(&mut self, ix: usize, cx: &mut Context<Self>) {
         self.toggle_expand(ix, cx);
         cx.notify();
     }
