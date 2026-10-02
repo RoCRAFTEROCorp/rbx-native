@@ -16,6 +16,15 @@
 //! Rows are built here rather than through [`menu::item`] because Rename,
 //! Insert and Change Class need a `Window` the controlled dropdown's action type does not
 //! carry; they share [`menu::row_chrome`] so both menus stay one design.
+//!
+//! The keyboard follows the same WAI-ARIA menu pattern as the dropdowns:
+//! Shift+F10 or the Menu key opens it on the selected row (at the pointer,
+//! where every Explorer popup goes); open, it holds focus, Up/Down move a
+//! highlight and wrap, Home/End jump to the ends, Enter or Space runs the
+//! highlighted row, and Escape closes it. However it closes, focus goes
+//! back to wherever it was when the menu opened (the tree, or the UI
+//! editor's canvas). Disabled rows take the highlight but cannot run, and
+//! the pointer moves the same highlight.
 
 use gpui_kit::assets::IconName;
 use gpui_kit::prelude::FluentBuilder as _;
@@ -23,6 +32,7 @@ use gpui_kit::*;
 use rbx_dom::{Ref, WeakDom};
 use rbx_reflection::ReflectionDatabase;
 
+use super::super::roving::Move;
 use super::super::{clipboard, group, keys, menu};
 use super::rename::renameable;
 use super::Shell;
@@ -68,9 +78,33 @@ pub(super) fn availability(
 
 /// One open context menu: the row it was opened on, kept so Insert and
 /// Rename act on that row rather than on whatever the selection later
-/// becomes.
+/// becomes, and its keyboard focus and highlight.
 pub(super) struct RowMenu {
     target: Ref,
+    focus: FocusHandle,
+    cursor: Option<usize>,
+    /// What had focus before the menu took it, given back on close.
+    previous: Option<FocusHandle>,
+}
+
+impl RowMenu {
+    pub(super) fn focus(&mut self, window: &mut Window, cx: &mut App) {
+        if self.previous.is_none() {
+            self.previous = window.focused(cx);
+        }
+        self.focus.focus(window, cx);
+    }
+}
+
+/// Whether `keystroke` asks for the selected row's menu: Shift+F10, or the
+/// Menu key on keyboards that have one, the two every desktop shares.
+pub(in crate::shell) fn opens_row_menu(keystroke: &Keystroke) -> bool {
+    let m = keystroke.modifiers;
+    match keystroke.key.as_str() {
+        "f10" => m.shift && !m.control && !m.alt && !m.platform,
+        "menu" => !m.modified(),
+        _ => false,
+    }
 }
 
 impl Shell {
@@ -89,12 +123,97 @@ impl Shell {
         self.explorer_edit.pointer = position;
         self.explorer_edit.picker = None;
         self.explorer_edit.renaming = None;
-        self.explorer_edit.menu = Some(RowMenu { target });
+        // A menu reopened over another keeps what the first one took
+        // focus from, rather than the first menu itself.
+        let previous = self
+            .explorer_edit
+            .menu
+            .take()
+            .and_then(|menu| menu.previous);
+        self.explorer_edit.menu = Some(RowMenu {
+            target,
+            focus: cx.focus_handle(),
+            cursor: None,
+            previous,
+        });
+        self.explorer_edit.focus_menu = true;
         cx.notify();
     }
 
+    /// Shift+F10 or the Menu key in the tree: the selected row's menu, at
+    /// the pointer like every Explorer popup, starting on its first row.
+    /// False with nothing selected, so the key falls through.
+    pub(in crate::shell) fn open_row_menu_from_keyboard(&mut self, cx: &mut Context<Self>) -> bool {
+        let Some(target) = self.selected() else {
+            return false;
+        };
+        self.open_row_menu(target, self.explorer_edit.pointer, cx);
+        if let Some(menu) = &mut self.explorer_edit.menu {
+            menu.cursor = Some(0);
+        }
+        true
+    }
+
+    /// Closes the row menu and, if focus is still in it, hands focus back to
+    /// what had it when the menu opened, as a popover does.
+    fn close_row_menu(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(menu) = self.explorer_edit.menu.take() {
+            if let Some(previous) = menu
+                .previous
+                .filter(|_| menu.focus.contains_focused(window, cx))
+            {
+                previous.focus(window, cx);
+            }
+        }
+        cx.notify();
+    }
+
+    /// The open menu's keys. `actions` is each row's handler where the row
+    /// can run, in row order.
+    fn row_menu_key(
+        &mut self,
+        keystroke: &Keystroke,
+        actions: &[Option<RowAction>],
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        let Some(menu) = &mut self.explorer_edit.menu else {
+            return false;
+        };
+        if let Some(movement) = Move::of(keystroke, true) {
+            menu.cursor = movement.from(menu.cursor, actions.len());
+            cx.notify();
+            return true;
+        }
+        match keystroke.key.as_str() {
+            "escape" => {
+                self.close_row_menu(window, cx);
+                true
+            }
+            "enter" | "space" => {
+                // Nothing highlighted (a right-click open): just close, as
+                // the dropdowns do. A disabled row runs nothing.
+                let Some(index) = menu.cursor else {
+                    self.close_row_menu(window, cx);
+                    return true;
+                };
+                if let Some(action) = actions.get(index).cloned().flatten() {
+                    // Closed and focus handed back first, as a click does:
+                    // Rename and Insert open something of their own, which
+                    // then takes focus from it.
+                    self.close_row_menu(window, cx);
+                    action(self, window, cx);
+                    cx.notify();
+                }
+                true
+            }
+            _ => false,
+        }
+    }
+
     pub(super) fn row_menu_popup(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
-        let target = self.explorer_edit.menu.as_ref()?.target;
+        let open = self.explorer_edit.menu.as_ref()?;
+        let (target, focus, cursor) = (open.target, open.focus.clone(), open.cursor);
         let mut live = availability(
             &self.dom,
             &self.database,
@@ -185,15 +304,28 @@ impl Shell {
                 live.delete,
                 |shell, _, cx| shell.delete_selected(cx),
             ),
-        ]
-        .map(|row| row.build(cx));
+        ];
+        let actions: Vec<Option<RowAction>> = rows
+            .iter()
+            .map(|row| row.enabled.then(|| row.action.clone()))
+            .collect();
+        let rows = rows
+            .into_iter()
+            .enumerate()
+            .map(|(index, row)| row.build(index, cursor == Some(index), cx))
+            .collect::<Vec<_>>();
 
         let surface = menu::surface()
             .id("explorer-row-menu")
+            .track_focus(&focus)
+            .on_key_down(cx.listener(move |shell, event: &KeyDownEvent, window, cx| {
+                if shell.row_menu_key(&event.keystroke, &actions, window, cx) {
+                    cx.stop_propagation();
+                }
+            }))
             .occlude()
-            .on_mouse_down_out(cx.listener(|shell, _: &MouseDownEvent, _, cx| {
-                shell.explorer_edit.menu = None;
-                cx.notify();
+            .on_mouse_down_out(cx.listener(|shell, _: &MouseDownEvent, window, cx| {
+                shell.close_row_menu(window, cx);
             }))
             .children(rows);
 
@@ -212,7 +344,7 @@ impl Shell {
 /// What one row does when clicked. A `Window` as well as a `Context`,
 /// unlike the controlled dropdown's own action: Rename and Insert both open
 /// something that needs one.
-type RowAction = Box<dyn Fn(&mut Shell, &mut Window, &mut Context<Shell>)>;
+type RowAction = std::rc::Rc<dyn Fn(&mut Shell, &mut Window, &mut Context<Shell>)>;
 
 /// One row of the menu, before it has a `Context` to bind its handler
 /// through — the array above has to be built as data first so every row can
@@ -237,12 +369,12 @@ fn row(
         icon,
         label,
         enabled,
-        action: Box::new(action),
+        action: std::rc::Rc::new(action),
     }
 }
 
 impl Row {
-    fn build(self, cx: &mut Context<Shell>) -> AnyElement {
+    fn build(self, index: usize, highlighted: bool, cx: &mut Context<Shell>) -> AnyElement {
         let Row {
             id,
             icon,
@@ -257,12 +389,21 @@ impl Row {
             enabled,
             false,
         )
+        // The keyboard's highlight wears the hover's surface, and the
+        // pointer moves it, as in the dropdowns (`shell::menu`).
+        .when(highlighted, |this| this.bg(crate::tokens::hover()))
+        .on_hover(cx.listener(move |shell, hovered: &bool, _, cx| {
+            if let Some(menu) = shell.explorer_edit.menu.as_mut().filter(|_| *hovered) {
+                menu.cursor = Some(index);
+                cx.notify();
+            }
+        }))
         .when(enabled, |this| {
             this.on_click(cx.listener(move |shell, _, window, cx| {
                 // Closed before the action runs, not after: Rename and
                 // Insert both open something of their own, and clearing
                 // the menu afterwards would take that with it.
-                shell.explorer_edit.menu = None;
+                shell.close_row_menu(window, cx);
                 action(shell, window, cx);
                 cx.notify();
             }))

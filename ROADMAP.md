@@ -1336,7 +1336,10 @@ Roblox's own engine.
   back on the trigger. A menu opened from the keyboard starts on its first
   row. Disabled rows take the highlight but cannot run, as the pattern
   asks. The pointer moves the same highlight. The moves are the roving
-  groups' own (`roving::Move`).
+  groups' own (`roving::Move`). The Explorer's right-click menu, which
+  builds its own rows, works the same way, and Shift+F10 or the Menu key
+  opens it on the selected row (at the pointer, where every Explorer popup
+  goes); however it closes, focus goes back to where it was.
 - [x] **Output window: the half of real Studio's filter/display feature
   set that does not need the sandbox**, checked against `studio/output.md`
   rather than assumed and built against what the Command Bar and app
@@ -2122,8 +2125,6 @@ against `Roblox/creator-docs` rather than assumed:
   CSS-style property transitions and cannot transform a `Div`;
   `gpui_base::transition` animates one value explicitly (the ghost dock's
   ease uses it), but putting it behind every hover state is a larger job.
-  The Explorer's right-click menu, which builds its own rows rather than
-  going through `shell::menu`, still has no arrow keys either.
 
 ### Play / Test workflow
 - [ ] 📋 The sandbox-place design (private per-developer place, injected
