@@ -45,7 +45,7 @@ const DEFAULT_SHADOW_SOFTNESS: f32 = 0.2;
 /// 70/255, sun 46 degrees up at 14:30, EnvironmentDiffuseScale 1. The value
 /// 0.45 matches measured grey face outputs to Studio when tone mapping
 /// differences are accounted for.
-pub(crate) const SUN_BASE: f32 = 0.45;
+const SUN_BASE: f32 = 0.45;
 
 /// The renderer's three empirically tuned constants, as values a user can
 /// nudge for a place lit unlike the captures they were tuned against.
@@ -70,6 +70,15 @@ impl Default for Calibration {
             atmosphere_density_scale: 0.0013,
             plastic_spec_strength: 0.28,
         }
+    }
+}
+
+impl Calibration {
+    /// What a custom `sun_base` multiplies both lamps by. `Lighting` is read
+    /// at [`SUN_BASE`], which scales the sun and the fill (moon) lamp and
+    /// nothing else, so another base is this ratio of the same colours.
+    pub(crate) fn lamp_scale(&self) -> f32 {
+        self.sun_base / SUN_BASE
     }
 }
 /// The second lamp, opposite the sun: what keeps a shaded face from reading as a

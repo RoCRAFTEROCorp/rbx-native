@@ -727,7 +727,8 @@ impl Renderer {
         // publishes no beam-lighting formula, so this is a documented
         // approximation rather than a match.
         let l = self.lighting;
-        let env_light = l.ambient + 0.5 * (l.sun_color + l.fill_color);
+        let env_light =
+            l.ambient + 0.5 * (l.sun_color + l.fill_color) * self.calibration.lamp_scale();
         self.beams.draw(
             queue,
             device,

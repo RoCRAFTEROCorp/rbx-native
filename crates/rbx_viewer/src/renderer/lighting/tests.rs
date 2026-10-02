@@ -357,9 +357,10 @@ fn clouds_cover_density_and_color_land_in_the_slots_the_shader_reads() {
 }
 
 /// The tuned set packs exactly what the shaders used to hard-code, and a
-/// recalibrated sun scales the sun colour by its ratio to the tuned base.
+/// recalibrated sun scales both lamps by its ratio to the tuned base, since
+/// `SUN_BASE` feeds the fill (moon) lamp as well as the sun.
 #[test]
-fn the_calibration_row_carries_the_tuned_constants_and_scales_the_sun() {
+fn the_calibration_row_carries_the_tuned_constants_and_scales_both_lamps() {
     let lighting = Lighting::default();
     let tuned = unshadowed(&lighting, Vec3::ZERO);
     assert_eq!(tuned.calibration, [0.0013, 0.28, 0.0, 0.0]);
@@ -380,7 +381,7 @@ fn the_calibration_row_carries_the_tuned_constants_and_scales_the_sun() {
     );
     assert_eq!(raw.calibration, [0.002, 0.5, 0.0, 0.0]);
     for channel in 0..3 {
-        let expected = tuned.sun_color[channel] * 2.0;
-        assert!((raw.sun_color[channel] - expected).abs() < 1e-6);
+        assert!((raw.sun_color[channel] - tuned.sun_color[channel] * 2.0).abs() < 1e-6);
+        assert!((raw.fill_color[channel] - tuned.fill_color[channel] * 2.0).abs() < 1e-6);
     }
 }

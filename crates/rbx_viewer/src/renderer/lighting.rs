@@ -10,7 +10,7 @@ use glam::Vec3;
 
 use super::envmap::Probe;
 use super::shadow::{Fit, Lamp};
-use crate::lighting::{Calibration, Clouds, Fog, Lighting, SUN_BASE};
+use crate::lighting::{Calibration, Clouds, Fog, Lighting};
 use crate::quality::QualityProfile;
 
 /// How much of the sky's own irradiance `EnvironmentDiffuseScale = 1` is worth.
@@ -79,7 +79,7 @@ pub(super) struct LightingRaw {
     clouds_extra: [f32; 4],
     /// The user's renderer calibration (see [`Calibration`]). x: atmosphere
     /// density scale, y: Plastic's specular strength. The sun's own base is
-    /// already in `sun_color`.
+    /// already in `sun_color` and `fill_color`.
     calibration: [f32; 4],
 }
 
@@ -105,10 +105,8 @@ impl LightingRaw {
 
         LightingRaw {
             sun_direction: vec4(lighting.sun_direction, 0.0),
-            // `Lighting` was read at `SUN_BASE`, which scales nothing but the
-            // sun lamp, so another base is this ratio of the same colour.
-            sun_color: vec4(lighting.sun_color * (calibration.sun_base / SUN_BASE), 0.0),
-            fill_color: vec4(lighting.fill_color, 0.0),
+            sun_color: vec4(lighting.sun_color * calibration.lamp_scale(), 0.0),
+            fill_color: vec4(lighting.fill_color * calibration.lamp_scale(), 0.0),
             ambient: vec4(lighting.ambient, 0.0),
             fog_color,
             fog_range,
