@@ -536,7 +536,7 @@ impl Shell {
         // Built last of Shell::new's entities: its `Action` handlers close
         // over `cx.entity()`, so `Shell` must already be constructible —
         // valid as soon as `cx.new` starts building it.
-        let menu_bar = crate::menu_bar::build(cx.entity(), cx);
+        let menu_bar = crate::menu_bar::build(cx.entity(), user.script_templates.extras(), cx);
 
         let (snap_fields, [translate_typed, rotate_typed, translate_stepped, rotate_stepped]) =
             SnapFields::new(transform, window, cx);

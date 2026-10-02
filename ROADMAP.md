@@ -56,9 +56,10 @@ Roblox's own engine.
   constructor over a metatable. The set is user-extensible now: a
   `script_templates` folder in the config directory holds one `.luau` file
   per template under `Script/`, `LocalScript/` or `ModuleScript/`
-  (`script_templates.rs`), each listed in the ribbon's Script menu by its
-  file name, and a `Default.luau` in a class's folder replaces the built-in
-  starter every new script of that class gets.
+  (`script_templates.rs`), each listed by its file name in the ribbon's
+  Script menu and at the end of the menu bar's Model menu. A `Default.luau`
+  in a class's folder replaces the built-in starter every new script of
+  that class gets.
 
 ### Renderer (`rbx_viewer`)
 - [x] Lighting model reverse-engineered from Roblox's own decompiled
@@ -1498,9 +1499,7 @@ Roblox's own engine.
   not a default this project should ship opinionated about.
 - [ ] 📋 **Managing script templates from inside the editor.** Authoring
   one today means a file manager and a text editor; there is no UI for
-  adding, renaming or deleting a template. The user's extras also appear
-  in the ribbon's Script menu but not the menu bar's Model menu, whose
-  items are fixed actions rather than a list built at runtime.
+  adding, renaming or deleting a template.
 - [ ] 📋 **Optional, bundled `Fragment` UI framework.** [`Fragment`](https://github.com/chteau/Fragment)
   (MIT, single-file Luau `ModuleScript`, React-inspired: local/global
   state, contexts, reusable components over plain `GuiObject`s) offered as
