@@ -31,6 +31,9 @@ pub(crate) use dragger::DraggerSettings;
 pub(crate) struct Settings {
     pub(crate) quality: QualityLevel,
     pub(crate) show_all_services: bool,
+    /// Which services the Explorer's default view lists, where that differs
+    /// from Studio's — see `explorer::ServiceOverrides`.
+    pub(crate) service_overrides: crate::explorer::ServiceOverrides,
     pub(crate) orthographic: bool,
     /// The viewport's top-right orientation indicator — see
     /// `crate::workspace_view::orientation`. Defaults on: it's meant to read
@@ -59,6 +62,13 @@ pub(crate) struct Settings {
     /// The renderer's tuned constants (Studio Settings › Viewport ›
     /// Advanced). The default is the tuned set; see `rbx_viewer::Calibration`.
     pub(crate) calibration: rbx_viewer::Calibration,
+    /// Whether Auto-Recovery writes a background copy of the open place
+    /// (see `crate::recovery`), and how many minutes apart.
+    pub(crate) auto_recovery: bool,
+    pub(crate) recovery_minutes: u32,
+    /// The Script Editor's text size at 1x, in px, before [`Self::font_scale`]
+    /// multiplies it like every other size. See [`SCRIPT_FONT_SIZE`].
+    pub(crate) script_font_size: f32,
     /// Raises the minimum pointer target from WCAG 2.5.8's 24px floor to
     /// 2.5.5's 44px one — Blender's "editor-area padding" idea, which its
     /// own manual describes as improving usability "on pen tablets, touch
@@ -78,6 +88,9 @@ pub(crate) struct Settings {
     /// Read back through `shell::Layout::restore`, which is total over
     /// whatever the file holds, so nothing here has to validate it.
     pub(crate) docks: SavedLayout,
+    /// Dock layouts saved under a name from Studio Settings › Layout, to
+    /// switch between (Blender's workspaces); see [`NamedLayout`].
+    pub(crate) named_layouts: Vec<NamedLayout>,
     pub(crate) output_collapsed: bool,
     /// Whether Output rows print their time.
     pub(crate) output_timestamps: bool,
@@ -101,6 +114,33 @@ pub(crate) struct Settings {
     pub(crate) argon: argon::ArgonSettings,
 }
 
+/// A dock layout saved under a name.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct NamedLayout {
+    pub(crate) name: String,
+    pub(crate) layout: SavedLayout,
+}
+
+/// The Script Editor's default text size: the toolkit theme's own code size
+/// (`mono_font_size`, 13px), so a file without the setting looks the way the
+/// editor always has at 1x.
+pub(crate) const SCRIPT_FONT_SIZE: f32 = 13.;
+
+/// What the Script Font Size field accepts. Below 8px code stops being
+/// legible; above 32px a line holds too little of it, and the UI scale is
+/// the setting for making everything larger.
+pub(crate) const SCRIPT_FONT_SIZE_RANGE: (f32, f32) = (8., 32.);
+
+/// Clamped rather than rejected, like the UI scale: a hand-edited `100`
+/// should open the editor at the largest size, not discard the file.
+pub(crate) fn clamp_script_font_size(size: f32) -> f32 {
+    if size.is_finite() {
+        size.clamp(SCRIPT_FONT_SIZE_RANGE.0, SCRIPT_FONT_SIZE_RANGE.1)
+    } else {
+        SCRIPT_FONT_SIZE
+    }
+}
+
 impl Default for Settings {
     /// Same defaults `Shell`/`main` used before either was configurable, so a
     /// missing settings file changes nothing about a first run.
@@ -108,6 +148,7 @@ impl Default for Settings {
         Settings {
             quality: QualityLevel::Automatic,
             show_all_services: false,
+            service_overrides: Default::default(),
             orthographic: false,
             axis_indicator: true,
             selection_occluded: false,
@@ -116,6 +157,9 @@ impl Default for Settings {
             unfocused_fps: UnfocusedFps::DEFAULT,
             font_scale: 1.,
             calibration: rbx_viewer::Calibration::default(),
+            auto_recovery: true,
+            recovery_minutes: crate::recovery::INTERVAL_DEFAULT,
+            script_font_size: SCRIPT_FONT_SIZE,
             large_targets: false,
             reduce_motion: None,
             argon_address: String::new(),
@@ -124,6 +168,7 @@ impl Default for Settings {
             // defaults live with the layout in `shell::layout`, and
             // duplicating them here is how the two drift apart.
             docks: SavedLayout::default(),
+            named_layouts: Vec::new(),
             output_collapsed: false,
             output_timestamps: false,
             increment_names: true,
@@ -254,6 +299,15 @@ fn load_from(path: &Path) -> Settings {
     Settings {
         quality,
         show_all_services,
+        service_overrides: value
+            .get("service_overrides")
+            .and_then(|v| v.as_object())
+            .map(|map| {
+                map.iter()
+                    .filter_map(|(class, listed)| Some((class.clone(), listed.as_bool()?)))
+                    .collect()
+            })
+            .unwrap_or_default(),
         orthographic,
         axis_indicator,
         selection_occluded: value
@@ -268,12 +322,27 @@ fn load_from(path: &Path) -> Settings {
         unfocused_fps,
         font_scale,
         calibration: read_calibration(&value),
+        auto_recovery: value
+            .get("auto_recovery")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(true),
+        recovery_minutes: value
+            .get("recovery_minutes")
+            .and_then(|v| v.as_u64())
+            .map(crate::recovery::clamp_minutes)
+            .unwrap_or(crate::recovery::INTERVAL_DEFAULT),
+        script_font_size: value
+            .get("script_font_size")
+            .and_then(|v| v.as_f64())
+            .map(|size| clamp_script_font_size(size as f32))
+            .unwrap_or(SCRIPT_FONT_SIZE),
         large_targets: value
             .get("large_targets")
             .and_then(|v| v.as_bool())
             .unwrap_or(false),
         reduce_motion: value.get("reduce_motion").and_then(|v| v.as_bool()),
         docks: read_docks(&value),
+        named_layouts: read_named_layouts(&value),
         output_collapsed: value
             .get("output_collapsed")
             .and_then(|v| v.as_bool())
@@ -310,10 +379,11 @@ fn load_from(path: &Path) -> Settings {
 /// here has — a hand-edited or future-version settings file must not stop
 /// the editor from opening.
 fn read_docks(value: &serde_json::Value) -> SavedLayout {
-    let Some(docks) = value.get("docks") else {
-        return SavedLayout::default();
-    };
+    value.get("docks").map(read_layout).unwrap_or_default()
+}
 
+/// One saved layout's object — `docks`, or a named layout's `layout`.
+fn read_layout(docks: &serde_json::Value) -> SavedLayout {
     let names = |value: Option<&serde_json::Value>| -> Vec<String> {
         value
             .and_then(serde_json::Value::as_array)
@@ -420,11 +490,67 @@ pub(crate) fn calibration_range(tuned: f32) -> (f32, f32) {
     (tuned / 10., tuned * 10.)
 }
 
+/// [`read_layout`]'s inverse.
+fn layout_json(layout: &SavedLayout) -> serde_json::Value {
+    serde_json::json!({
+        "edges": layout
+            .edges
+            .iter()
+            .map(|edge| {
+                serde_json::json!({
+                    "edge": crate::shell::edge_key(edge.edge),
+                    "size": edge.size,
+                    "groups": edge
+                        .groups
+                        .iter()
+                        .map(|group| serde_json::json!({
+                            "panels": group.panels,
+                            "active": group.active,
+                        }))
+                        .collect::<Vec<_>>(),
+                })
+            })
+            .collect::<Vec<_>>(),
+        "floating": layout.floating,
+        "closed": layout.closed,
+    })
+}
+
+/// The saved named layouts. One without a name, or with a name an earlier
+/// entry already has, is left out: names are how they are told apart.
+fn read_named_layouts(value: &serde_json::Value) -> Vec<NamedLayout> {
+    let mut layouts: Vec<NamedLayout> = Vec::new();
+    for entry in value
+        .get("named_layouts")
+        .and_then(serde_json::Value::as_array)
+        .into_iter()
+        .flatten()
+    {
+        let Some(name) = entry
+            .get("name")
+            .and_then(serde_json::Value::as_str)
+            .map(str::trim)
+            .filter(|name| !name.is_empty())
+        else {
+            continue;
+        };
+        if layouts.iter().any(|named| named.name == name) {
+            continue;
+        }
+        layouts.push(NamedLayout {
+            name: name.to_owned(),
+            layout: entry.get("layout").map(read_layout).unwrap_or_default(),
+        });
+    }
+    layouts
+}
+
 fn save_to(settings: &Settings, path: &Path) -> Result<(), SettingsError> {
     let [camera, snap] = settings.controls.json();
     let value = serde_json::json!({
         "quality": format_quality(settings.quality),
         "show_all_services": settings.show_all_services,
+        "service_overrides": settings.service_overrides,
         "orthographic": settings.orthographic,
         "axis_indicator": settings.axis_indicator,
         "selection_occluded": settings.selection_occluded,
@@ -437,31 +563,20 @@ fn save_to(settings: &Settings, path: &Path) -> Result<(), SettingsError> {
             "atmosphere_density_scale": settings.calibration.atmosphere_density_scale,
             "plastic_spec_strength": settings.calibration.plastic_spec_strength,
         },
+        "auto_recovery": settings.auto_recovery,
+        "recovery_minutes": settings.recovery_minutes,
+        "script_font_size": settings.script_font_size,
         "large_targets": settings.large_targets,
         "reduce_motion": settings.reduce_motion,
-        "docks": {
-            "edges": settings
-                .docks
-                .edges
-                .iter()
-                .map(|edge| {
-                    serde_json::json!({
-                        "edge": crate::shell::edge_key(edge.edge),
-                        "size": edge.size,
-                        "groups": edge
-                            .groups
-                            .iter()
-                            .map(|group| serde_json::json!({
-                                "panels": group.panels,
-                                "active": group.active,
-                            }))
-                            .collect::<Vec<_>>(),
-                    })
-                })
-                .collect::<Vec<_>>(),
-            "floating": settings.docks.floating,
-            "closed": settings.docks.closed,
-        },
+        "docks": layout_json(&settings.docks),
+        "named_layouts": settings
+            .named_layouts
+            .iter()
+            .map(|named| serde_json::json!({
+                "name": named.name,
+                "layout": layout_json(&named.layout),
+            }))
+            .collect::<Vec<_>>(),
         "output_collapsed": settings.output_collapsed,
         "output_timestamps": settings.output_timestamps,
         "increment_names": settings.increment_names,
@@ -830,6 +945,81 @@ mod tests {
         assert_eq!(loaded.plastic_spec_strength, 0.3);
     }
 
+    #[test]
+    fn auto_recovery_round_trips_and_defaults_on_every_four_minutes() {
+        let path = temp_settings_path();
+        let settings = Settings {
+            auto_recovery: false,
+            recovery_minutes: 9,
+            ..Settings::default()
+        };
+        save_to(&settings, &path).expect("save settings");
+        let loaded = load_from(&path);
+        assert!(!loaded.auto_recovery);
+        assert_eq!(loaded.recovery_minutes, 9);
+
+        std::fs::write(&path, br#"{"recovery_minutes": 60}"#).expect("write settings");
+        let loaded = load_from(&path);
+        assert!(loaded.auto_recovery);
+        assert_eq!(loaded.recovery_minutes, 10);
+
+        std::fs::write(&path, b"{}").expect("write settings");
+        assert_eq!(
+            load_from(&path).recovery_minutes,
+            crate::recovery::INTERVAL_DEFAULT
+        );
+    }
+
+    #[test]
+    fn a_script_font_size_round_trips_and_a_missing_one_is_the_theme_size() {
+        let path = temp_settings_path();
+        let settings = Settings {
+            script_font_size: 18.,
+            ..Settings::default()
+        };
+        save_to(&settings, &path).expect("save settings");
+        assert_eq!(load_from(&path).script_font_size, 18.);
+
+        std::fs::write(&path, br#"{"show_all_services": true}"#).expect("write settings");
+        assert_eq!(load_from(&path).script_font_size, SCRIPT_FONT_SIZE);
+    }
+
+    #[test]
+    fn a_script_font_size_outside_the_range_is_clamped() {
+        let path = temp_settings_path();
+        std::fs::create_dir_all(path.parent().expect("settings path has a parent"))
+            .expect("create temp dir");
+        std::fs::write(&path, br#"{"script_font_size": 100}"#).expect("write settings");
+        assert_eq!(load_from(&path).script_font_size, SCRIPT_FONT_SIZE_RANGE.1);
+
+        assert_eq!(clamp_script_font_size(2.), SCRIPT_FONT_SIZE_RANGE.0);
+        assert_eq!(clamp_script_font_size(f32::NAN), SCRIPT_FONT_SIZE);
+        assert_eq!(clamp_script_font_size(16.), 16.);
+    }
+
+    #[test]
+    fn service_overrides_round_trip_and_a_non_boolean_is_dropped() {
+        let path = temp_settings_path();
+        let mut overrides = crate::explorer::ServiceOverrides::new();
+        overrides.insert("HttpService".into(), true);
+        overrides.insert("Teams".into(), false);
+        let settings = Settings {
+            service_overrides: overrides.clone(),
+            ..Settings::default()
+        };
+        save_to(&settings, &path).expect("save settings");
+        assert_eq!(load_from(&path).service_overrides, overrides);
+
+        std::fs::write(
+            &path,
+            br#"{"service_overrides": {"Teams": false, "Chat": "yes"}}"#,
+        )
+        .expect("write settings");
+        let loaded = load_from(&path).service_overrides;
+        assert_eq!(loaded.len(), 1);
+        assert_eq!(loaded.get("Teams"), Some(&false));
+    }
+
     /// The dock layout is the one preference a user can wreck by accident
     /// — a column dragged to four pixels wide saves that way — so "Reset
     /// Layout" exists, and a saved layout has to actually come back.
@@ -882,6 +1072,47 @@ mod tests {
             read.reduce_motion, None,
             "no recorded choice means follow the desktop, not 'off'"
         );
+    }
+
+    #[test]
+    fn named_layouts_round_trip_and_a_nameless_or_repeated_one_is_dropped() {
+        let path = temp_settings_path();
+        let layout = SavedLayout {
+            edges: vec![SavedEdge {
+                edge: Edge::Left,
+                groups: vec![SavedGroup {
+                    panels: vec!["Explorer".into()],
+                    active: 0,
+                }],
+                size: 320.,
+            }],
+            floating: vec!["Output".into()],
+            closed: Vec::new(),
+        };
+        let settings = Settings {
+            named_layouts: vec![NamedLayout {
+                name: "Scripting".into(),
+                layout: layout.clone(),
+            }],
+            ..Settings::default()
+        };
+        save_to(&settings, &path).expect("save settings");
+        assert_eq!(load_from(&path).named_layouts, settings.named_layouts);
+
+        std::fs::write(
+            &path,
+            br#"{"named_layouts": [
+                {"name": "  ", "layout": {}},
+                {"name": "Build", "layout": {}},
+                {"name": "Build", "layout": {"closed": ["Output"]}},
+                {"layout": {}}
+            ]}"#,
+        )
+        .expect("write settings");
+        let loaded = load_from(&path).named_layouts;
+        assert_eq!(loaded.len(), 1);
+        assert_eq!(loaded[0].name, "Build");
+        assert!(loaded[0].layout.closed.is_empty());
     }
 
     /// A hand-edited file must not be able to collapse the editor.
