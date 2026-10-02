@@ -59,6 +59,9 @@ pub(crate) struct Settings {
     /// WCAG 1.4.4's 200% resize, since there is no browser zoom to lean on;
     /// the range is Blender's Resolution Scale range, for the same reason.
     pub(crate) font_scale: f32,
+    /// The Script Editor's text size at 1x, in px, before [`Self::font_scale`]
+    /// multiplies it like every other size. See [`SCRIPT_FONT_SIZE`].
+    pub(crate) script_font_size: f32,
     /// Raises the minimum pointer target from WCAG 2.5.8's 24px floor to
     /// 2.5.5's 44px one — Blender's "editor-area padding" idea, which its
     /// own manual describes as improving usability "on pen tablets, touch
@@ -101,6 +104,26 @@ pub(crate) struct Settings {
     pub(crate) argon: argon::ArgonSettings,
 }
 
+/// The Script Editor's default text size: the toolkit theme's own code size
+/// (`mono_font_size`, 13px), so a file without the setting looks the way the
+/// editor always has at 1x.
+pub(crate) const SCRIPT_FONT_SIZE: f32 = 13.;
+
+/// What the Script Font Size field accepts. Below 8px code stops being
+/// legible; above 32px a line holds too little of it, and the UI scale is
+/// the setting for making everything larger.
+pub(crate) const SCRIPT_FONT_SIZE_RANGE: (f32, f32) = (8., 32.);
+
+/// Clamped rather than rejected, like the UI scale: a hand-edited `100`
+/// should open the editor at the largest size, not discard the file.
+pub(crate) fn clamp_script_font_size(size: f32) -> f32 {
+    if size.is_finite() {
+        size.clamp(SCRIPT_FONT_SIZE_RANGE.0, SCRIPT_FONT_SIZE_RANGE.1)
+    } else {
+        SCRIPT_FONT_SIZE
+    }
+}
+
 impl Default for Settings {
     /// Same defaults `Shell`/`main` used before either was configurable, so a
     /// missing settings file changes nothing about a first run.
@@ -116,6 +139,7 @@ impl Default for Settings {
             icon_pack: IconPack::Dark,
             unfocused_fps: UnfocusedFps::DEFAULT,
             font_scale: 1.,
+            script_font_size: SCRIPT_FONT_SIZE,
             large_targets: false,
             reduce_motion: None,
             argon_address: String::new(),
@@ -276,6 +300,11 @@ fn load_from(path: &Path) -> Settings {
         icon_pack,
         unfocused_fps,
         font_scale,
+        script_font_size: value
+            .get("script_font_size")
+            .and_then(|v| v.as_f64())
+            .map(|size| clamp_script_font_size(size as f32))
+            .unwrap_or(SCRIPT_FONT_SIZE),
         large_targets: value
             .get("large_targets")
             .and_then(|v| v.as_bool())
@@ -410,6 +439,7 @@ fn save_to(settings: &Settings, path: &Path) -> Result<(), SettingsError> {
         "icon_pack": format_icon_pack(settings.icon_pack),
         "unfocused_fps": settings.unfocused_fps.fps(),
         "font_scale": settings.font_scale,
+        "script_font_size": settings.script_font_size,
         "large_targets": settings.large_targets,
         "reduce_motion": settings.reduce_motion,
         "docks": {
@@ -771,6 +801,33 @@ mod tests {
 
         save_to(&settings, &path).expect("save settings");
         assert_eq!(load_from(&path).font_scale, 1.5);
+    }
+
+    #[test]
+    fn a_script_font_size_round_trips_and_a_missing_one_is_the_theme_size() {
+        let path = temp_settings_path();
+        let settings = Settings {
+            script_font_size: 18.,
+            ..Settings::default()
+        };
+        save_to(&settings, &path).expect("save settings");
+        assert_eq!(load_from(&path).script_font_size, 18.);
+
+        std::fs::write(&path, br#"{"show_all_services": true}"#).expect("write settings");
+        assert_eq!(load_from(&path).script_font_size, SCRIPT_FONT_SIZE);
+    }
+
+    #[test]
+    fn a_script_font_size_outside_the_range_is_clamped() {
+        let path = temp_settings_path();
+        std::fs::create_dir_all(path.parent().expect("settings path has a parent"))
+            .expect("create temp dir");
+        std::fs::write(&path, br#"{"script_font_size": 100}"#).expect("write settings");
+        assert_eq!(load_from(&path).script_font_size, SCRIPT_FONT_SIZE_RANGE.1);
+
+        assert_eq!(clamp_script_font_size(2.), SCRIPT_FONT_SIZE_RANGE.0);
+        assert_eq!(clamp_script_font_size(f32::NAN), SCRIPT_FONT_SIZE);
+        assert_eq!(clamp_script_font_size(16.), 16.);
     }
 
     #[test]

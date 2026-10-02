@@ -2,6 +2,11 @@
 
 ## 2026-10-01
 
+- **Script font size.** Studio Settings › Appearance › Script font size is
+  live: the Script Editor's text, 8 to 32 px, saved with the other
+  settings. It sits on top of the UI scale, so the Script Editor now grows
+  and shrinks with the rest of the window too, which it didn't before.
+  — @Vikmanou
 - **Pick an instance for a reference property.** A `Weld`'s `Part0`, an
   `ObjectValue`'s `Value` and every other property that points at an
   instance were read-only, and an unset one wasn't listed at all. Now an

@@ -1396,6 +1396,12 @@ Roblox's own engine.
   description or `settings.json` key and shows it live. Keyboard shortcuts
   stay a window of their own, as in Studio; what the screen still shows as
   `SOON` is its own bullet under "What's planned".
+- [x] **Script font size** in Studio Settings › Appearance: the Script
+  Editor's text size, 8 to 32 px, multiplied by the UI scale like every
+  other size, so the editor now also follows the UI scale, which it did
+  not before. It defaults to the toolkit's own 13 px code size, so nothing
+  changes for a file without the setting; the editor's rows follow the
+  size.
 - [x] **Default services** in Studio Settings › Explorer & Output: which
   services the Explorer lists while Show all services is off. Each service
   in the grid is ticked when the default view lists it and flips on a
@@ -1842,9 +1848,10 @@ against `Roblox/creator-docs` rather than assumed:
   Stage 3, minus what already shipped.** Stage 1 is met and asserted in
   tests; these are the rest, each small enough to ride along with other
   work rather than needing its own PR:
-  - **A separate editor/viewport font size**, independent of the UI scale —
-    VS Code's split between `window.zoomLevel` and `editor.fontSize`.
-    Nothing needs it yet; the moment the script editor grows, it will.
+  - **A separate viewport font size**, on top of the UI scale — VS Code's
+    split between `window.zoomLevel` and `editor.fontSize`. The script
+    editor's half shipped as Settings' Script font size; the viewport's
+    text still has only the UI scale.
   - **Named dock layouts.** Sizes persist and Reset Layout exists; saving
     several under names (Blender's "workspaces") is the piece that does not.
   - **44×44 targets on primary and destructive controls by default** (2.5.5),
@@ -1985,7 +1992,7 @@ against `Roblox/creator-docs` rather than assumed:
   WGSL ones are compile-time shader constants today and need a uniform),
   the **Auto-Recovery** toggle, interval and folder and
   Play's **test-copy name** (waiting on the autosave item below),
-  **several accounts**, **named layouts**, **script font size**, the
+  **several accounts**, **named layouts**, the
   eyedropper in the colour popover (GPUI has no way to sample the
   screen), and
   **Keyboard shortcuts** — real Studio's own separate
