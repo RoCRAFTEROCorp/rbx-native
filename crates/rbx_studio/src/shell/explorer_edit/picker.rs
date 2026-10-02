@@ -38,7 +38,7 @@ use crate::explorer::insert;
 use crate::explorer::resolve_icon;
 use crate::tokens;
 
-use super::Shell;
+use super::{give_focus_back, Shell};
 
 mod options;
 mod row;
@@ -57,9 +57,21 @@ pub(super) struct Picker {
     /// The class under the pointer, which the footer describes in preference
     /// to the highlight: it is the row being looked at.
     hovered: Option<String>,
+    /// What had focus before the search field took it, given back however
+    /// the picker closes.
+    previous: Option<FocusHandle>,
     /// Kept alive only to stay subscribed — the list has to repaint as the
     /// query is typed, and Enter arrives as the field's own event.
     _subscription: Subscription,
+}
+
+impl Picker {
+    /// See [`give_focus_back`]: a pick or Escape closes a picker that still
+    /// has focus, a click outside one that may have just lost it.
+    pub(super) fn give_focus_back(&self, window: &mut Window, cx: &mut App) {
+        let own = self.query.read(cx).focus_handle(cx);
+        give_focus_back(self.previous.clone(), &own, window, cx);
+    }
 }
 
 /// What a picked class is for.
@@ -123,19 +135,29 @@ impl Shell {
         // `window` is what `InputState::new` needs; the caret itself lands a
         // frame later (see `Shell::focus_explorer_edit`).
         let query = cx.new(|cx| InputState::new(window, cx).placeholder("Search"));
-        let subscription = cx.subscribe(&query, |shell, _, event: &InputEvent, cx| match event {
-            InputEvent::Change => {
-                if let Some(picker) = shell.explorer_edit.picker.as_mut() {
-                    picker.highlight = 0;
-                    picker.scroll.scroll_to_item(0);
+        let subscription = cx.subscribe_in(
+            &query,
+            window,
+            |shell, _, event: &InputEvent, window, cx| match event {
+                InputEvent::Change => {
+                    if let Some(picker) = shell.explorer_edit.picker.as_mut() {
+                        picker.highlight = 0;
+                        picker.scroll.scroll_to_item(0);
+                    }
+                    cx.notify();
                 }
-                cx.notify();
-            }
-            InputEvent::PressEnter { .. } => shell.commit_highlighted(cx),
-            _ => {}
-        });
+                InputEvent::PressEnter { .. } => shell.commit_highlighted(window, cx),
+                _ => {}
+            },
+        );
         self.explorer_edit.focus_next = Some(query.clone());
 
+        // A picker reopened over another keeps what the first one took
+        // focus from, as the row menu does.
+        let previous = match self.explorer_edit.picker.take() {
+            Some(open) => open.previous,
+            None => window.focused(cx),
+        };
         self.explorer_edit.menu = None;
         self.explorer_edit.renaming = None;
         self.explorer_edit.picker = Some(Picker {
@@ -144,6 +166,7 @@ impl Shell {
             scroll: ScrollHandle::new(),
             highlight: 0,
             hovered: None,
+            previous,
             _subscription: subscription,
         });
         cx.notify();
@@ -226,8 +249,10 @@ impl Shell {
             .bg(tokens::chrome())
             .rounded(tokens::radius())
             .shadow(tokens::elevation())
-            .on_mouse_down_out(cx.listener(|shell, _: &MouseDownEvent, _, cx| {
-                shell.explorer_edit.picker = None;
+            .on_mouse_down_out(cx.listener(|shell, _: &MouseDownEvent, window, cx| {
+                if let Some(picker) = shell.explorer_edit.picker.take() {
+                    picker.give_focus_back(window, cx);
+                }
                 cx.notify();
             }))
             .capture_action(cx.listener(|shell, _: &MoveUp, _, cx| {
@@ -330,7 +355,7 @@ impl Shell {
     }
 
     /// Enter: commits the highlighted row, if it can be picked at all.
-    fn commit_highlighted(&mut self, cx: &mut Context<Self>) {
+    fn commit_highlighted(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let Some(picker) = self.explorer_edit.picker.as_ref() else {
             return;
         };
@@ -341,7 +366,7 @@ impl Shell {
             .filter(|choice| choice.legal)
             .map(|choice| choice.class.clone());
         if let Some(class) = picked {
-            self.commit_picked(class, cx);
+            self.commit_picked(class, window, cx);
         }
     }
 
@@ -349,10 +374,11 @@ impl Shell {
     /// purpose already has — an insert goes exactly where the Insert menu
     /// and the quick-insert keys go, so a picked class costs one undo step
     /// and reaches the viewport the same way every other insert does.
-    fn commit_picked(&mut self, class: String, cx: &mut Context<Self>) {
+    fn commit_picked(&mut self, class: String, window: &mut Window, cx: &mut Context<Self>) {
         let Some(picker) = self.explorer_edit.picker.take() else {
             return;
         };
+        picker.give_focus_back(window, cx);
         match picker.purpose {
             Purpose::Insert(parent) => self.insert_instance_under(Some(parent), &class, cx),
             Purpose::ChangeClass(targets) => self.change_class(&targets, &class, cx),

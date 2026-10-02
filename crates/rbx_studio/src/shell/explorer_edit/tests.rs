@@ -123,9 +123,9 @@ fn shift_f10_and_the_menu_key_open_the_row_menu_and_nothing_else_does() {
     assert!(!opens_row_menu(&key("down", false, false)));
 }
 
-/// The row menu's and the name box's shared close path: focus goes back to
-/// the tree when it was still in the closing box or had gone nowhere, and
-/// stays put when a click moved it somewhere else on purpose.
+/// The shared close path of the row menu, the picker and the name box: focus
+/// goes back to the tree when it was still in the closing box or had gone
+/// nowhere, and stays put when a click moved it somewhere else on purpose.
 #[gpui_kit::test]
 fn closing_hands_focus_back_only_when_nothing_else_took_it(cx: &mut gpui_kit::TestAppContext) {
     let cx = cx.add_empty_window();

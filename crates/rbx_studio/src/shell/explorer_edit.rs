@@ -149,9 +149,11 @@ impl Shell {
         if let Some(renaming) = &renaming {
             renaming.give_focus_back(window, cx);
         }
-        self.explorer_edit.picker.take().is_some()
-            | self.explorer_edit.menu.take().is_some()
-            | renaming.is_some()
+        let picker = self.explorer_edit.picker.take();
+        if let Some(picker) = &picker {
+            picker.give_focus_back(window, cx);
+        }
+        picker.is_some() | self.explorer_edit.menu.take().is_some() | renaming.is_some()
     }
 
     /// Where a popup opened from the Explorer goes. Anchored to the pointer
@@ -163,7 +165,8 @@ impl Shell {
     }
 }
 
-/// Hands focus back to `previous` as the row menu or a name box closes — but
+/// Hands focus back to `previous` as the row menu, the picker or a name box
+/// closes — but
 /// only while focus is still in `own`, or has gone nowhere because `own`'s
 /// element just left the tree. A click that put focus somewhere else on
 /// purpose keeps it there. Without this, closing either one drops focus on
