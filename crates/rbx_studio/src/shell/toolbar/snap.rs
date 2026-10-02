@@ -113,6 +113,8 @@ pub(in crate::shell) struct NumberField {
     /// must not rewrite such a field from the setting, or the commit would
     /// see the old value.
     typed: Rc<Cell<bool>>,
+    /// Escape discards the typed text (see [`NumberField::new`]).
+    _escape: Subscription,
 }
 
 /// What [`NumberField::sync`] does with a field this render.
@@ -121,15 +123,18 @@ enum Resync {
     Leave,
     /// Focus left with typed text in it.
     Commit,
-    /// The setting changed elsewhere (a reset, the other editor).
+    /// Not typed in, and the setting changed elsewhere (a reset, the other
+    /// editor) or Escape discarded the edit.
     Rewrite,
 }
 
 fn resync(focused: bool, typed: bool, shown: Option<f32>, value: f32) -> Resync {
-    if focused {
-        Resync::Leave
-    } else if typed {
-        Resync::Commit
+    if typed {
+        if focused {
+            Resync::Leave
+        } else {
+            Resync::Commit
+        }
     } else if shown != Some(value) {
         Resync::Rewrite
     } else {
@@ -164,15 +169,36 @@ impl NumberField {
                 _ => {}
             }
         });
-        (NumberField { input, typed }, subscription)
+        // Intercepted, before the key reaches the field: by then Escape may
+        // have closed the popover and taken focus with it. The key still goes
+        // on to do whatever it does today; this only forgets the edit, and
+        // the next render's sync puts the value in effect back.
+        let escape = cx.intercept_keystrokes({
+            let (input, typed) = (input.clone(), typed.clone());
+            move |event, window, cx| {
+                if event.keystroke.key == "escape"
+                    && typed.get()
+                    && input.read(cx).focus_handle(cx).is_focused(window)
+                {
+                    typed.set(false);
+                    window.refresh();
+                }
+            }
+        });
+        let field = NumberField {
+            input,
+            typed,
+            _escape: escape,
+        };
+        (field, subscription)
     }
 
     /// Run every render with the setting's value. A field focus has left with
     /// typed text in it is committed from here: gpui sends `Blur` only after
     /// the frame focus moved in has been drawn (`Window::draw` runs focus
     /// listeners after `draw_roots`), and never while the window is
-    /// inactive. Otherwise an unfocused field is rewritten from the setting
-    /// when it changed elsewhere.
+    /// inactive. A field not typed in is rewritten from the setting whenever
+    /// they disagree, focused or not.
     pub(in crate::shell) fn sync(&self, value: f32, window: &mut Window, cx: &mut App) {
         let state = self.input.read(cx);
         let focused = state.focus_handle(cx).is_focused(window);
@@ -437,7 +463,10 @@ mod tests {
     fn a_field_left_with_typed_text_commits_rather_than_resyncs() {
         // Still being typed in: left alone, whatever it shows.
         assert_eq!(resync(true, true, Some(2.), 32.), Resync::Leave);
-        assert_eq!(resync(true, false, Some(2.), 32.), Resync::Leave);
+        // Escape forgot the edit with focus kept: the value in effect is
+        // shown again.
+        assert_eq!(resync(true, false, Some(20.), 32.), Resync::Rewrite);
+        assert_eq!(resync(true, false, Some(32.), 32.), Resync::Leave);
         // Focus left with `20` typed over 32: commit it, don't write 32 back.
         assert_eq!(resync(false, true, Some(20.), 32.), Resync::Commit);
         // Changed elsewhere (a reset) and not typed in: show the setting.
