@@ -92,9 +92,10 @@ pub(super) fn guide_mask(depths: &[usize]) -> Vec<Guides> {
 /// name box while it is being renamed, the `+` while it is hovered — since
 /// only `shell::explorer_edit` knows which row is which.
 ///
-/// Only the chevron expands a row; a click anywhere else on it selects, as
-/// in Studio (creator-docs, `studio/explorer.md`: "Click the arrow next to
-/// a parent branch … to expand/collapse only that branch").
+/// Only the chevron expands a row, without selecting it; a click anywhere
+/// else on it selects, as in Studio (creator-docs, `studio/explorer.md`:
+/// "Click the arrow next to a parent branch … to expand/collapse only that
+/// branch").
 #[allow(clippy::too_many_arguments)]
 pub(super) fn row(
     tree: &Entity<TreeState>,
@@ -195,12 +196,20 @@ pub(super) fn row(
                         // that the collision does not read.
                         .when(entry.is_folder(), |this| {
                             let tree = tree.clone();
-                            // Lets the press go on to the tree, which selects
-                            // the row as it would for a click on its name.
+                            // Expands or collapses and nothing else, as
+                            // Studio's arrow does: the press stops here, so
+                            // the row is not selected and no drag starts.
+                            // That also skips the Explorer's own click that
+                            // focuses the tree, so this focuses it instead
+                            // and the arrow keys keep working.
                             this.child(Icon::new(chevron).xsmall()).on_mouse_down(
                                 MouseButton::Left,
-                                move |_, _, cx| {
-                                    tree.update(cx, |tree, cx| tree.toggle_expanded(index, cx))
+                                move |_, window, cx| {
+                                    cx.stop_propagation();
+                                    tree.update(cx, |tree, cx| {
+                                        tree.toggle_expanded(index, cx);
+                                        tree.focus(window, cx);
+                                    })
                                 },
                             )
                         }),
