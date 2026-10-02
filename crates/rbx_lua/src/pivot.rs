@@ -10,9 +10,10 @@
 
 use std::collections::HashSet;
 
-use glam::{Affine3A, Mat3, Vec3};
 use rbx_dom::{CFrameData, Ref, Variant, Vector3Data, WeakDom};
 use rbx_reflection::ReflectionDatabase;
+
+use crate::datatypes::cframe::LuaCFrame;
 
 const CFRAME: &str = "CFrame";
 const PIVOT_OFFSET: &str = "PivotOffset";
@@ -29,7 +30,7 @@ pub fn pivot(dom: &WeakDom, db: &ReflectionDatabase, reference: Ref) -> Option<C
     if db.is_subclass_of(class, BASE_PART) {
         let frame = cframe(dom, db, reference, CFRAME)?;
         return Some(match cframe(dom, db, reference, PIVOT_OFFSET) {
-            Some(offset) if offset != IDENTITY => to_data(affine(&frame) * affine(&offset)),
+            Some(offset) if offset != IDENTITY => compose(&frame, &offset),
             _ => frame,
         });
     }
@@ -63,8 +64,14 @@ pub fn pivot_to(
     Some(move_to(dom, db, reference, &from, to, &mut HashSet::new()))
 }
 
-/// Carries `reference` — a part, or every part under a model and the
-/// model's own `WorldPivot` — by what takes its pivot from `from` to `to`.
+/// Carries `reference` — a part, or every part and model under a model,
+/// itself included — by what takes its pivot from `from` to `to`: a part's
+/// `CFrame` and a model's `WorldPivot`, as Roblox's `PivotTo` transforms
+/// every descendant `PVInstance`. A model that stores no `WorldPivot` (a
+/// file from before pivots) is given its pivot carried, so `GetPivot`
+/// afterwards reads back `to` rather than its parts' recomputed bounds.
+/// Everything is read before anything is written, so the bounds a nested
+/// model falls back on are the ones from before the move.
 pub fn move_to(
     dom: &mut WeakDom,
     db: &ReflectionDatabase,
@@ -73,7 +80,6 @@ pub fn move_to(
     to: &CFrameData,
     moved: &mut HashSet<Ref>,
 ) -> Result<(), String> {
-    let carry = |frame: &CFrameData| carried(frame, from, to);
     let mut parts: Vec<Ref> = vec![reference];
     let mut index = 0;
     while let Some(&current) = parts.get(index) {
@@ -82,6 +88,7 @@ pub fn move_to(
             parts.extend_from_slice(instance.children());
         }
     }
+    let mut writes = Vec::new();
     for part in parts {
         let Some(instance) = dom.get(part) else {
             continue;
@@ -89,7 +96,7 @@ pub fn move_to(
         let class = instance.class();
         let key = if db.is_subclass_of(class, BASE_PART) {
             CFRAME
-        } else if db.is_subclass_of(class, MODEL) && part == reference {
+        } else if db.is_subclass_of(class, MODEL) {
             WORLD_PIVOT
         } else {
             continue;
@@ -97,10 +104,17 @@ pub fn move_to(
         if !moved.insert(part) {
             continue;
         }
-        let Some((key, Variant::CFrame(frame))) = db.stored_or_default(instance, key) else {
-            continue;
+        let (key, frame) = match db.stored_or_default(instance, key) {
+            Some((key, Variant::CFrame(frame))) => (key, *frame),
+            _ if key == WORLD_PIVOT => match pivot(dom, db, part) {
+                Some(frame) => (WORLD_PIVOT, frame),
+                None => continue,
+            },
+            _ => continue,
         };
-        let (key, frame) = (key.to_owned(), carry(frame));
+        writes.push((part, key.to_owned(), carried(&frame, from, to)));
+    }
+    for (part, key, frame) in writes {
         dom.set_property(part, &key, Variant::CFrame(frame))
             .map_err(|err| err.to_string())?;
     }
@@ -113,20 +127,24 @@ pub fn move_to(
 /// passes through an inverse and comes back a rounding error off.
 fn carried(frame: &CFrameData, from: &CFrameData, to: &CFrameData) -> CFrameData {
     if from.rotation == to.rotation {
-        let shift = vec3(&to.position) - vec3(&from.position);
+        let (p, t, f) = (&frame.position, &to.position, &from.position);
         return CFrameData {
-            position: vector(vec3(&frame.position) + shift),
+            position: Vector3Data {
+                x: p.x + (t.x - f.x),
+                y: p.y + (t.y - f.y),
+                z: p.z + (t.z - f.z),
+            },
             rotation: frame.rotation,
         };
     }
-    to_data(affine(to) * affine(from).inverse() * affine(frame))
+    compose(&compose(to, &LuaCFrame(*from).inverse().0), frame)
 }
 
 /// The centre of the world bounds of every part under `reference`, facing
 /// the world's axes.
 fn bounds_centre(dom: &WeakDom, db: &ReflectionDatabase, reference: Ref) -> Option<CFrameData> {
     let mut pending = vec![reference];
-    let (mut low, mut high) = (Vec3::INFINITY, Vec3::NEG_INFINITY);
+    let (mut low, mut high) = ([f32::INFINITY; 3], [f32::NEG_INFINITY; 3]);
     while let Some(current) = pending.pop() {
         let Some(instance) = dom.get(current) else {
             continue;
@@ -141,17 +159,30 @@ fn bounds_centre(dom: &WeakDom, db: &ReflectionDatabase, reference: Ref) -> Opti
         ) else {
             continue;
         };
-        let frame = affine(&frame);
-        let half = vec3(size) * 0.5;
         // A box's world extent along each axis is its half-size projected
         // through the absolute rotation.
-        let reach = Mat3::from(frame.matrix3).abs() * half;
-        let centre = Vec3::from(frame.translation);
-        low = low.min(centre - reach);
-        high = high.max(centre + reach);
+        let absolute = CFrameData {
+            position: IDENTITY.position,
+            rotation: frame.rotation.map(f32::abs),
+        };
+        let half = Vector3Data {
+            x: size.x * 0.5,
+            y: size.y * 0.5,
+            z: size.z * 0.5,
+        };
+        let reach = LuaCFrame(absolute).rotate(half);
+        let (centre, reach) = (frame.position, [reach.x, reach.y, reach.z]);
+        for (axis, centre) in [centre.x, centre.y, centre.z].into_iter().enumerate() {
+            low[axis] = low[axis].min(centre - reach[axis]);
+            high[axis] = high[axis].max(centre + reach[axis]);
+        }
     }
-    (low.x <= high.x).then(|| CFrameData {
-        position: vector((low + high) * 0.5),
+    (low[0] <= high[0]).then(|| CFrameData {
+        position: Vector3Data {
+            x: (low[0] + high[0]) * 0.5,
+            y: (low[1] + high[1]) * 0.5,
+            z: (low[2] + high[2]) * 0.5,
+        },
         rotation: IDENTITY.rotation,
     })
 }
@@ -177,29 +208,9 @@ const IDENTITY: CFrameData = CFrameData {
     rotation: [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0],
 };
 
-/// A `CFrame` as an affine map; its rotation is stored row by row.
-fn affine(frame: &CFrameData) -> Affine3A {
-    let rows = Mat3::from_cols_array(&frame.rotation);
-    Affine3A::from_mat3_translation(rows.transpose(), vec3(&frame.position))
-}
-
-fn to_data(map: Affine3A) -> CFrameData {
-    CFrameData {
-        position: vector(map.translation.into()),
-        rotation: Mat3::from(map.matrix3).transpose().to_cols_array(),
-    }
-}
-
-fn vec3(value: &Vector3Data) -> Vec3 {
-    Vec3::new(value.x, value.y, value.z)
-}
-
-fn vector(value: Vec3) -> Vector3Data {
-    Vector3Data {
-        x: value.x,
-        y: value.y,
-        z: value.z,
-    }
+/// `a * b`, through the same composition Luau's `CFrame * CFrame` uses.
+fn compose(a: &CFrameData, b: &CFrameData) -> CFrameData {
+    LuaCFrame(*a).compose(&LuaCFrame(*b)).0
 }
 
 #[cfg(test)]

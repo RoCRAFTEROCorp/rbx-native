@@ -9,9 +9,6 @@ license.workspace = true
 # builds the upstream Luau sources itself and exposes the native `Lua::sandbox`
 # used here, so no other crate can replace it. `luau` implies vendoring.
 mlua = { version = "0.12", features = ["luau"] }
-# The pivot math (`pivot`): affine CFrame composition and inversion. Already
-# in the lock file for rbx_studio and rbx_viewer, at the same version.
-glam = "0.33"
 rbx_dom = { path = "../rbx_dom" }
 rbx_reflection = { path = "../rbx_reflection" }
 

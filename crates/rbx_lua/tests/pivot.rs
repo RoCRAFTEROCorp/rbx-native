@@ -69,3 +69,43 @@ fn something_without_a_pivot_has_no_such_member() {
         "{error}"
     );
 }
+
+#[test]
+fn a_nested_model_s_world_pivot_is_carried_too() {
+    let mut runtime = runtime();
+    let printed = printed(
+        &mut runtime,
+        r#"
+        local outer = Instance.new("Model")
+        local inner = Instance.new("Model")
+        local part = Instance.new("Part")
+        part.CFrame = CFrame.new(4, 0, 0)
+        part.Parent = inner
+        inner.WorldPivot = CFrame.new(9, 0, 0)
+        inner.Parent = outer
+        outer.WorldPivot = CFrame.new(0, 0, 0)
+        outer.Parent = workspace
+        outer:PivotTo(CFrame.new(0, 3, 0))
+        print(inner:GetPivot().Position.X, inner:GetPivot().Position.Y)
+        "#,
+    );
+    assert_eq!(printed, "9 3");
+}
+
+#[test]
+fn a_model_without_a_stored_pivot_reads_back_where_it_was_turned_to() {
+    let mut runtime = runtime();
+    let printed = printed(
+        &mut runtime,
+        r#"
+        local model = Instance.new("Model")
+        local part = Instance.new("Part")
+        part.Parent = model
+        model.Parent = workspace
+        model:PivotTo(CFrame.new(1, 2, 3) * CFrame.Angles(0, math.rad(90), 0))
+        local pivot = model:GetPivot()
+        print(pivot.Position.X, pivot.Position.Y, pivot.Position.Z, math.round(pivot.LookVector.X))
+        "#,
+    );
+    assert_eq!(printed, "1 2 3 -1");
+}

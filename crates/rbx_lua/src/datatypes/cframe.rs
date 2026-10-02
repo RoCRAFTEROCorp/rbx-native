@@ -45,7 +45,7 @@ impl LuaCFrame {
         })
     }
 
-    fn rotate(&self, v: Vector3Data) -> Vector3Data {
+    pub(crate) fn rotate(&self, v: Vector3Data) -> Vector3Data {
         let r = &self.0.rotation;
         Vector3Data {
             x: r[0] * v.x + r[1] * v.y + r[2] * v.z,
@@ -63,7 +63,7 @@ impl LuaCFrame {
         }
     }
 
-    fn compose(&self, other: &LuaCFrame) -> LuaCFrame {
+    pub(crate) fn compose(&self, other: &LuaCFrame) -> LuaCFrame {
         let (a, b) = (&self.0.rotation, &other.0.rotation);
         let mut rotation = [0.0f32; 9];
         for row in 0..3 {
@@ -102,7 +102,7 @@ impl LuaCFrame {
         }
     }
 
-    fn inverse(&self) -> LuaCFrame {
+    pub(crate) fn inverse(&self) -> LuaCFrame {
         let r = &self.0.rotation;
         // A rotation matrix is orthonormal, so its transpose is its inverse.
         let rotation = [r[0], r[3], r[6], r[1], r[4], r[7], r[2], r[5], r[8]];
