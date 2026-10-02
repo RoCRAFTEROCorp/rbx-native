@@ -4,6 +4,7 @@
 //! parsed from embedded JSON schema.
 
 mod class;
+mod content_id;
 mod database;
 mod defaults;
 #[cfg(feature = "embedded-dump")]

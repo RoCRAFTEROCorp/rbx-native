@@ -30,10 +30,14 @@ pub(crate) fn get(lua: &Lua, ctx: &Ctx, referent: Ref, name: &str) -> Result<Opt
         // Whichever name the file stored it under, or the class default:
         // `part.Transparency` on a part a hand-written file left it off of
         // reads `0`, as it would in Roblox.
+        // An unset asset id (`Instance.new("Decal").Texture`) has no
+        // recorded default of its own: Roblox reads its `Content` twin's
+        // default, or "".
         let stored = ctx
             .database()
             .stored_or_default(instance, name)
-            .map(|(_, value)| value.clone());
+            .map(|(_, value)| value.clone())
+            .or_else(|| ctx.database().content_id_default(instance.class(), name));
         (descriptor.value_type.clone(), stored)
     };
 

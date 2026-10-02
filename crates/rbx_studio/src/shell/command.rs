@@ -109,6 +109,7 @@ impl Shell {
                 tree.reveal_item(&item.id, ScrollStrategy::Center, cx);
             }
         });
+        self.range_anchor = Some(reference);
         if self.selection.set(Some(reference)) {
             self.selection_changed(cx);
         }
@@ -120,6 +121,7 @@ impl Shell {
     pub(super) fn deselect(&mut self, cx: &mut Context<Self>) {
         let tree = self.tree.clone();
         tree.update(cx, |tree, cx| tree.set_selected_item(None, cx));
+        self.range_anchor = None;
         if self.selection.set(None) {
             self.selection_changed(cx);
         }
@@ -161,6 +163,46 @@ impl Shell {
         tree.update(cx, |tree, cx| tree.set_selected_item(anchor.as_ref(), cx));
 
         self.selection_changed(cx);
+    }
+
+    /// The Explorer's rows as the tree lists them now: collapsed and
+    /// filtered-out rows are not in it.
+    pub(super) fn visible_rows(&self, cx: &Context<Self>) -> Vec<Ref> {
+        let tree = self.tree.read(cx);
+        (0..)
+            .map_while(|index| tree.entry(index))
+            .filter_map(|entry| explorer::item_ref(&entry.item().id))
+            .collect()
+    }
+
+    /// `Shift`-click on an Explorer row: selects every row from the range
+    /// anchor to `clicked`, in the tree's visible order (so collapsed and
+    /// filtered-out rows are skipped), replacing the selection — or, with
+    /// `add` (`Ctrl`+`Shift`), adding to it. The anchor stays where it was.
+    pub(super) fn select_range(&mut self, clicked: Ref, add: bool, cx: &mut Context<Self>) {
+        let visible = self.visible_rows(cx);
+        let anchor = super::selection::range_anchor(
+            &visible,
+            [self.range_anchor, self.selection.get()],
+            clicked,
+        );
+        let mut kept = if add {
+            self.selection.all().to_vec()
+        } else {
+            Vec::new()
+        };
+        for reference in super::selection::range(&visible, anchor, clicked) {
+            if !kept.contains(&reference) {
+                kept.push(reference);
+            }
+        }
+
+        let first = kept.first().and_then(|&r| self.explorer.item(r));
+        let tree = self.tree.clone();
+        tree.update(cx, |tree, cx| tree.set_selected_item(first.as_ref(), cx));
+        if self.selection.replace(kept) {
+            self.selection_changed(cx);
+        }
     }
 
     /// Enter in the Command Bar: reads the input's current text and runs it.

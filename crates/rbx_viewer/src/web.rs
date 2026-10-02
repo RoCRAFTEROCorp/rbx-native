@@ -447,7 +447,7 @@ impl Viewer {
                     .collect();
                 roots.sort_by_cached_key(|node| {
                     (
-                        services::rank(&node.class).unwrap_or(usize::MAX),
+                        services::explorer_rank(&node.class).unwrap_or(usize::MAX),
                         node.name.to_lowercase(),
                     )
                 });

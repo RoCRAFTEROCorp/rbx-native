@@ -205,7 +205,17 @@ impl Shell {
             v_flex()
                 .size_full()
                 .gap(px(10.))
-                .child(search_field(self.tab_order.next(), &self.search, cx))
+                .child(
+                    div()
+                        .on_key_down(cx.listener(|shell, event: &KeyDownEvent, window, cx| {
+                            if event.keystroke.key == "escape"
+                                && shell.clear_explorer_search(window, cx)
+                            {
+                                cx.stop_propagation();
+                            }
+                        }))
+                        .child(search_field(self.tab_order.next(), &self.search, cx)),
+                )
                 .child(
                     div()
                         .flex_1()

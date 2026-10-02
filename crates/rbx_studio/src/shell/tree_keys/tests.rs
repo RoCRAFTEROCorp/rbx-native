@@ -198,3 +198,25 @@ fn the_tree_selection_follows_its_item_across_expansion(cx: &mut gpui_kit::TestA
         assert_eq!(tree.selected_index(), None);
     });
 }
+
+/// Shift with Up, Down, Home or End is a range move; Ctrl+Shift, a bare
+/// arrow or a Shift+Left is not.
+#[test]
+fn shift_with_a_vertical_move_extends_a_range() {
+    let shifted = |name: &str, control: bool| Keystroke {
+        modifiers: gpui_kit::Modifiers {
+            shift: true,
+            control,
+            ..Default::default()
+        },
+        key: name.into(),
+        key_char: None,
+    };
+    assert_eq!(range_nav_for(&shifted("up", false)), Some(Nav::Previous));
+    assert_eq!(range_nav_for(&shifted("down", false)), Some(Nav::Next));
+    assert_eq!(range_nav_for(&shifted("home", false)), Some(Nav::First));
+    assert_eq!(range_nav_for(&shifted("end", false)), Some(Nav::Last));
+    assert_eq!(range_nav_for(&shifted("left", false)), None);
+    assert_eq!(range_nav_for(&shifted("down", true)), None);
+    assert_eq!(range_nav_for(&key("down")), None);
+}

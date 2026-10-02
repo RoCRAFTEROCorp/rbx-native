@@ -116,7 +116,9 @@ impl SettingsWindow {
         let searching = !self.query(cx).is_empty();
         let counts = self.search_counts.clone();
         let pages = Page::ALL.into_iter().map(|page| {
-            let current = page == self.page;
+            // Search results span every page, so none is highlighted while
+            // they show; the page comes back when the search is cleared.
+            let current = page == self.page && !searching;
             let count = counts.iter().find(|(p, _)| *p == page).map(|(_, n)| *n);
             nav_item(
                 ("page", page as usize),
