@@ -9,8 +9,8 @@
 //! add/remove chrome), [`attribute_value`] (routing one attribute's value
 //! through the Properties panel's existing per-type editors) and [`tags`]
 //! (the Tags section). This file only holds what all three share: the
-//! section's live-widget state and the entry point that lays Attributes
-//! above Tags.
+//! section's live-widget state and the entry point that lays Tags above
+//! Attributes.
 //!
 //! An attribute's *value* renders through exactly the same `RowEditor`/
 //! `render_editor` machinery an ordinary property row uses (see
@@ -81,7 +81,7 @@ impl AttributeEdits {
 }
 
 impl Shell {
-    /// The whole section: Attributes above Tags, both collapsible through
+    /// The whole section: Tags above Attributes, both collapsible through
     /// the exact same `is_category_collapsed`/`toggle_category` an ordinary
     /// property category uses (see `shell::edit`), just keyed by these two
     /// synthetic category names instead of one the reflection dump named.
@@ -104,8 +104,9 @@ impl Shell {
         v_flex()
             .w_full()
             .gap(tokens::header_gap())
-            .child(self.attribute_section(reference, filter, window, cx))
+            // Tags above Attributes, as Studio's own panel ranks them.
             .child(self.tag_section(reference, filter, window, cx))
+            .child(self.attribute_section(reference, filter, window, cx))
             .into_any_element()
     }
 }
