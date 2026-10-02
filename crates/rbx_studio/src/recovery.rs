@@ -5,7 +5,10 @@
 //! Auto-Recovery) is the model; the shell side lives in `shell::recovery`.
 //!
 //! One copy per place, overwritten each time, in `<config>/recovery`. A
-//! manual save deletes it: what it held is now in the place itself. Unlike
+//! manual save deletes it: what it held is now in the place itself. A copy
+//! an earlier session left behind (it crashed, or was killed) is never
+//! overwritten or deleted: opening its place moves it aside under a
+//! timestamped name (see [`kept_path`]). Unlike
 //! Studio's, a recovered copy loses nothing that tied it to its place — a
 //! place here is a local file, and the copy is the same kind of file.
 
@@ -35,9 +38,11 @@ pub(crate) fn folder() -> Option<PathBuf> {
 /// in its own format (the extension says which), plus a short hash of its
 /// full path so two places both called `Place.rbxl` never share a copy.
 ///
-/// The hash is FNV-1a rather than std's `DefaultHasher`, whose output Rust
-/// does not promise to keep between releases: a copy written before an
-/// update has to be found again after one, to be deleted on the next save.
+/// The hash is 64-bit FNV-1a truncated to its low 32 bits, rather than std's
+/// `DefaultHasher`, whose output Rust does not promise to keep between
+/// releases: a copy written before an update has to be found again after
+/// one, to be moved aside when its place next opens. `place` should be
+/// canonical, so two spellings of one path share a copy.
 pub(crate) fn copy_path(folder: &Path, place: &Path) -> PathBuf {
     let stem = place
         .file_stem()
@@ -47,6 +52,25 @@ pub(crate) fn copy_path(folder: &Path, place: &Path) -> PathBuf {
         .map_or_else(|| "rbxl".into(), |ext| ext.to_string_lossy());
     let hash = fnv1a(place.to_string_lossy().as_bytes()) as u32;
     folder.join(format!("{stem} (recovery {hash:08x}).{extension}"))
+}
+
+/// Where a copy an earlier session left behind is moved to: its own name
+/// plus `stamp` (when that copy was written), so it is never overwritten by
+/// this session's copies nor deleted by its saves.
+pub(crate) fn kept_path(copy: &Path, stamp: &str) -> PathBuf {
+    let stem = copy.file_stem().unwrap_or_default().to_string_lossy();
+    let name = match copy.extension() {
+        Some(ext) => format!("{stem} {stamp}.{}", ext.to_string_lossy()),
+        None => format!("{stem} {stamp}"),
+    };
+    copy.with_file_name(name)
+}
+
+/// A temp file `save::save` left behind (`<name>.tmp-<pid>`), when the
+/// process writing it died before the rename.
+pub(crate) fn is_temp(name: &str) -> bool {
+    name.rsplit_once(".tmp-")
+        .is_some_and(|(_, pid)| !pid.is_empty() && pid.bytes().all(|b| b.is_ascii_digit()))
 }
 
 fn fnv1a(bytes: &[u8]) -> u64 {
@@ -90,6 +114,23 @@ mod tests {
     fn the_name_hash_is_stable() {
         assert_eq!(fnv1a(b""), 0xcbf2_9ce4_8422_2325);
         assert_eq!(fnv1a(b"a"), 0xaf63_dc4c_8601_ec8c);
+    }
+
+    #[test]
+    fn a_kept_copy_never_shares_the_live_copys_name() {
+        let copy = copy_path(Path::new("/r"), Path::new("/games/Obby.rbxl"));
+        let kept = kept_path(&copy, "2026-10-02 14-03-11");
+        assert_ne!(kept, copy);
+        let name = kept.file_name().unwrap().to_string_lossy().into_owned();
+        assert!(name.starts_with("Obby (recovery "), "{name}");
+        assert!(name.ends_with(") 2026-10-02 14-03-11.rbxl"), "{name}");
+    }
+
+    #[test]
+    fn only_save_temp_files_are_swept() {
+        assert!(is_temp("Obby (recovery 0a1b2c3d).rbxl.tmp-4242"));
+        assert!(!is_temp("Obby (recovery 0a1b2c3d).rbxl"));
+        assert!(!is_temp("notes.tmp-old"));
     }
 
     #[test]

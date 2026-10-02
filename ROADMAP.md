@@ -1385,12 +1385,17 @@ Roblox's own engine.
 - [x] **Auto-Recovery**, real Studio's own (Studio Settings › Files &
   recovery): while the open place has changes Ctrl+S has not written, a
   copy of it is written in the background every few minutes (1 to 10, four
-  by default; on by default), serialized off the UI thread through the same
-  temp-file-then-rename path as Ctrl+S, so neither a frame nor a half-written
-  copy is ever the price. One copy per place in `<config>/recovery`, named
-  after the place with a short path hash so two `Place.rbxl`s never share
-  one; a successful Ctrl+S deletes it, since nothing is left to recover. A
-  copy is a plain place file in the place's own format, so — unlike a
+  by default; on by default). The place is cloned on the UI thread (a short
+  hitch on a large place) and serialized off it, through the same
+  temp-file-then-rename path as Ctrl+S, so a copy is never left
+  half-written. One copy per place in `<config>/recovery`, named after the
+  place with a short hash of its canonical path so two `Place.rbxl`s never
+  share one; a successful Ctrl+S deletes the copy this session wrote, since
+  nothing is left to recover. A copy an earlier session left behind (it
+  crashed, or was killed) is moved aside under a timestamped name when its
+  place next opens, with a note in Output, so it is never overwritten or
+  deleted; a place opened from the recovery folder itself gets no copies
+  and a warning that Ctrl+S saves it there. A copy is a plain place file in the place's own format, so — unlike a
   recovered Studio file, which loses its place link — it opens like any
   other. A failed copy is a warning in Output and is tried again.
 
