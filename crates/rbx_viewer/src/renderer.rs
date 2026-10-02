@@ -205,6 +205,8 @@ pub(crate) struct Renderer {
     /// The graphics quality level the next frame is drawn at.
     /// [`Renderer::set_quality`] moves it without rebuilding the scene.
     quality: QualityProfile,
+    /// The user's renderer calibration; see [`Renderer::set_calibration`].
+    calibration: crate::lighting::Calibration,
     /// What every surface pipeline above was built for: the HDR format, and the
     /// profile's `msaa_samples` as far as the adapter allows (see `post`).
     target: Target,
@@ -405,9 +407,16 @@ impl Renderer {
             bounds: *scene.bounds(),
             post,
             quality: *quality,
+            calibration: Default::default(),
             target,
             refracting: scene.has_glass(),
         }
+    }
+
+    /// The constants the lighting uniform carries in place of shader literals.
+    /// Read on the next frame, which writes that uniform anyway.
+    pub(crate) fn set_calibration(&mut self, calibration: crate::lighting::Calibration) {
+        self.calibration = calibration;
     }
 
     /// Only the offscreen path uses this: the window orbits at the default height.
@@ -611,6 +620,7 @@ impl Renderer {
                 (lamp, &fit),
                 self.lights,
                 &self.quality,
+                &self.calibration,
             )),
         );
 
@@ -717,7 +727,8 @@ impl Renderer {
         // publishes no beam-lighting formula, so this is a documented
         // approximation rather than a match.
         let l = self.lighting;
-        let env_light = l.ambient + 0.5 * (l.sun_color + l.fill_color);
+        let env_light =
+            l.ambient + 0.5 * (l.sun_color + l.fill_color) * self.calibration.lamp_scale();
         self.beams.draw(
             queue,
             device,

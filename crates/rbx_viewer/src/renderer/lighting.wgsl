@@ -61,6 +61,10 @@ struct LightingUniform {
     clouds_color: vec4<f32>,
     // x: Cover, 0 drawing nothing. y: Density.
     clouds_extra: vec4<f32>,
+    // The user's renderer calibration (`crate::lighting::Calibration`), its
+    // defaults the tuned values described where each is read. x: atmosphere
+    // density scale (`atmosphere.wgsl`), y: Plastic's specular strength.
+    calibration: vec4<f32>,
 }
 
 @group(0) @binding(0) var<uniform> uniforms: Uniforms;
@@ -82,7 +86,8 @@ struct LightingUniform {
 // is (see `shade` for why). Verified against the material-sample fixture
 // (scale 1, glossy) and marked.rbxl (scale 0, matte).
 const PLASTIC_SHININESS: f32 = 30.0;
-const PLASTIC_SPEC_STRENGTH: f32 = 0.28;
+// The strength itself is `lighting.calibration.y`, 0.28 unless the user has
+// recalibrated it (Studio Settings › Viewport › Advanced).
 const PLASTIC_ROUGHNESS: f32 = 0.25;
 
 // Roblox samples its environment probe at `(0.089 + roughness * 0.911) * 5`,
@@ -141,7 +146,7 @@ fn plastic(
     surface.reflectance = reflectance;
     surface.roughness = PLASTIC_ROUGHNESS;
     surface.shininess = PLASTIC_SHININESS;
-    surface.spec_strength = PLASTIC_SPEC_STRENGTH;
+    surface.spec_strength = lighting.calibration.y;
     surface.spec_tint = vec3<f32>(1.0);
     return surface;
 }

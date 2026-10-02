@@ -212,62 +212,6 @@ fn knob() -> Div {
         }])
 }
 
-/// A slider nobody can move, `width` wide: a roadmap row's picture of
-/// one. `ticks` marks that many evenly spaced stops under the rail.
-pub(in crate::shell::settings_window) fn still_slider(
-    fraction: f32,
-    width: f32,
-    ticks: usize,
-) -> Div {
-    let rail = |w: Length, color: Rgba| {
-        div()
-            .absolute()
-            .left_0()
-            .top(px(7.))
-            .h(px(4.))
-            .w(w)
-            .rounded(px(2.))
-            .bg(faded(color))
-    };
-    div()
-        .relative()
-        .flex_none()
-        .w(px(width))
-        .h(px(18.))
-        .child(rail(relative(1.).into(), tokens::track()))
-        .child(rail(relative(fraction).into(), tokens::check_on()))
-        .children((0..ticks).map(|i| {
-            let at = if ticks > 1 {
-                i as f32 / (ticks - 1) as f32
-            } else {
-                0.
-            };
-            div()
-                .absolute()
-                .top(px(14.))
-                .left(px((width * at).min(width - 1.)))
-                .w(px(1.))
-                .h(px(4.))
-                .bg(faded(tokens::border2()))
-        }))
-        .child(
-            div()
-                .absolute()
-                .top(px(2.))
-                .left(px(width * fraction - 7.))
-                .size(px(14.))
-                .rounded_full()
-                .bg(faded(tokens::text()))
-                .shadow(vec![BoxShadow {
-                    color: faded(tokens::accent_soft()).into(),
-                    offset: point(px(0.), px(0.)),
-                    blur_radius: px(0.),
-                    spread_radius: px(3.),
-                    inset: false,
-                }]),
-        )
-}
-
 /// A live slider over `state`, the toolkit's behaviour in this skin.
 pub(in crate::shell::settings_window) fn slider(
     state: &Entity<SliderState>,

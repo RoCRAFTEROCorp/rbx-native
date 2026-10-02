@@ -72,7 +72,7 @@ impl Page {
     /// page is live, and not on Account, whose one live control is a
     /// window of its own.
     pub(super) fn has_reset(self) -> bool {
-        !matches!(self, Page::Files | Page::Account | Page::Beta)
+        !matches!(self, Page::Account | Page::Beta)
     }
 
     /// Whether the whole page is on the roadmap.
@@ -89,7 +89,7 @@ impl Page {
             Page::Viewport => "Rendering, camera and what the viewport draws on top of the scene.",
             Page::Dragger => "How parts move under the mouse. The same switches sit in the Viewport dock.",
             Page::ExplorerOutput => "Defaults for the Explorer tree and the Output log.",
-            Page::Files => "Auto-saves and the copies Play makes. None of this is built yet.",
+            Page::Files => "Recovery copies of unsaved work, and the copies Play will make.",
             Page::Argon => "Live sync with an Argon project. The Argon dock shows the same settings.",
             Page::Account => "Your Roblox access and what RbxNative shares about you.",
             Page::Beta => "Try features before they\u{2019}re finished. Switch one off if it misbehaves.",

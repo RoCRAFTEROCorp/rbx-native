@@ -21,7 +21,9 @@ use std::time::{Duration, Instant};
 
 use rbx_dom::{Change, Snapshot, WeakDom};
 use rbx_viewer::pick::{Meshes, Selected};
-use rbx_viewer::{Applied, CameraFeel, CameraInput, Gizmo, Headless, Pose, QualityLevel, Segment};
+use rbx_viewer::{
+    Applied, Calibration, CameraFeel, CameraInput, Gizmo, Headless, Pose, QualityLevel, Segment,
+};
 
 pub(crate) mod canvas;
 
@@ -64,6 +66,8 @@ enum Command {
     Orthographic(bool),
     /// How the free camera responds — see `Headless::set_camera_feel`.
     CameraFeel(CameraFeel),
+    /// The renderer's tuned constants — see `Headless::set_calibration`.
+    Calibration(Calibration),
     /// Whether a part in front of the selection hides its outline box — see
     /// `Headless::set_selection_occluded`.
     SelectionOccluded(bool),
@@ -218,6 +222,10 @@ impl Pump {
 
     pub(super) fn camera_feel(&self, feel: CameraFeel) {
         let _ = self.commands.send(Command::CameraFeel(feel));
+    }
+
+    pub(super) fn calibration(&self, calibration: Calibration) {
+        let _ = self.commands.send(Command::Calibration(calibration));
     }
 
     /// Swaps the main camera between perspective and orthographic projection.
@@ -697,6 +705,7 @@ fn apply(command: Command, rendering: &mut Rendering<'_>) -> bool {
         Command::Quality(mode) => rendering.quality.set(mode, rendering.viewer),
         Command::Orthographic(orthographic) => rendering.viewer.set_orthographic(orthographic),
         Command::CameraFeel(feel) => rendering.viewer.set_camera_feel(feel),
+        Command::Calibration(calibration) => rendering.viewer.set_calibration(calibration),
         Command::SelectionOccluded(occluded) => rendering.viewer.set_selection_occluded(occluded),
         Command::Selection(selected) => rendering.viewer.set_selection(&selected),
         Command::Hover(selected) => rendering.viewer.set_hover(selected),

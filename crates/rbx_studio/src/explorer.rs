@@ -18,6 +18,33 @@ use rbx_viewer::services::rank;
 use rbx_viewer::services::SERVICE_ORDER;
 pub(crate) use rbx_viewer::services::{is_default_visible, is_known_service};
 
+/// The user's own choice of which services the default view lists, where it
+/// differs from Studio's (Studio Settings › Explorer & Output › Default
+/// services): `true` lists a service Studio hides, `false` hides one it
+/// lists. Only differences are kept, so a service Studio later starts or
+/// stops listing follows Studio unless the user has said otherwise.
+pub(crate) type ServiceOverrides = std::collections::BTreeMap<String, bool>;
+
+/// Whether a root of `class` is in the default view. Only a known service
+/// takes an override: a root `Folder` stays listed whatever the file says.
+pub(crate) fn is_listed(class: &str, overrides: &ServiceOverrides) -> bool {
+    match overrides.get(class) {
+        Some(&listed) if is_known_service(class) => listed,
+        _ => is_default_visible(class),
+    }
+}
+
+/// `overrides` with `class` flipped, keeping only what differs from Studio.
+pub(crate) fn toggled(mut overrides: ServiceOverrides, class: &str) -> ServiceOverrides {
+    let listed = !is_listed(class, &overrides);
+    if listed == is_default_visible(class) {
+        overrides.remove(class);
+    } else {
+        overrides.insert(class.to_owned(), listed);
+    }
+    overrides
+}
+
 use crate::class_icons::{self, IconPack};
 use crate::folder_colors::{FolderColors, Rgb, FOLDER_CLASS};
 
@@ -52,9 +79,6 @@ pub(crate) enum ClassIcon {
 
 /// A whole place, ready to hand to a `TreeState`.
 pub(crate) struct Explorer {
-    /// Studio's own default Explorer set: `SERVICE_ORDER` plus anything not a
-    /// recognized service at all.
-    default_items: Vec<TreeItem>,
     /// Every root the file has, for the "show all services" toggle.
     all_items: Vec<TreeItem>,
     icons: HashMap<SharedString, ClassIcon>,
@@ -104,15 +128,7 @@ impl Explorer {
             place,
             &mut tinted,
         );
-        let default_items = roots
-            .iter()
-            .zip(all_items.iter())
-            .filter(|(node, _)| is_default_visible(&node.class))
-            .map(|(_, item)| item.clone())
-            .collect();
-
         Explorer {
-            default_items,
             all_items,
             icons,
             tints: tints_of(&classes, &paths, folder_colors, place),
@@ -163,7 +179,6 @@ impl Explorer {
             .collect();
 
         Explorer {
-            default_items: self.default_items.clone(),
             all_items: self.all_items.clone(),
             icons,
             tints: tints_of(&self.classes, &self.paths, folder_colors, place),
@@ -181,14 +196,21 @@ impl Explorer {
         &self.tints
     }
 
-    /// The root items to show. Cloning a `TreeItem` shares its expansion
+    /// The root items to show: all of them, or the ones the default view
+    /// lists (see [`is_listed`]). Cloning a `TreeItem` shares its expansion
     /// state, so the tree widget and this list stay in agreement.
-    pub(crate) fn items(&self, show_all: bool) -> Vec<TreeItem> {
-        if show_all {
-            self.all_items.clone()
-        } else {
-            self.default_items.clone()
-        }
+    pub(crate) fn items(&self, show_all: bool, overrides: &ServiceOverrides) -> Vec<TreeItem> {
+        self.all_items
+            .iter()
+            .filter(|item| {
+                show_all
+                    || self
+                        .classes
+                        .get(&item.id)
+                        .is_none_or(|class| is_listed(class, overrides))
+            })
+            .cloned()
+            .collect()
     }
 
     /// The UI editor's view of the place: every `ScreenGui`, `BillboardGui`
@@ -473,3 +495,47 @@ fn icon(class: &str) -> IconName {
 #[cfg(test)]
 #[path = "explorer/tests.rs"]
 mod tests;
+
+/// The Explorer's search: every row whose name contains `query` (ignoring
+/// case), under the rows that lead to it, which are opened so the match is
+/// in view. A match keeps all of its own children, so it can be expanded and
+/// browsed in place without clearing the search — real Studio's Explorer
+/// makes you clear it first (`view-descendants-of-matching-instances-in-
+/// explorer-search` on the devforum).
+///
+/// A match is a clone of its row, which shares the row's expansion state:
+/// opening a match here opens it in the unfiltered tree too, so clearing the
+/// search leaves it as browsed. The rows leading to a match are new rows,
+/// opened here only: sharing their state would open, for good, every row on
+/// the way to anything each keystroke matched, and a first letter matches
+/// most of a place. Clearing the search still reveals the selected row (see
+/// `Shell::push_root_rows`). A blank query filters nothing.
+pub(crate) fn search(items: &[TreeItem], query: &str) -> Vec<TreeItem> {
+    let query = query.trim().to_lowercase();
+    if query.is_empty() {
+        return items.to_vec();
+    }
+    items
+        .iter()
+        .filter_map(|item| matching(item, &query))
+        .collect()
+}
+
+fn matching(item: &TreeItem, query: &str) -> Option<TreeItem> {
+    if item.label.to_lowercase().contains(query) {
+        return Some(item.clone());
+    }
+    let children: Vec<TreeItem> = item
+        .children
+        .iter()
+        .filter_map(|child| matching(child, query))
+        .collect();
+    if children.is_empty() {
+        return None;
+    }
+    Some(
+        TreeItem::new(item.id.clone(), item.label.clone())
+            .expanded(true)
+            .children(children),
+    )
+}

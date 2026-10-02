@@ -56,9 +56,10 @@ Roblox's own engine.
   constructor over a metatable. The set is user-extensible now: a
   `script_templates` folder in the config directory holds one `.luau` file
   per template under `Script/`, `LocalScript/` or `ModuleScript/`
-  (`script_templates.rs`), each listed in the ribbon's Script menu by its
-  file name, and a `Default.luau` in a class's folder replaces the built-in
-  starter every new script of that class gets.
+  (`script_templates.rs`), each listed by its file name in the ribbon's
+  Script menu and at the end of the menu bar's Model menu. A `Default.luau`
+  in a class's folder replaces the built-in starter every new script of
+  that class gets.
 
 ### Renderer (`rbx_viewer`)
 - [x] Lighting model reverse-engineered from Roblox's own decompiled
@@ -459,10 +460,23 @@ Roblox's own engine.
     as Studio's honeycomb picker and workable by keyboard. A part's
     `BrickColor` row reads the nearest palette colour off `Color` and writes
     a pick back to it, since `Color` is all Roblox saves.
+  - **`Content`** (`Decal.Texture`, `MeshPart.MeshId`): an asset URI field,
+    read back the way Roblox's own `Content.fromUri`/`fromAssetId` read
+    theirs — an empty field (or asset `0`) clears it to none, and a bare
+    number becomes `rbxassetid://<id>`. A `Content` pointing at an instance
+    in the place stays read-only; wiring an instance picker to it is what is
+    left.
   - **`Origin`**, which Studio lists under Transform: where a part's or
     model's pivot stands in the world, read as `GetPivot` reads it, and
     moved as `PivotTo` moves it when one is typed — a model's parts and its
     pivot together, as one undo step.
+  - **Instance references** (`ObjectValue.Value`, `Weld.Part0`) are picked
+    the way Studio does it: click the row, then the instance in the
+    Explorer, which sets the property instead of selecting. An unset one is
+    listed as `nil` rather than left out; Escape backs out of a pick, the
+    row's `×` (or Delete) clears it, and an instance of the wrong class for
+    the property, per the API dump, is refused, as is a `PrimaryPart`
+    outside its model.
   - **Computed, read-only**: `Mass`, `CenterOfMass`,
     `CurrentPhysicalProperties` and the assembly's mass and centre, shown
     only where Roblox documents exactly how they are computed.
@@ -1314,6 +1328,18 @@ Roblox's own engine.
   `UX_GUIDELINES.md` §11 lists every deviation from the frame with its
   reason, and §1 states where the editor stands against the reference
   guidance's Stage 1/2/3 — failures included.
+- [x] **Arrow keys inside the editor's dropdown menus** (`shell::menu`:
+  every overflow `⋯`, the ribbon's insert menus, the Argon and Wally
+  pickers), per the APG menu pattern: an open menu holds focus, Up/Down
+  move a highlight and wrap, Home/End jump to the ends, Enter or Space
+  runs the highlighted row like a click, and Escape closes it with focus
+  back on the trigger. A menu opened from the keyboard starts on its first
+  row. Disabled rows take the highlight but cannot run, as the pattern
+  asks. The pointer moves the same highlight. The moves are the roving
+  groups' own (`roving::Move`). The Explorer's right-click menu, which
+  builds its own rows, works the same way, and Shift+F10 or the Menu key
+  opens it on the selected row (at the pointer, where every Explorer popup
+  goes); however it closes, focus goes back to where it was.
 - [x] **Output window: the half of real Studio's filter/display feature
   set that does not need the sandbox**, checked against `studio/output.md`
   rather than assumed and built against what the Command Bar and app
@@ -1382,6 +1408,63 @@ Roblox's own engine.
   description or `settings.json` key and shows it live. Keyboard shortcuts
   stay a window of their own, as in Studio; what the screen still shows as
   `SOON` is its own bullet under "What's planned".
+- [x] **Explorer search**: the search field above the tree filters it as
+  you type — every instance whose name contains the text (ignoring case),
+  under the rows that lead to it, which open. Unlike real Studio's, a
+  result stays browsable without clearing the search (a real devforum
+  request, `view-descendants-of-matching-instances-in-explorer-search`): a
+  match keeps all its own children, so it expands in place, and what is
+  opened while searching stays open afterwards. The selection survives a
+  search that hides its row.
+- [x] **Auto-Recovery**, real Studio's own (Studio Settings › Files &
+  recovery): while the open place has changes Ctrl+S has not written, a
+  copy of it is written in the background every few minutes (1 to 10, four
+  by default; on by default). The place is cloned on the UI thread (a short
+  hitch on a large place) and serialized off it, through the same
+  temp-file-then-rename path as Ctrl+S, so a copy is never left
+  half-written. One copy per place in `<config>/recovery`, named after the
+  place with a short hash of its canonical path so two `Place.rbxl`s never
+  share one; a successful Ctrl+S deletes the copy this session wrote, since
+  nothing is left to recover. A copy an earlier session left behind (it
+  crashed, or was killed) is moved aside under a timestamped name when its
+  place next opens, with a note in Output, so it is never overwritten or
+  deleted; a place opened from the recovery folder itself gets no copies
+  and a warning that Ctrl+S saves it there. A copy is a plain place file
+  in the place's own format, so — unlike a recovered Studio file, which
+  loses its place link — it opens like any other. A failed copy is a
+  warning in Output and is tried again. The copies are reached from
+  Settings' Open auto-saves or File › Open Auto Saves (Studio's own name;
+  Studio files it under File › Advanced, but this menu bar draws no
+  submenus), both of which open the folder.
+- [x] **Script font size** in Studio Settings › Appearance: the Script
+  Editor's text size, 8 to 32 px, multiplied by the UI scale like every
+  other size, so the editor now also follows the UI scale, which it did
+  not before. It defaults to the toolkit's own 13 px code size, so nothing
+  changes for a file without the setting; the editor's rows follow the
+  size.
+- [x] **Default services** in Studio Settings › Explorer & Output: which
+  services the Explorer lists while Show all services is off. Each service
+  in the grid is ticked when the default view lists it and flips on a
+  click; only the differences from Studio's own default are saved
+  (`service_overrides`), so a service Studio later starts or stops listing
+  still follows Studio unless it was chosen here. The row's reset puts
+  Studio's set back.
+- [x] **Named dock layouts** in Studio Settings › Layout (Blender's
+  workspaces): the current arrangement saved under a name — every edge's
+  docks, tabs and size, and which panels float or are shut — and switched
+  back to with a click, through the same `Layout::restore` a launch uses,
+  so a floating panel gets its window back. The one matching the docks is
+  marked Active; saving under a used name replaces it, and each has a
+  delete. Kept in `settings.json` as `named_layouts`.
+- [x] **Renderer calibration** in Studio Settings › Viewport › Advanced:
+  `SUN_BASE`, `ATMOSPHERE_DENSITY_SCALE` and `PLASTIC_SPEC_STRENGTH` are
+  settings (`rbx_viewer::Calibration`, defaulting to the tuned values and
+  kept within ten times them either way), for a place lit unlike the
+  captures they were tuned against. The two that were WGSL constants are
+  read from a `calibration` row on the lighting uniform; `SUN_BASE` scales
+  the sun and fill lamps by its ratio to the tuned base. The default renders
+  pixel-identical to before; `ViewportFrame`s keep the tuned set, since
+  they are lit by their own properties.
 
 ### Platform
 - [x] Linux (X11) — the daily-driven target.
@@ -1491,9 +1574,7 @@ Roblox's own engine.
   not a default this project should ship opinionated about.
 - [ ] 📋 **Managing script templates from inside the editor.** Authoring
   one today means a file manager and a text editor; there is no UI for
-  adding, renaming or deleting a template. The user's extras also appear
-  in the ribbon's Script menu but not the menu bar's Model menu, whose
-  items are fixed actions rather than a list built at runtime.
+  adding, renaming or deleting a template.
 - [ ] 📋 **Optional, bundled `Fragment` UI framework.** [`Fragment`](https://github.com/chteau/Fragment)
   (MIT, single-file Luau `ModuleScript`, React-inspired: local/global
   state, contexts, reusable components over plain `GuiObject`s) offered as
@@ -1634,28 +1715,17 @@ Roblox's own engine.
   Luau — the Command Bar and scripts — has `PVInstance:GetPivot()` and
   `PVInstance:PivotTo()` through the same pivot (`rbx_lua::pivot`), with
   `BasePart.PivotOffset` readable and writable like any property.
-- [ ] 📋 **Explorer export and searchable-tree browsing** — the two halves
-  of Explorer DOM editing that did not land with the row affordances
-  above:
-  - Export from the row's menu: services and the whole place to Roblox
-    (Save/Publish, see below), to a local file; individual instances to
-    `.obj` and `.gltf` — genuinely useful native additions since Studio
-    itself has no built-in mesh export today. Roblox's own roadmap does
-    list glTF export, pushed from Late 2025 to Late 2026 in its
-    [fall 2026 update](https://devforum.roblox.com/t/creator-roadmap-2026-fall-update/4880208),
-    so `.gltf` may become Studio parity rather than an addition. Check what
-    it actually exports once it ships.
-  - **Keep search results browsable without clearing the search field** —
-    a real devforum request
-    ([`view-descendants-of-matching-instances-in-explorer-search`](https://devforum.roblox.com/t/view-descendants-of-matching-instances-in-explorer-search/4862003),
-    read in full, not just the title: today's real Studio forces you to
-    clear the Explorer's search box before you can expand a matched
-    result's children, so inspecting several matches in a row means
-    search → select → clear → expand, repeated per result). Worth getting
-    right from the start here rather than reproducing that friction: a
-    filtered Explorer tree should stay expandable in place. The Explorer's
-    search box is still inert today, so this means building the filter as
-    well as keeping it browsable.
+- [ ] 📋 **Explorer export**, the half of Explorer DOM editing that did not
+  land with the row affordances above or the search (see "What's been
+  implemented" → Editor).
+  Export from the row's menu: services and the whole place to Roblox
+  (Save/Publish, see below), to a local file; individual instances to
+  `.obj` and `.gltf` — genuinely useful native additions since Studio
+  itself has no built-in mesh export today. Roblox's own roadmap does
+  list glTF export, pushed from Late 2025 to Late 2026 in its
+  [fall 2026 update](https://devforum.roblox.com/t/creator-roadmap-2026-fall-update/4880208),
+  so `.gltf` may become Studio parity rather than an addition. Check what
+  it actually exports once it ships.
 - [ ] 📋 **Multi-instance drag from a row outside the selection.** Pressing
   such a row collapses the selection to it before the drag starts, so a
   multi-instance drag only carries the whole selection when grabbed by its
@@ -1822,11 +1892,10 @@ against `Roblox/creator-docs` rather than assumed:
   Stage 3, minus what already shipped.** Stage 1 is met and asserted in
   tests; these are the rest, each small enough to ride along with other
   work rather than needing its own PR:
-  - **A separate editor/viewport font size**, independent of the UI scale —
-    VS Code's split between `window.zoomLevel` and `editor.fontSize`.
-    Nothing needs it yet; the moment the script editor grows, it will.
-  - **Named dock layouts.** Sizes persist and Reset Layout exists; saving
-    several under names (Blender's "workspaces") is the piece that does not.
+  - **A separate viewport font size**, on top of the UI scale — VS Code's
+    split between `window.zoomLevel` and `editor.fontSize`. The script
+    editor's half shipped as Settings' Script font size; the viewport's
+    text still has only the UI scale.
   - **44×44 targets on primary and destructive controls by default** (2.5.5),
     rather than only when Large Click Targets is on — Save, Delete, and
     Play/Stop once they exist.
@@ -1837,10 +1906,10 @@ against `Roblox/creator-docs` rather than assumed:
     the focused row and the selected rows cannot differ — which matters
     because the Explorer multi-selects. Needs the toolkit's tree replaced or
     extended.
-- [ ] 📋 **Property editors for the two `Variant` types that still have
-  none.** The Properties panel renders a value for every type the DOM can
-  hold, but two of them are still read-only. Inventory, rationale and
-  rough sizing live in
+- [ ] 📋 **Property editors for the two `Variant` types that still lack a
+  whole one.** The Properties panel renders a value for every type the DOM
+  can hold, but a `Content` naming an instance is still read-only and `Ref`
+  is picked from the Explorer only. Inventory, rationale and rough sizing live in
   [`agents/property-editors.md`](agents/property-editors.md); the bullets
   below are what is left after the `CFrame`/`Ray`/`Vector3int16`/`Faces`/
   `Axes`/`NumberRange`/`UDim` pass, the `OptionalCFrame` one, and
@@ -1848,11 +1917,12 @@ against `Roblox/creator-docs` rather than assumed:
   implemented" → Editor).
 
   Each is its own piece of work, so each gets its own PR:
-  - **`Ref`** (`ObjectValue.Value`, `Weld.Part0`) shows the target's name
-    and cannot be changed. Needs an instance picker — an Explorer target,
-    or a pick-in-viewport mode.
-  - **`Content`** (`Decal.Texture`, `MeshPart.MeshId`) needs an asset URI
-    field, and its `Content::Object` case is a `Ref` picker again.
+  - **`Ref`**: picking a target in the 3D viewport as well as the Explorer
+    (the Explorer pick is done, see "What's been implemented" → Editor).
+  - **`Content`**'s `Content::Object` case (`Decal.Texture`,
+    `MeshPart.MeshId` pointing at an instance in the place) still needs the
+    `Ref` picker wired to it. Its asset URI field is done (see "What's been
+    implemented" → Editor).
 
   Smaller, and not a missing editor: `Font` edits as three typed fields
   (family, weight, style) by choice — a weight's nine names are quicker
@@ -1948,9 +2018,10 @@ against `Roblox/creator-docs` rather than assumed:
   default quality, sandbox naming for Play) beyond what's already
   persisted — and, worth folding into the same effort rather than treating
   separately, **exposing the renderer's calibration constants as real
-  settings** instead of hardcoded Rust values (`SUN_BASE`,
-  `ATMOSPHERE_DENSITY_SCALE`, `PLASTIC_SPEC_STRENGTH`, the movement-easing
-  time constant, the quality-level bands) — every one of these was tuned
+  settings** instead of hardcoded Rust values (the movement-easing time
+  constant and the quality-level bands; `SUN_BASE`,
+  `ATMOSPHERE_DENSITY_SCALE` and `PLASTIC_SPEC_STRENGTH` shipped as
+  **Renderer calibration**) — every one of these was tuned
   empirically tonight against specific real captures, and a place with
   different lighting conditions may want to nudge them without a rebuild.
   Everything this bullet and the next few settings-shaped items describe
@@ -1959,13 +2030,10 @@ against `Roblox/creator-docs` rather than assumed:
 - [ ] 📋 **What Studio Settings still shows as `SOON`.** The screen itself
   shipped (see "What's been implemented" → Editor); these rows are drawn
   there, faded and inert, until what they stand for exists:
-  **renderer calibration** (`SUN_BASE`, `ATMOSPHERE_DENSITY_SCALE`,
-  `PLASTIC_SPEC_STRENGTH` and the quality bands as real settings; the two
-  WGSL ones are compile-time shader constants today and need a uniform),
-  **default services** (which services the Explorer lists when Show all
-  services is off), the **Auto-Recovery** toggle, interval and folder and
-  Play's **test-copy name** (waiting on the autosave item below),
-  **several accounts**, **named layouts**, **script font size**, the
+  the **quality bands** under renderer calibration (the three tuned
+  constants beside them are settings now),
+  Play's **test-copy name**,
+  **several accounts**, the
   eyedropper in the colour popover (GPUI has no way to sample the
   screen), and
   **Keyboard shortcuts** — real Studio's own separate
@@ -2008,21 +2076,6 @@ against `Roblox/creator-docs` rather than assumed:
   this one: a real, in-app way to ship a half-finished feature switched
   off by default instead of either blocking a merge on it being complete
   or shipping it fully live before it's ready.
-- [ ] 📋 **Autosave and crash recovery**, matching real Studio's own
-  Auto-Recovery (`File > Studio Settings` → Studio tab → Auto-Recovery;
-  saves on an interval, typically every 5–10 minutes and configurable down
-  to 1–2; recovered files reachable afterwards via
-  `File > Advanced > Open Auto Saves`). Today's save is manual (`Ctrl+S`)
-  only, with nothing kept if the editor crashes or is killed first. Worth
-  deliberately avoiding real Studio's own known complaint here rather than
-  reproducing it: a recovered file there loses its place/universe link,
-  which this project could sidestep since a place here is just a local
-  file path to begin with, nothing tying it to a remote id the way a
-  crash-recovered copy would need to reconstruct. Distinct from, and a
-  local complement to, the **remote** Open Cloud place-version-history
-  item under "Save/Publish to Roblox from the editor UI" above — that one
-  is versions Roblox's servers already have; this one is unsaved local
-  work surviving a crash before anything was ever published at all.
 - [ ] 📋 **More New templates on Home.** Home's New section has Baseplate
   only. Flat Terrain needs a `Terrain.SmoothGrid` writer, which nothing
   in the tree has yet; a terrain template without its voxels would be a
@@ -2085,9 +2138,7 @@ against `Roblox/creator-docs` rather than assumed:
   still without an editor): hover feedback is instant — `gpui` has no
   CSS-style property transitions and cannot transform a `Div`;
   `gpui_base::transition` animates one value explicitly (the ghost dock's
-  ease uses it), but putting it behind every hover state is a larger job —
-  and keyboard arrow-navigation inside the hand-built menus
-  (`shell::menu`) isn't wired.
+  ease uses it), but putting it behind every hover state is a larger job.
 
 ### Play / Test workflow
 - [ ] 📋 The sandbox-place design (private per-developer place, injected

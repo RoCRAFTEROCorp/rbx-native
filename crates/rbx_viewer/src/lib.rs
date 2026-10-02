@@ -73,6 +73,7 @@ pub use lighting::light_guides;
 // An editor placing the sun by pointing at the scene needs the inverse of the
 // sun model the renderer lights with.
 pub use lighting::sun;
+pub use lighting::Calibration;
 pub use load::read_place;
 pub use quality::{FrameRateManager, QualityLevel};
 pub use renderer::{GuiBox, Segment};
