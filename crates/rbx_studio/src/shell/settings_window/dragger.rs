@@ -2,7 +2,7 @@
 //! behaviours, and the Snap popover's increments.
 
 use gpui_kit::component::h_flex;
-use gpui_kit::component::input::{Input, InputEvent, InputState};
+use gpui_kit::component::input::{Input, InputState};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
@@ -10,6 +10,7 @@ use crate::settings::DraggerSettings;
 use crate::tokens;
 use crate::transform::{self, SnapKind, Transform};
 
+use super::super::toolbar::snap::commit_on_enter;
 use super::super::Shell;
 use super::kit::{toggle, Row, Section};
 use super::SettingsWindow;
@@ -34,19 +35,14 @@ impl Increments {
         let mut field = |kind: SnapKind, cx: &mut Context<SettingsWindow>| {
             let value = shell.read(cx).snap_increment(kind);
             let input = cx.new(|cx| InputState::new(window, cx).default_value(format!("{value}")));
-            // On Enter or blur; a zero or text that isn't a number leaves the
-            // increment alone.
+            // On Enter or blur, by the popover's own rule.
             subscriptions.push(commit_on_enter(
                 &input,
                 window,
                 cx,
                 move |this, text, cx| {
-                    if let Some(increment) = transform::parse_increment(text).filter(|v| *v > 0.) {
-                        this.shell.update(cx, |shell, cx| {
-                            shell.set_snap_increment(kind, increment, cx)
-                        });
-                    }
-                    this.shell.read(cx).snap_increment(kind)
+                    this.shell
+                        .update(cx, |shell, cx| shell.commit_snap_increment(kind, text, cx))
                 },
             ));
             input
@@ -224,37 +220,6 @@ pub(super) fn number(
                     .child(unit),
             )
         })
-}
-
-/// Commits a [`number`] field on Enter or blur, not per keystroke, so the
-/// `8` on the way to `80` never lands, and only once it was typed in, so
-/// leaving an untouched field doesn't put back a value reset meanwhile.
-/// `commit` applies what it accepts of the text and returns the value then
-/// in effect, which the field is rewritten to: a clamped or refused entry
-/// shows what was kept.
-pub(super) fn commit_on_enter(
-    input: &Entity<InputState>,
-    window: &Window,
-    cx: &mut Context<SettingsWindow>,
-    commit: impl Fn(&mut SettingsWindow, &str, &mut Context<SettingsWindow>) -> f32 + 'static,
-) -> Subscription {
-    let mut edited = false;
-    cx.subscribe_in(
-        input,
-        window,
-        move |this, input, event: &InputEvent, window, cx| match event {
-            InputEvent::Change => edited = true,
-            InputEvent::PressEnter { .. } | InputEvent::Blur if edited => {
-                edited = false;
-                let text = input.read(cx).value().to_string();
-                let kept = format!("{}", commit(this, &text, cx));
-                if text.trim() != kept {
-                    input.update(cx, |state, cx| state.set_value(kept, window, cx));
-                }
-            }
-            _ => {}
-        },
-    )
 }
 
 /// A committed field's number: the text read as one, clamped into `range`

@@ -15,7 +15,8 @@ use crate::settings::SCRIPT_FONT_SIZE;
 use crate::theme;
 use crate::tokens;
 
-use super::dragger::{commit_on_enter, committed, number};
+use super::super::toolbar::snap::commit_on_enter;
+use super::dragger::{committed, number};
 use super::kit::{
     self, ghost_icon, icon, readout, secondary_button, ticked_slider, Reset, Row, Section,
 };

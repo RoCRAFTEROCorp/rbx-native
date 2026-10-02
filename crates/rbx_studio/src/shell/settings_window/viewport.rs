@@ -12,8 +12,9 @@ use crate::pacing::UnfocusedFps;
 use crate::settings::FEEL_SCALE_RANGE;
 use crate::tokens;
 
+use super::super::toolbar::snap::commit_on_enter;
 use super::super::Shell;
-use super::dragger::{commit_on_enter, committed, number};
+use super::dragger::{committed, number};
 use super::kit::{self, mono, readout, segmented, slider, text, toggle, Row, Section};
 use super::SettingsWindow;
 

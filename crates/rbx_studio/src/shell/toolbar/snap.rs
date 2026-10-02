@@ -49,8 +49,8 @@ impl SnapFields {
             rotate: field(transform.rotate, window, cx),
         };
         let subscriptions = [
-            watch(&fields.translate, SnapKind::Translate, cx),
-            watch(&fields.rotate, SnapKind::Rotate, cx),
+            watch(&fields.translate, SnapKind::Translate, window, cx),
+            watch(&fields.rotate, SnapKind::Rotate, window, cx),
             watch_steps(&fields.translate, SnapKind::Translate, window, cx),
             watch_steps(&fields.rotate, SnapKind::Rotate, window, cx),
         ];
@@ -59,9 +59,8 @@ impl SnapFields {
 
     /// Rewrites a field whose text no longer says its increment, as after a
     /// change from Settings. A field being typed in is left alone: "1." on
-    /// the way to "1.5" is not a disagreement to correct. Focus counts only
-    /// while the window is active: a field left focused in a window behind
-    /// another one is not being typed in.
+    /// the way to "1.5" is not a disagreement to correct, and is committed
+    /// on Enter or blur (see `commit_on_enter`).
     pub(crate) fn sync(
         &self,
         transform: crate::transform::Transform,
@@ -73,7 +72,7 @@ impl SnapFields {
             (&self.rotate, transform.rotate.increment),
         ] {
             let state = input.read(cx);
-            if (window.is_window_active() && state.focus_handle(cx).is_focused(window))
+            if state.focus_handle(cx).is_focused(window)
                 || transform::parse_increment(&state.value()) == Some(increment)
             {
                 continue;
@@ -106,20 +105,49 @@ fn field(snap: Snap, window: &mut Window, cx: &mut Context<Shell>) -> Entity<Inp
     cx.new(|cx| InputState::new(window, cx).default_value(format!("{}", snap.increment)))
 }
 
-/// As typed, not on `Enter`: an increment is one number, and waiting for a
-/// commit key would leave the field disagreeing with the drag beside it.
-/// Text that isn't a number yet ("", "1.") simply leaves the increment alone
-/// — see `transform::parse_increment`.
-fn watch(input: &Entity<InputState>, kind: SnapKind, cx: &mut Context<Shell>) -> Subscription {
-    cx.subscribe(input, move |shell, input, event: &InputEvent, cx| {
-        if !matches!(event, InputEvent::Change) {
-            return;
-        }
-        let text = input.read(cx).value().to_string();
-        if let Some(increment) = transform::parse_increment(&text) {
-            shell.transform_action(Action::SetIncrement(kind, increment), cx);
-        }
+/// On Enter or blur, not per keystroke: "0.5" passes through "0" and "0.",
+/// and a per-keystroke field applied the zero, saving settings.json each
+/// time.
+fn watch(
+    input: &Entity<InputState>,
+    kind: SnapKind,
+    window: &Window,
+    cx: &mut Context<Shell>,
+) -> Subscription {
+    commit_on_enter(input, window, cx, move |shell, text, cx| {
+        shell.commit_snap_increment(kind, text, cx)
     })
+}
+
+/// Commits a number field on Enter or blur, not per keystroke, so the `8` on
+/// the way to `80` never lands, and only once it was typed in, so leaving an
+/// untouched field doesn't put back a value reset meanwhile. `commit`
+/// applies what it accepts of the text and returns the value then in effect,
+/// which the field is rewritten to: a clamped or refused entry shows what was
+/// kept. Shared with Studio Settings' number fields.
+pub(in crate::shell) fn commit_on_enter<T: 'static>(
+    input: &Entity<InputState>,
+    window: &Window,
+    cx: &mut Context<T>,
+    commit: impl Fn(&mut T, &str, &mut Context<T>) -> f32 + 'static,
+) -> Subscription {
+    let mut edited = false;
+    cx.subscribe_in(
+        input,
+        window,
+        move |this, input, event: &InputEvent, window, cx| match event {
+            InputEvent::Change => edited = true,
+            InputEvent::PressEnter { .. } | InputEvent::Blur if edited => {
+                edited = false;
+                let text = input.read(cx).value().to_string();
+                let kept = format!("{}", commit(this, &text, cx));
+                if text.trim() != kept {
+                    input.update(cx, |state, cx| state.set_value(kept, window, cx));
+                }
+            }
+            _ => {}
+        },
+    )
 }
 
 /// The spinner buttons §5.1 puts on a numeric field. One press is one
@@ -177,6 +205,21 @@ fn title(kind: SnapKind) -> &'static str {
 }
 
 impl Shell {
+    /// A typed increment, from the popover or Studio Settings: a positive
+    /// number applies, anything else ("", "0", "half") leaves the increment
+    /// alone. Returns the increment in effect.
+    pub(in crate::shell) fn commit_snap_increment(
+        &mut self,
+        kind: SnapKind,
+        text: &str,
+        cx: &mut Context<Self>,
+    ) -> f32 {
+        if let Some(increment) = transform::parse_increment(text).filter(|v| *v > 0.) {
+            self.transform_action(Action::SetIncrement(kind, increment), cx);
+        }
+        self.snap_mut(kind).increment
+    }
+
     /// The popover body, to `Snap-Popover` / `Snap-Popover-RotateOff`: 248
     /// wide with the hairline inside that width, one section per snap
     /// unit, a 1px divider with 10px above and below between them.
