@@ -34,6 +34,16 @@ pub(crate) fn folder() -> Option<PathBuf> {
     crate::settings::default_config_dir().map(|dir| dir.join("recovery"))
 }
 
+/// Opens the folder in the file manager, made first if no copy has been
+/// written yet so it opens on the folder rather than failing. Settings'
+/// Open auto-saves and File › Open Auto Saves both land here.
+pub(crate) fn open_folder(cx: &mut gpui_kit::App) {
+    if let Some(folder) = folder() {
+        let _ = std::fs::create_dir_all(&folder);
+        cx.open_with_system(&folder);
+    }
+}
+
 /// The copy of `place` in `folder`: its own name marked as a recovery copy,
 /// in its own format (the extension says which), plus a short hash of its
 /// full path so two places both called `Place.rbxl` never share a copy.

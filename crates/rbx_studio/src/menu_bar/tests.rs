@@ -1,6 +1,6 @@
 use gpui_kit::{Action as _, OwnedMenuItem};
 
-use super::{menus, MenuInsertTemplate, MenuPlaceholder};
+use super::{menus, MenuInsertTemplate, MenuOpenAutoSaves, MenuPlaceholder};
 use crate::script_templates::Template;
 
 /// Every item in the bar either does something or is visibly greyed out.
@@ -62,6 +62,24 @@ fn no_menu_opens_or_closes_on_a_separator() {
             menu.name
         );
     }
+}
+
+/// Auto-Recovery's copies are reachable from File, as Studio's are, and
+/// the item is live rather than one more placeholder.
+#[test]
+fn file_opens_the_auto_saves_folder() {
+    let file = menus(&[])
+        .into_iter()
+        .find(|menu| menu.name == "File")
+        .expect("a File menu");
+    let found = file.items.iter().any(|item| {
+        matches!(
+            item,
+            OwnedMenuItem::Action { name, action, disabled: false, .. }
+                if name == "Open Auto Saves" && action.partial_eq(&MenuOpenAutoSaves)
+        )
+    });
+    assert!(found);
 }
 
 /// The user's templates close Model after a separator (a long list must

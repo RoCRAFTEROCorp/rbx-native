@@ -10,6 +10,8 @@
   the folder the copies are in. Saving deletes the place's copy. A copy
   left by a session that crashed is kept, moved aside under a timestamped
   name when its place next opens. — @Vikmanou
+- **File › Open Auto Saves** opens the folder Auto-Recovery's copies are
+  in, the way Studio's own File menu does. — @Vikmanou
 - **Menus work from the keyboard.** In every dropdown menu (the `⋯`
   overflow menus, the ribbon's insert menus, the Argon and Wally pickers),
   Up and Down now move through the rows, Home and End jump to the ends, and

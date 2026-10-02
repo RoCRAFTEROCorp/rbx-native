@@ -48,6 +48,7 @@ actions!(
     menu_bar,
     [
         MenuSave,
+        MenuOpenAutoSaves,
         MenuStudioSettings,
         MenuUndo,
         MenuRedo,
@@ -151,6 +152,11 @@ fn menus(templates: &[Template]) -> Vec<OwnedMenu> {
                 MenuItem::action("Save As…", MenuPlaceholder).disabled(true),
                 MenuItem::separator(),
                 MenuItem::action("Publish to Roblox…", MenuPlaceholder).disabled(true),
+                MenuItem::separator(),
+                // Studio files this under File › Advanced; this bar draws
+                // no submenus (`popup`), so it sits flat, under Studio's
+                // own name for it.
+                MenuItem::action("Open Auto Saves", MenuOpenAutoSaves),
                 MenuItem::separator(),
                 MenuItem::action("Studio Settings…", MenuStudioSettings),
             ])

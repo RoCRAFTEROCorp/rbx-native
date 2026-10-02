@@ -66,8 +66,7 @@ impl SettingsWindow {
         let ticks: Vec<f32> = (low..=high)
             .map(|stop| (stop - low) as f32 / (high - low) as f32)
             .collect();
-        let folder = recovery::folder();
-        let shown = folder.as_deref().map(tilde).unwrap_or_default();
+        let shown = recovery::folder().as_deref().map(tilde).unwrap_or_default();
         vec![
             Section::new(
                 "Auto-Recovery",
@@ -97,14 +96,8 @@ impl SettingsWindow {
                     }),
                     Row::new(
                         "Recovery folder",
-                        secondary_button("open-auto-saves", "folder", "Open auto-saves").on_click(
-                            move |_, _, cx| {
-                                if let Some(folder) = &folder {
-                                    let _ = std::fs::create_dir_all(folder);
-                                    cx.open_with_system(folder);
-                                }
-                            },
-                        ),
+                        secondary_button("open-auto-saves", "folder", "Open auto-saves")
+                            .on_click(|_, _, cx| recovery::open_folder(cx)),
                     )
                     .describe_mono(shown),
                 ],

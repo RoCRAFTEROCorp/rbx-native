@@ -13,6 +13,7 @@ use crate::shell::{Panel, Shell};
 use super::*;
 
 pub(super) fn install(shell: Entity<Shell>, cx: &mut App) {
+    cx.on_action(|_: &MenuOpenAutoSaves, cx| crate::recovery::open_folder(cx));
     cx.on_action({
         let shell = shell.clone();
         move |action: &MenuInsertTemplate, cx| {
