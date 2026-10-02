@@ -189,6 +189,24 @@ fn materialize(dom: &mut WeakDom, node: &Clipped, parent: Option<Ref>) -> Ref {
     root
 }
 
+/// One Duplicate of `reference`: a copy under the same parent, placed right
+/// after the original among its siblings — where real Studio's Explorer
+/// shows it (Studio lists same-class siblings by name, so `Lobby1` follows
+/// `Lobby`; this Explorer lists the DOM's own order, so the copy has to sit
+/// there in the DOM) — renamed to the next free numbered name when
+/// `increment` is on.
+fn duplicate(dom: &mut WeakDom, reference: Ref, increment: bool) -> Option<Ref> {
+    let parent = dom.parent(reference);
+    let node = snapshot(dom, reference)?;
+    let name = increment.then(|| insert::incremented_name(dom, parent, &node.name));
+    let copy = materialize(dom, &node, parent);
+    dom.place_after(copy, reference);
+    if let Some(name) = name {
+        let _ = dom.set_name(copy, &name);
+    }
+    Some(copy)
+}
+
 fn create(
     dom: &mut WeakDom,
     node: &Clipped,
@@ -380,16 +398,7 @@ impl Shell {
         let mut dom = std::mem::replace(&mut self.dom, WeakDom::new());
         let duplicated: Vec<Ref> = selected
             .into_iter()
-            .filter_map(|reference| {
-                let parent = dom.parent(reference);
-                let node = snapshot(&dom, reference)?;
-                let name = increment.then(|| insert::incremented_name(&dom, parent, &node.name));
-                let copy = materialize(&mut dom, &node, parent);
-                if let Some(name) = name {
-                    let _ = dom.set_name(copy, &name);
-                }
-                Some(copy)
-            })
+            .filter_map(|reference| duplicate(&mut dom, reference, increment))
             .collect();
         self.dom = dom;
         let changes = self.dom.take_changes();

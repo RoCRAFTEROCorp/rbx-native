@@ -377,6 +377,9 @@ pub(crate) struct Shell {
     layout: layout::Layout,
     /// See `Settings::named_layouts`; persisted.
     named_layouts: Vec<crate::settings::NamedLayout>,
+    /// The named layout most recently saved or applied, which is the one
+    /// marked Active when several names hold the docks' arrangement.
+    last_named_layout: Option<String>,
     output_collapsed: bool,
     drag: Option<Drag>,
     /// The dock currently being dragged by its tab, which is what puts the
@@ -679,6 +682,7 @@ impl Shell {
             // whatever the file actually held (see `layout::Layout::restore`).
             layout: layout::Layout::restore(&docks),
             named_layouts,
+            last_named_layout: None,
             dragging_panel: None,
             panel_windows: HashMap::new(),
             window_was_active: true,
@@ -1150,13 +1154,19 @@ impl Shell {
         &self.named_layouts
     }
 
-    /// Whether the docks are arranged as applying `named` would leave them.
-    /// Compared after a restore rather than as saved: a layout that leaves
-    /// panels out (a hand-edited one, or one saved before a panel existed)
-    /// gets them back on their own edges when applied, and is still the
-    /// layout in use.
-    pub(super) fn is_current_layout(&self, named: &crate::settings::NamedLayout) -> bool {
-        self.layout.saved() == layout::Layout::restore(&named.layout).saved()
+    /// The saved layout the docks are arranged as, if any. Matched after a
+    /// restore rather than as saved: a layout that leaves panels out (a
+    /// hand-edited one, or one saved before a panel existed) gets them back
+    /// on their own edges when applied, and is still the layout in use.
+    pub(super) fn active_named_layout(&self) -> Option<&str> {
+        let current = self.layout.saved();
+        let matching: Vec<&str> = self
+            .named_layouts
+            .iter()
+            .filter(|named| layout::Layout::restore(&named.layout).saved() == current)
+            .map(|named| named.name.as_str())
+            .collect();
+        layout::active_layout(&matching, self.last_named_layout.as_deref())
     }
 
     /// Saves the current dock arrangement as `name`, replacing a layout
@@ -1178,6 +1188,7 @@ impl Shell {
                 layout,
             }),
         }
+        self.last_named_layout = Some(name.to_owned());
         self.save_settings();
         cx.notify();
     }
@@ -1191,6 +1202,7 @@ impl Shell {
             return;
         };
         self.layout = layout::Layout::restore(&named.layout);
+        self.last_named_layout = Some(named.name.clone());
         self.save_settings();
         cx.notify();
     }

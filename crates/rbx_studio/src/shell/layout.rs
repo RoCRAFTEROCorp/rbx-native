@@ -649,6 +649,18 @@ pub(crate) fn edge_from_key(key: &str) -> Option<Edge> {
     Edge::ALL.into_iter().find(|edge| edge.key() == key)
 }
 
+/// The one saved name to mark Active among those whose arrangement matches
+/// the docks: `last` (the name most recently saved or applied) while it
+/// still matches, else the first match. Two names can hold the same
+/// arrangement, and only one of them is the layout in use.
+pub(crate) fn active_layout<'a>(matching: &[&'a str], last: Option<&str>) -> Option<&'a str> {
+    matching
+        .iter()
+        .copied()
+        .find(|name| Some(*name) == last)
+        .or_else(|| matching.first().copied())
+}
+
 #[cfg(test)]
 #[path = "layout/tests.rs"]
 mod tests;

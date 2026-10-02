@@ -2,8 +2,8 @@
 //! which of Roblox's own services its default view hides. Shared by
 //! `rbxstudio`'s Explorer and the browser build's (see `web`).
 
-/// The order Studio lists services in — neither alphabetical nor the order the
-/// file stores them in. Anything else a place has at its root comes after.
+/// The services Studio's default Explorer view shows, in the order it lists
+/// them in — neither alphabetical nor the order the file stores them in.
 pub const SERVICE_ORDER: [&str; 14] = [
     "Workspace",
     "Players",
@@ -19,6 +19,36 @@ pub const SERVICE_ORDER: [&str; 14] = [
     "Teams",
     "SoundService",
     "TextChatService",
+];
+
+/// The order Studio lists root services in, default-visible or not: every
+/// service class with an `ExplorerOrder` in Studio's own
+/// `ReflectionMetadata.xml` (as mirrored by MaximumADHD's
+/// Roblox-Client-Tracker), sorted by it, ties alphabetical the way Studio
+/// breaks them. [`SERVICE_ORDER`] is this list minus the hidden ones, which
+/// is why a service ticked to show (`Chat`, say) lands between `SoundService`
+/// and `TextChatService` instead of after them. Anything not listed here
+/// comes after, alphabetically.
+const EXPLORER_ORDER: [&str; 19] = [
+    "Workspace",
+    "Players",
+    "Lighting",
+    "MaterialService",
+    "ReplicatedFirst",
+    "ReplicatedStorage",
+    "ServerScriptService",
+    "ServerStorage",
+    "StarterGui",
+    "StarterPack",
+    "StarterPlayer",
+    "Teams",
+    "SoundService",
+    "Chat",
+    "TextChatService",
+    "VoiceChatService",
+    "LocalizationService",
+    "TestService",
+    "VRService",
 ];
 
 /// Every root "service" class Roblox itself creates in a place file, whether
@@ -88,6 +118,12 @@ const KNOWN_SERVICES: [&str; 55] = [
 /// Where `class` sits in [`SERVICE_ORDER`], if it is one of those.
 pub fn rank(class: &str) -> Option<usize> {
     SERVICE_ORDER.iter().position(|service| *service == class)
+}
+
+/// Where a root of `class` sits in the Explorer's root list (see
+/// [`EXPLORER_ORDER`]), if it has a fixed place there.
+pub fn explorer_rank(class: &str) -> Option<usize> {
+    EXPLORER_ORDER.iter().position(|service| *service == class)
 }
 
 /// Whether a root of this class is one of the services this Explorer knows,

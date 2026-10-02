@@ -2,23 +2,23 @@
 //! behaviours, and the Snap popover's increments.
 
 use gpui_kit::component::h_flex;
-use gpui_kit::component::input::{Input, InputEvent, InputState};
+use gpui_kit::component::input::{Input, InputState};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
 use crate::settings::DraggerSettings;
 use crate::tokens;
-use crate::transform::{self, SnapKind, Transform};
+use crate::transform::{SnapKind, Transform};
 
+use super::super::toolbar::snap::NumberField;
 use super::super::Shell;
 use super::kit::{toggle, Row, Section};
 use super::SettingsWindow;
 
-/// The increment fields: typed into here, and rewritten from the setting
-/// whenever it changed elsewhere and the field isn't being typed in.
+/// The increment fields, committed on Enter or leaving the field.
 pub(super) struct Increments {
-    translate: Entity<InputState>,
-    rotate: Entity<InputState>,
+    pub(super) translate: NumberField,
+    pub(super) rotate: NumberField,
 }
 
 /// One dragger switch: which field of [`DraggerSettings`] it flips.
@@ -33,43 +33,19 @@ impl Increments {
         let mut subscriptions = Vec::new();
         let mut field = |kind: SnapKind, cx: &mut Context<SettingsWindow>| {
             let value = shell.read(cx).snap_increment(kind);
-            let input = cx.new(|cx| InputState::new(window, cx).default_value(format!("{value}")));
-            // As typed, like the popover: text that isn't a number yet
-            // leaves the increment alone.
-            subscriptions.push(
-                cx.subscribe(&input, move |this, input, event: &InputEvent, cx| {
-                    if !matches!(event, InputEvent::Change) {
-                        return;
-                    }
-                    let text = input.read(cx).value().to_string();
-                    if let Some(increment) = transform::parse_increment(&text).filter(|v| *v > 0.) {
-                        this.shell.update(cx, |shell, cx| {
-                            shell.set_snap_increment(kind, increment, cx)
-                        });
-                    }
-                }),
-            );
-            input
+            // By the popover's own rule.
+            let (field, typed) = NumberField::new(value, window, cx, move |this, text, cx| {
+                this.shell
+                    .update(cx, |shell, cx| shell.commit_snap_increment(kind, text, cx))
+            });
+            subscriptions.push(typed);
+            field
         };
         let increments = Increments {
             translate: field(SnapKind::Translate, cx),
             rotate: field(SnapKind::Rotate, cx),
         };
         (increments, subscriptions)
-    }
-
-    fn sync(&self, [translate, rotate]: [f32; 2], window: &mut Window, cx: &mut App) {
-        for (input, increment) in [(&self.translate, translate), (&self.rotate, rotate)] {
-            let state = input.read(cx);
-            if (window.is_window_active() && state.focus_handle(cx).is_focused(window))
-                || transform::parse_increment(&state.value()) == Some(increment)
-            {
-                continue;
-            }
-            input.update(cx, |state, cx| {
-                state.set_value(format!("{increment}"), window, cx)
-            });
-        }
     }
 }
 
@@ -87,9 +63,11 @@ impl SettingsWindow {
                 shell.snap_increment(SnapKind::Rotate),
             )
         };
-        self.increments.sync([translate, rotate], window, cx);
-        let focused = [&self.increments.translate, &self.increments.rotate]
-            .map(|input| input.read(cx).focus_handle(cx).is_focused(window));
+        let focused = [
+            &self.increments.translate.input,
+            &self.increments.rotate.input,
+        ]
+        .map(|input| input.read(cx).focus_handle(cx).is_focused(window));
         let defaults = DraggerSettings::default();
         let switch = |id: &'static str, label, description, field: Switch| {
             let on = *field(&mut { dragger });
@@ -153,7 +131,7 @@ impl SettingsWindow {
                 ),
                 Row::new(
                     "Move increment",
-                    number(&self.increments.translate, "studs", focused[0]),
+                    number(&self.increments.translate.input, "studs", focused[0]),
                 )
                 .describe("Also in the ribbon\u{2019}s Snap popover.")
                 .changed(
@@ -168,7 +146,7 @@ impl SettingsWindow {
                 ),
                 Row::new(
                     "Rotate increment",
-                    number(&self.increments.rotate, "\u{b0}", focused[1]),
+                    number(&self.increments.rotate.input, "\u{b0}", focused[1]),
                 )
                 .describe("Snap angle for the Rotate tool.")
                 .changed(rotate != defaults.rotate.increment, move |shell, cx| {
@@ -224,4 +202,35 @@ pub(super) fn number(
                     .child(unit),
             )
         })
+}
+
+/// A committed field's number: the text read as one, clamped into `range`
+/// when `clamp`, refused outside it otherwise — each setting keeping the
+/// rule it loads with.
+pub(super) fn committed(text: &str, (low, high): (f32, f32), clamp: bool) -> Option<f32> {
+    let value = text.trim().parse::<f32>().ok().filter(|v| v.is_finite())?;
+    if clamp {
+        Some(value.clamp(low, high))
+    } else {
+        (low..=high).contains(&value).then_some(value)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::committed;
+
+    #[test]
+    fn committed_clamps_or_refuses_the_whole_entry() {
+        let font = crate::settings::SCRIPT_FONT_SIZE_RANGE;
+        assert_eq!(committed("80", font, true), Some(32.));
+        assert_eq!(committed("2", font, true), Some(8.));
+        assert_eq!(committed(" 16 ", font, true), Some(16.));
+        let sun = crate::settings::calibration_range(1.);
+        assert_eq!(committed("1000", sun, false), None);
+        assert_eq!(committed("5", sun, false), Some(5.));
+        assert_eq!(committed("", font, true), None);
+        assert_eq!(committed("inf", font, true), None);
+        assert_eq!(committed("NaN", sun, false), None);
+    }
 }
