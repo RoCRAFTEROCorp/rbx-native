@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-10-02
+
+- **Property category order.** The Properties panel now groups categories in
+  Studio's own logical order — Data, Appearance, Transform, and so on —
+  instead of alphabetically, so identity properties come first and
+  physics/behavior trail naturally. — @Vikmanou
+
 ## 2026-10-01
 
 - **`GetPivot` and `PivotTo` in Luau.** The Command Bar and scripts can now

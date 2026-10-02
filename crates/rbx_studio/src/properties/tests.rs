@@ -942,7 +942,7 @@ fn udim2_edits_as_four_labeled_fields() {
 }
 
 #[test]
-fn rows_group_by_category_in_alphabetical_order_with_no_empty_groups() {
+fn rows_group_by_category_in_studio_order_with_no_empty_groups() {
     let rows = properties(&[
         ("Anchored", Variant::Bool(true)),
         (
@@ -962,23 +962,91 @@ fn rows_group_by_category_in_alphabetical_order_with_no_empty_groups() {
         .iter()
         .map(|(category, _)| category.as_str())
         .collect();
-    // Every category a Part's rows fall in, the ones its defaults fill in
-    // included.
+    // Studio's logical order: Data first, then Appearance, Transform,
+    // spatial, physics, behavior — not alphabetical.
     assert_eq!(
         categories,
         [
-            "Appearance",
-            "Assembly",
-            "Behavior",
-            "Collision",
             "Data",
-            "Part",
+            "Appearance",
+            "Transform",
             "Pivot",
+            "Part",
+            "Assembly",
+            "Collision",
             "Surface",
-            "Transform"
+            "Behavior",
         ]
     );
     assert!(groups.iter().all(|(_, rows)| !rows.is_empty()));
+}
+
+#[test]
+fn unknown_categories_sort_alphabetically_after_known_ones() {
+    let rows = vec![
+        PropertyRow {
+            name: "X".into(),
+            value: String::new(),
+            category: "Zzz".into(),
+            edit: None,
+            mixed: false,
+        },
+        PropertyRow {
+            name: "Y".into(),
+            value: String::new(),
+            category: "Aaa".into(),
+            edit: None,
+            mixed: false,
+        },
+        PropertyRow {
+            name: "Z".into(),
+            value: String::new(),
+            category: "Data".into(),
+            edit: None,
+            mixed: false,
+        },
+    ];
+
+    let groups = group_by_category(rows);
+    let categories: Vec<&str> = groups
+        .iter()
+        .map(|(category, _)| category.as_str())
+        .collect();
+    assert_eq!(categories, ["Data", "Aaa", "Zzz"]);
+}
+
+#[test]
+fn uncategorized_sorts_last() {
+    let rows = vec![
+        PropertyRow {
+            name: "A".into(),
+            value: String::new(),
+            category: UNCATEGORIZED.into(),
+            edit: None,
+            mixed: false,
+        },
+        PropertyRow {
+            name: "B".into(),
+            value: String::new(),
+            category: "Data".into(),
+            edit: None,
+            mixed: false,
+        },
+        PropertyRow {
+            name: "C".into(),
+            value: String::new(),
+            category: "Zzz".into(),
+            edit: None,
+            mixed: false,
+        },
+    ];
+
+    let groups = group_by_category(rows);
+    let categories: Vec<&str> = groups
+        .iter()
+        .map(|(category, _)| category.as_str())
+        .collect();
+    assert_eq!(categories, ["Data", "Zzz", UNCATEGORIZED]);
 }
 
 /// A Workspace holding one instance of `class` carrying `values`, for the

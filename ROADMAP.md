@@ -1752,16 +1752,15 @@ Roblox's own engine.
   yet wired into `rbx_cloud` at all; worth treating as its own follow-up
   rather than assuming the existing client already covers it.
 #### Properties panel — remaining type editors
-- [ ] 📋 **Category order in the panel.** Categories are sorted
-  alphabetically (`properties::group_by_category`), which doesn't read as
-  sensibly grouped as real Studio's own panel does. Reported from real use
-  and not yet checked against creator-docs or a real Studio instance
-  (worth doing before assuming what "logical" ordering actually means
-  there — the "Studio fallback" Vinegar/Wine workaround elsewhere in this
-  document is one way to check). The two papercuts first filed with it —
-  tight rows, and a numeric value clipped by a narrow field — went with
-  the panel's rework: hairline seams between rows, and a numeric value
-  shown whole on its own row with its components behind an expander.
+- [x] **Category order in the panel.** Categories are sorted in Studio's
+  own logical order — Data first, then Appearance, Transform, Pivot, Part,
+  Assembly, Collision, Surface, Behavior — rather than alphabetically.
+  Categories the known list does not cover sort alphabetically after the
+  known ones, and uncategorized properties always trail. The two papercuts
+  first filed with it — tight rows, and a numeric value clipped by a narrow
+  field — went with the panel's rework: hairline seams between rows, and a
+  numeric value shown whole on its own row with its components behind an
+  expander.
 - [ ] 📋 **A general pass on how Studio renders each type**, rather than
   a generic fallback: go through the API dump's actual type/category
   coverage (`assets/API-Dump.json`, kept current by the daily sync) rather

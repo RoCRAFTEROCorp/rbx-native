@@ -206,16 +206,77 @@ pub(crate) struct PropertyRow {
     pub(crate) mixed: bool,
 }
 
-/// Groups rows by [`PropertyRow::category`], sorted alphabetically by
-/// category name (there is no canonical order to reproduce, unlike Studio's
-/// own panel — see `AGENTS.md`'s note on this); a row's order within its
-/// group is unchanged. Every group is non-empty by construction.
+/// Studio's own Properties panel groups categories in a fixed, non-alphabetical
+/// order: identity first, then appearance, then spatial, then physics/behavior.
+/// Categories not in the known list sort alphabetically after the known ones,
+/// with [`UNCATEGORIZED`] always last.
 pub(crate) fn group_by_category(rows: Vec<PropertyRow>) -> Vec<(String, Vec<PropertyRow>)> {
     let mut grouped: BTreeMap<String, Vec<PropertyRow>> = BTreeMap::new();
     for row in rows {
         grouped.entry(row.category.clone()).or_default().push(row);
     }
-    grouped.into_iter().collect()
+
+    let mut groups: Vec<(String, Vec<PropertyRow>)> = grouped.into_iter().collect();
+    groups.sort_by(|(a, _), (b, _)| category_order(a).cmp(&category_order(b)));
+    groups
+}
+
+/// A sort key that places known categories in Studio's own logical order,
+/// unknown categories alphabetically after them, and [`UNCATEGORIZED`] last.
+fn category_order(category: &str) -> (usize, &str) {
+    // Known categories in the order Studio's own panel presents them,
+    // checked by observation across Part, Model, GUI, constraint, and
+    // service classes.
+    const KNOWN: &[&str] = &[
+        "Data",
+        "Appearance",
+        "Shape",
+        "Image",
+        "Text",
+        "Scrolling",
+        "Video",
+        "Transform",
+        "Pivot",
+        "Part",
+        "Assembly",
+        "Collision",
+        "Surface",
+        "Surface Inputs",
+        "Behavior",
+        "Emission",
+        "Emitter",
+        "EmitterShape",
+        "Particles",
+        "Flipbook",
+        "Camera",
+        "Goals",
+        "Derived Data",
+        "Derived World Data",
+        "Character",
+        "Character Jump Settings",
+        "Jump Settings",
+        "Control",
+        "Controls",
+        "Movement",
+        "Game",
+        "Animation",
+        "Attachments",
+        "Audio",
+        "State",
+    ];
+
+    if category == UNCATEGORIZED {
+        // After everything else.
+        return (usize::MAX, category);
+    }
+
+    if let Some(position) = KNOWN.iter().position(|&known| known == category) {
+        return (position, category);
+    }
+
+    // Unknown categories sort after all known ones, alphabetically among
+    // themselves.
+    (KNOWN.len(), category)
 }
 
 /// The reflection data that turns enum ordinals into names. The DOM is borrowed
