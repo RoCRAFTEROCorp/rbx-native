@@ -2,6 +2,11 @@
 
 ## 2026-10-01
 
+- **Explorer ordering fixes.** A duplicate now sits right after its
+  original instead of at the end of its parent, as it does in Studio, and
+  stays there once saved. A service ticked to show under Default services
+  (Chat, say) takes Studio's place for it, between SoundService and
+  TextChatService, instead of the end of the list. — @chteau
 - **`GetPivot` and `PivotTo` in Luau.** The Command Bar and scripts can now
   read a part's or model's pivot with `:GetPivot()` and move it with
   `:PivotTo(cframe)` — a model carries all its parts along — using the same
