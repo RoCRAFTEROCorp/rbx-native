@@ -124,6 +124,10 @@ impl Sheet {
                     // An unset reference is an absent key, not a missing
                     // default: listed as `nil`, so it can be picked.
                     default = Some(Variant::Ref(NIL_REF));
+                } else if default.is_none() {
+                    // Likewise an unset asset id (`Decal.Texture`, defaulted
+                    // only as `TextureContent`): its twin's default, or "".
+                    default = db.content_id_default(class, &property.name);
                 }
                 index.insert(property.name.clone(), entries.len());
                 entries.push(Entry {

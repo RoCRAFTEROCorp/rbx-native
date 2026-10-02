@@ -46,6 +46,12 @@ pub(crate) const CAP: usize = 200;
 /// is a supporting label next to the result, not the thing being read.
 const SOURCE_MAX_LEN: usize = 80;
 
+/// Past this many characters a row's result is cut. Rows wrap, so this is
+/// far above the Command Bar label's 200 — a path in a warning has to fit —
+/// but still a cap: a `print` loop's whole output would otherwise wrap into
+/// one row hundreds of lines tall.
+const LABEL_MAX_LEN: usize = 2000;
+
 /// The `source` every [`OutputLog::push_warning`] entry carries — there is no
 /// command behind a warning the way there is behind a Command Bar run, so
 /// this is what shows in the row's source column instead.
@@ -101,8 +107,11 @@ impl OutputEntry {
             return true;
         }
         let query = query.to_lowercase();
-        self.source.to_lowercase().contains(&query)
-            || self.feedback.label().to_lowercase().contains(&query)
+        self.source.to_lowercase().contains(&query) || self.label().to_lowercase().contains(&query)
+    }
+
+    fn label(&self) -> SharedString {
+        self.feedback.label_within(LABEL_MAX_LEN)
     }
 
     fn truncated_source(&self) -> SharedString {
@@ -405,13 +414,18 @@ fn output_row(
     let mut row = h_flex()
         .id(format!("output-entry-{index}"))
         .w_full()
+        .items_start()
         .gap_2()
         .px_2()
         .py_1()
         .on_click(cx.listener(move |shell, _, window, cx| {
             shell.recall_command(&source, window, cx);
         }))
-        .child(icon);
+        // Top-aligned so a wrapped message keeps its icon and source on its
+        // first line. The zero-width space makes the icon's box one text
+        // line tall, centring it on that line as `items_center` did on a
+        // single-line row.
+        .child(h_flex().flex_none().text_xs().child(icon).child("\u{200B}"));
 
     if show_timestamp {
         row = row.child(
@@ -422,7 +436,10 @@ fn output_row(
         );
     }
 
-    let mut result_label = div().text_xs().child(entry.feedback.label());
+    // `min_w_0` is what wraps a long message instead of cutting it at the
+    // panel edge: gpui measures text's min-content width unwrapped, so
+    // without it the label refuses to shrink and runs out of the row.
+    let mut result_label = div().min_w_0().text_xs().child(entry.label());
     if let Some(color) = color {
         result_label = result_label.text_color(color);
     }
