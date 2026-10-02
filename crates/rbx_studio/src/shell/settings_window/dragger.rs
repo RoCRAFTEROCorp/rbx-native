@@ -14,8 +14,8 @@ use super::super::Shell;
 use super::kit::{toggle, Row, Section};
 use super::SettingsWindow;
 
-/// The increment fields: typed into here, and rewritten from the setting
-/// whenever it changed elsewhere and the field isn't being typed in.
+/// The increment fields: committed on Enter or blur, and rewritten from the
+/// setting whenever it changed elsewhere and the field isn't focused.
 pub(super) struct Increments {
     translate: Entity<InputState>,
     rotate: Entity<InputState>,
@@ -34,21 +34,21 @@ impl Increments {
         let mut field = |kind: SnapKind, cx: &mut Context<SettingsWindow>| {
             let value = shell.read(cx).snap_increment(kind);
             let input = cx.new(|cx| InputState::new(window, cx).default_value(format!("{value}")));
-            // As typed, like the popover: text that isn't a number yet
-            // leaves the increment alone.
-            subscriptions.push(
-                cx.subscribe(&input, move |this, input, event: &InputEvent, cx| {
-                    if !matches!(event, InputEvent::Change) {
-                        return;
-                    }
-                    let text = input.read(cx).value().to_string();
-                    if let Some(increment) = transform::parse_increment(&text).filter(|v| *v > 0.) {
+            // On Enter or blur; a zero or text that isn't a number leaves the
+            // increment alone.
+            subscriptions.push(commit_on_enter(
+                &input,
+                window,
+                cx,
+                move |this, text, cx| {
+                    if let Some(increment) = transform::parse_increment(text).filter(|v| *v > 0.) {
                         this.shell.update(cx, |shell, cx| {
                             shell.set_snap_increment(kind, increment, cx)
                         });
                     }
-                }),
-            );
+                    this.shell.read(cx).snap_increment(kind)
+                },
+            ));
             input
         };
         let increments = Increments {
@@ -61,7 +61,7 @@ impl Increments {
     fn sync(&self, [translate, rotate]: [f32; 2], window: &mut Window, cx: &mut App) {
         for (input, increment) in [(&self.translate, translate), (&self.rotate, rotate)] {
             let state = input.read(cx);
-            if (window.is_window_active() && state.focus_handle(cx).is_focused(window))
+            if state.focus_handle(cx).is_focused(window)
                 || transform::parse_increment(&state.value()) == Some(increment)
             {
                 continue;
@@ -224,4 +224,66 @@ pub(super) fn number(
                     .child(unit),
             )
         })
+}
+
+/// Commits a [`number`] field on Enter or blur, not per keystroke, so the
+/// `8` on the way to `80` never lands, and only once it was typed in, so
+/// leaving an untouched field doesn't put back a value reset meanwhile.
+/// `commit` applies what it accepts of the text and returns the value then
+/// in effect, which the field is rewritten to: a clamped or refused entry
+/// shows what was kept.
+pub(super) fn commit_on_enter(
+    input: &Entity<InputState>,
+    window: &Window,
+    cx: &mut Context<SettingsWindow>,
+    commit: impl Fn(&mut SettingsWindow, &str, &mut Context<SettingsWindow>) -> f32 + 'static,
+) -> Subscription {
+    let mut edited = false;
+    cx.subscribe_in(
+        input,
+        window,
+        move |this, input, event: &InputEvent, window, cx| match event {
+            InputEvent::Change => edited = true,
+            InputEvent::PressEnter { .. } | InputEvent::Blur if edited => {
+                edited = false;
+                let text = input.read(cx).value().to_string();
+                let kept = format!("{}", commit(this, &text, cx));
+                if text.trim() != kept {
+                    input.update(cx, |state, cx| state.set_value(kept, window, cx));
+                }
+            }
+            _ => {}
+        },
+    )
+}
+
+/// A committed field's number: the text read as one, clamped into `range`
+/// when `clamp`, refused outside it otherwise — each setting keeping the
+/// rule it loads with.
+pub(super) fn committed(text: &str, (low, high): (f32, f32), clamp: bool) -> Option<f32> {
+    let value = text.trim().parse::<f32>().ok().filter(|v| v.is_finite())?;
+    if clamp {
+        Some(value.clamp(low, high))
+    } else {
+        (low..=high).contains(&value).then_some(value)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::committed;
+
+    #[test]
+    fn committed_clamps_or_refuses_the_whole_entry() {
+        let font = crate::settings::SCRIPT_FONT_SIZE_RANGE;
+        assert_eq!(committed("80", font, true), Some(32.));
+        assert_eq!(committed("2", font, true), Some(8.));
+        assert_eq!(committed(" 16 ", font, true), Some(16.));
+        let sun = crate::settings::calibration_range(1.);
+        assert_eq!(committed("1000", sun, false), None);
+        assert_eq!(committed("5", sun, false), Some(5.));
+        assert_eq!(committed("", font, true), None);
+        assert_eq!(committed("inf", font, true), None);
+        assert_eq!(committed("NaN", sun, false), None);
+    }
 }

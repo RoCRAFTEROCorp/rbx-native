@@ -15,7 +15,7 @@ use crate::settings::SCRIPT_FONT_SIZE;
 use crate::theme;
 use crate::tokens;
 
-use super::dragger::number;
+use super::dragger::{commit_on_enter, committed, number};
 use super::kit::{
     self, ghost_icon, icon, readout, secondary_button, ticked_slider, Reset, Row, Section,
 };
@@ -189,18 +189,15 @@ impl AppearanceControls {
                         .update(cx, |shell, cx| shell.set_font_scale(scale, cx));
                 }
             }),
-            // As typed, like the snap increments: text that is not yet a
-            // size in range (a `1` on the way to `16`) leaves it alone.
-            cx.subscribe(&script_font, |this, input, event: &InputEvent, cx| {
-                if !matches!(event, InputEvent::Change) {
-                    return;
-                }
-                let (low, high) = crate::settings::SCRIPT_FONT_SIZE_RANGE;
-                let typed = input.read(cx).value().trim().parse::<f32>().ok();
-                if let Some(size) = typed.filter(|size| (low..=high).contains(size)) {
+            // On Enter or blur, clamped like a hand-edited settings.json:
+            // `80` is the largest size, not the `8` typed on the way.
+            commit_on_enter(&script_font, window, cx, |this, text, cx| {
+                let range = crate::settings::SCRIPT_FONT_SIZE_RANGE;
+                if let Some(size) = committed(text, range, true) {
                     this.shell
                         .update(cx, |shell, cx| shell.set_script_font_size(size, cx));
                 }
+                this.shell.read(cx).script_font_size()
             }),
             cx.subscribe_in(&link, window, |this, _, event: &InputEvent, _, cx| {
                 if matches!(event, InputEvent::PressEnter { .. }) {
@@ -334,14 +331,14 @@ impl SettingsWindow {
                 .ui_scale
                 .update(cx, |state, cx| state.set_value(scale, window, cx));
         }
-        // Rewritten from the setting once the field isn't being typed in, so
-        // a rejected `80` doesn't stay on screen over the size in effect.
+        // Rewritten from the setting once the field isn't focused, so a reset
+        // shows.
         let (script_font_focused, typed) = {
             let state = self.appearance.script_font.read(cx);
             let typed = state.value().trim().parse::<f32>().ok();
             (state.focus_handle(cx).is_focused(window), typed)
         };
-        if !(window.is_window_active() && script_font_focused) && typed != Some(script_font) {
+        if !script_font_focused && typed != Some(script_font) {
             self.appearance.script_font.update(cx, |state, cx| {
                 state.set_value(format!("{script_font}"), window, cx)
             });

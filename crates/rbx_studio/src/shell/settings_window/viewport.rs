@@ -2,7 +2,7 @@
 //! calibration constants behind a disclosure.
 
 use gpui_kit::component::h_flex;
-use gpui_kit::component::input::{InputEvent, InputState};
+use gpui_kit::component::input::InputState;
 use gpui_kit::component::slider::{SliderEvent, SliderState, SliderValue};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
@@ -13,7 +13,7 @@ use crate::settings::FEEL_SCALE_RANGE;
 use crate::tokens;
 
 use super::super::Shell;
-use super::dragger::number;
+use super::dragger::{commit_on_enter, committed, number};
 use super::kit::{self, mono, readout, segmented, slider, text, toggle, Row, Section};
 use super::SettingsWindow;
 
@@ -404,10 +404,10 @@ impl SettingsWindow {
 /// One calibration value, by which field of [`rbx_viewer::Calibration`] it is.
 type Value = fn(&mut rbx_viewer::Calibration) -> &mut f32;
 
-/// Advanced's three calibration fields. Typed into as numbers, applied as
-/// typed once a value is in range (see `settings::calibration_range`), and
-/// put back from the setting whenever they are not being typed in, so a
-/// reset shows.
+/// Advanced's three calibration fields. Typed into as numbers, applied on
+/// Enter or blur when in range (see `settings::calibration_range`) and put
+/// back otherwise, like settings.json refuses one, and put back from the
+/// setting whenever they are not focused, so a reset shows.
 pub(super) struct CalibrationFields {
     sun_base: Entity<InputState>,
     atmosphere: Entity<InputState>,
@@ -426,26 +426,23 @@ impl CalibrationFields {
             let mut seed = current;
             let shown = *value(&mut seed);
             let input = cx.new(|cx| InputState::new(window, cx).default_value(format!("{shown}")));
-            subscriptions.push(
-                cx.subscribe(&input, move |this, input, event: &InputEvent, cx| {
-                    if !matches!(event, InputEvent::Change) {
-                        return;
-                    }
-                    let Ok(typed) = input.read(cx).value().trim().parse::<f32>() else {
-                        return;
-                    };
+            subscriptions.push(commit_on_enter(
+                &input,
+                window,
+                cx,
+                move |this, text, cx| {
                     let mut tuned = rbx_viewer::Calibration::default();
-                    let (low, high) = crate::settings::calibration_range(*value(&mut tuned));
-                    if !(low..=high).contains(&typed) {
-                        return;
+                    let range = crate::settings::calibration_range(*value(&mut tuned));
+                    if let Some(typed) = committed(text, range, false) {
+                        this.shell.update(cx, |shell, cx| {
+                            let mut calibration = shell.calibration();
+                            *value(&mut calibration) = typed;
+                            shell.set_calibration(calibration, cx);
+                        });
                     }
-                    this.shell.update(cx, |shell, cx| {
-                        let mut calibration = shell.calibration();
-                        *value(&mut calibration) = typed;
-                        shell.set_calibration(calibration, cx);
-                    });
-                }),
-            );
+                    *value(&mut this.shell.read(cx).calibration())
+                },
+            ));
             input
         };
         let fields = CalibrationFields {
