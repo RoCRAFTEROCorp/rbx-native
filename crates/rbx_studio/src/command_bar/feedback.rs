@@ -48,21 +48,28 @@ impl Feedback {
     /// The text to paint: blank before the first run, `(no output)` for a
     /// silent success, otherwise the captured text truncated to one line.
     pub(crate) fn label(&self) -> SharedString {
+        self.label_within(MAX_LEN)
+    }
+
+    /// [`Feedback::label`] cut at `max_len` characters instead of the bar's
+    /// own [`MAX_LEN`] — the Output dock wraps its rows, so it has room for
+    /// more.
+    pub(crate) fn label_within(&self, max_len: usize) -> SharedString {
         match self {
             Feedback::Idle => SharedString::default(),
             Feedback::Output(text) if text.is_empty() => SharedString::from("(no output)"),
-            Feedback::Output(text) => truncate(text),
-            Feedback::Error(text) => truncate(&format!("Error: {text}")),
-            Feedback::Warning(text) => truncate(&format!("Warning: {text}")),
+            Feedback::Output(text) => truncate(text, max_len),
+            Feedback::Error(text) => truncate(&format!("Error: {text}"), max_len),
+            Feedback::Warning(text) => truncate(&format!("Warning: {text}"), max_len),
         }
     }
 }
 
 /// Collapses embedded newlines (a script can `print` several lines) into one
-/// row, then cuts it to [`MAX_LEN`] characters.
-fn truncate(text: &str) -> SharedString {
+/// row, then cuts it to `max_len` characters.
+fn truncate(text: &str, max_len: usize) -> SharedString {
     let flat = text.replace('\n', "  ");
-    match flat.char_indices().nth(MAX_LEN) {
+    match flat.char_indices().nth(max_len) {
         Some((cut, _)) => SharedString::from(format!("{}…", &flat[..cut])),
         None => SharedString::from(flat),
     }

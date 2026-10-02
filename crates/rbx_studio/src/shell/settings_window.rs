@@ -18,6 +18,7 @@ use gpui_kit::*;
 
 use crate::tokens;
 
+use super::toolbar::snap::NumberField;
 use super::Shell;
 
 mod appearance;
@@ -138,9 +139,46 @@ impl SettingsWindow {
         };
         cx.open_window(options, move |window, cx| {
             let view = cx.new(|cx| SettingsWindow::new(shell, window, cx));
+            let closing = view.downgrade();
+            window.on_window_should_close(cx, move |_, cx| {
+                closing.update(cx, |this, cx| this.commit_typed(cx)).ok();
+                true
+            });
             cx.new(|cx| Root::new(view, window, cx))
         })
         .ok()
+    }
+
+    /// The six number fields with their settings' values.
+    fn numbers(&self, cx: &App) -> [(&NumberField, f32); 6] {
+        use crate::transform::SnapKind;
+        let shell = self.shell.read(cx);
+        let calibration = shell.calibration();
+        [
+            (&self.appearance.script_font, shell.script_font_size()),
+            (&self.calibration.sun_base, calibration.sun_base),
+            (
+                &self.calibration.atmosphere,
+                calibration.atmosphere_density_scale,
+            ),
+            (&self.calibration.plastic, calibration.plastic_spec_strength),
+            (
+                &self.increments.translate,
+                shell.snap_increment(SnapKind::Translate),
+            ),
+            (
+                &self.increments.rotate,
+                shell.snap_increment(SnapKind::Rotate),
+            ),
+        ]
+    }
+
+    /// Commits what a number field holds typed but not yet committed:
+    /// closing a window blurs nothing (see `NumberField::commit_typed`).
+    fn commit_typed(&self, cx: &mut App) {
+        for (field, _) in self.numbers(cx) {
+            field.commit_typed(cx);
+        }
     }
 
     fn new(shell: Entity<Shell>, window: &mut Window, cx: &mut Context<Self>) -> Self {
@@ -274,7 +312,13 @@ impl Render for SettingsWindow {
                 self.open_picker(appearance::Target::Accent, start, anchor, window, cx);
             }
         }
+        // Every render, whichever page is shown, so a field left by
+        // switching pages still commits.
+        for (field, value) in self.numbers(cx) {
+            field.sync(value, window, cx);
+        }
         let picker = self.picker_popover(cx);
+        let closing = cx.entity().downgrade();
         v_flex()
             .id("settings-window")
             .track_focus(&self.focus)
@@ -304,7 +348,12 @@ impl Render for SettingsWindow {
             .child(super::chrome::window_topbar(
                 "Settings".into(),
                 true,
-                |window, _| window.remove_window(),
+                move |window, cx| {
+                    closing.update(cx, |this, cx| this.commit_typed(cx)).ok();
+                    // After the commits: they write the field back, which
+                    // needs the window still open.
+                    window.defer(cx, |window, _| window.remove_window());
+                },
             ))
             .child(
                 h_flex()

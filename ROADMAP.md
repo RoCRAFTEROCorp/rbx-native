@@ -1069,7 +1069,7 @@ Roblox's own engine.
   own documented rule — and the copy is independent of the original. Paste
   always lands in `Workspace`, matching creator-docs' `explorer.md`, never
   wherever the selection is; Duplicate lands beside the original in its own
-  existing parent instead. A service can't be copied, pasted or duplicated,
+  existing parent instead, right after it among its siblings. A service can't be copied, pasted or duplicated,
   the same refusal Group/Ungroup already enforce. One undo step per
   operation. `Ctrl+Shift+V` is "Paste Into": the clipboard goes into each
   selected instance instead of `Workspace`, one copy per parent, as
@@ -1428,7 +1428,12 @@ Roblox's own engine.
   nothing is left to recover. A copy an earlier session left behind (it
   crashed, or was killed) is moved aside under a timestamped name when its
   place next opens, with a note in Output, so it is never overwritten or
-  deleted; a place opened from the recovery folder itself gets no copies
+  deleted. Each session holds an OS advisory lock beside its copy (released
+  when the process exits or dies), so an earlier session's copy is one no
+  process holds; a second editor on a place that is already open writes its
+  own copy (`… (recovery <hash>, 2).rbxl`) and never touches the first's;
+  any such copy a crashed editor left is moved aside like slot 1's. A
+  place opened from the recovery folder itself gets no copies
   and a warning that Ctrl+S saves it there. A copy is a plain place file
   in the place's own format, so — unlike a recovered Studio file, which
   loses its place link — it opens like any other. A failed copy is a
@@ -1448,7 +1453,8 @@ Roblox's own engine.
   click; only the differences from Studio's own default are saved
   (`service_overrides`), so a service Studio later starts or stops listing
   still follows Studio unless it was chosen here. The row's reset puts
-  Studio's set back.
+  Studio's set back. A ticked service lands where Studio lists it, in
+  `ReflectionMetadata.xml`'s `ExplorerOrder` (`services::EXPLORER_ORDER`).
 - [x] **Named dock layouts** in Studio Settings › Layout (Blender's
   workspaces): the current arrangement saved under a name — every edge's
   docks, tabs and size, and which panels float or are shut — and switched

@@ -8,8 +8,7 @@
 use std::collections::HashMap;
 
 use rbx_dom::{Ref, WeakDom};
-
-use super::service;
+use rbx_reflection::ReflectionDatabase;
 
 /// One class's INST chunk worth of information: its assigned id and every referent of
 /// that class, in the order PROP arrays for this class must use.
@@ -53,7 +52,10 @@ pub(crate) fn build(dom: &WeakDom) -> Plan {
             classes.push(ClassPlan {
                 class_id: classes.len() as i32,
                 class_name: class_name.to_owned(),
-                is_service: service::is_service(class_name),
+                // Real Studio merges a service into the DataModel's existing
+                // singleton rather than creating a duplicate, so the bit must
+                // match the dump's Service tag.
+                is_service: ReflectionDatabase::shared().is_service(class_name),
                 referents: Vec::new(),
             });
             classes.len() - 1

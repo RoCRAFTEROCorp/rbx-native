@@ -46,6 +46,17 @@ pub(super) fn parse_content(current: &Content, text: &str) -> Result<Variant, St
     Ok(Variant::Content(content))
 }
 
+/// A file stores a legacy ContentId (`Decal.Texture` in most places) as a
+/// String; an edit of one reads the text as [`parse_content`] does and keeps
+/// the String shape, so the instance still matches its siblings when saved.
+pub(super) fn parse_content_id(stored: &str, text: &str) -> Result<Variant, String> {
+    let uri = match parse_content(&Content::Uri(stored.to_owned()), text)? {
+        Variant::Content(Content::Uri(uri)) => uri,
+        _ => String::new(),
+    };
+    Ok(Variant::String(uri))
+}
+
 #[cfg(test)]
 mod tests {
     use rbx_dom::Ref;
@@ -133,6 +144,35 @@ mod tests {
             dom.get(decal).unwrap().properties().get("Texture"),
             Some(&uri("rbxassetid://1818"))
         );
+    }
+
+    #[test]
+    fn a_string_stored_texture_reads_an_asset_id_and_stays_a_string() {
+        use rbx_dom::{Instance, WeakDom};
+        use rbx_reflection::ReflectionDatabase;
+
+        let decal = Ref::new(1);
+        let mut dom = WeakDom::new();
+        let mut instance = Instance::new(decal, "Decal", "Decal");
+        instance.properties_mut().insert(
+            "Texture".to_owned(),
+            Variant::String("rbxassetid://1".into()),
+        );
+        dom.insert(instance);
+        let db = ReflectionDatabase::embedded();
+        let commit = |dom: &mut WeakDom, text: &str| {
+            crate::properties::edit::commit(dom, &db, decal, "Texture", text).unwrap();
+            dom.get(decal).unwrap().properties().get("Texture").cloned()
+        };
+
+        let string = |s: &str| Some(Variant::String(s.to_owned()));
+        assert_eq!(commit(&mut dom, "12345"), string("rbxassetid://12345"));
+        assert_eq!(
+            commit(&mut dom, "rbxasset://a.png"),
+            string("rbxasset://a.png")
+        );
+        assert_eq!(commit(&mut dom, "0"), string(""));
+        assert!(crate::properties::edit::commit(&mut dom, &db, decal, "Texture", "1.5").is_err());
     }
 
     #[test]
