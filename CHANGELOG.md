@@ -2,6 +2,12 @@
 
 ## 2026-10-02
 
+- **No stale tooltips after a scroll.** Scrolling a panel with the wheel
+  under a still mouse no longer leaves a tooltip behind — a property name
+  hovered just before the scroll used to open afterwards over whatever
+  row had moved under the pointer, and stay. Hover is now re-checked once
+  the scroll lands, in every window, so the highlight and the tooltip
+  follow the row that is actually under the pointer. — @chteau
 - **Property category order.** The Properties panel now lists categories
   in Studio's own order — Appearance, Data, Transform, Pivot, Behavior,
   Collision, Part, then the rest by name — instead of alphabetically, with
