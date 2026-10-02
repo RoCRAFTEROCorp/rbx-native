@@ -156,12 +156,12 @@ impl Shell {
         let overflow = menu::dropdown(
             self,
             MenuId::ViewportOverflow,
-            chrome::Trigger::new(chrome::dock_options_button(
+            chrome::dock_options_trigger(
                 "viewport-overflow",
                 IconName::Ellipsis,
                 16.,
                 "Viewport dock options",
-            )),
+            ),
             self.move_items(Panel::Viewport),
             cx,
         );

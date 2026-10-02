@@ -262,11 +262,9 @@ impl Shell {
                             .text_color(tokens::text())
                     })
                     .focus_visible(|this| this.shadow(tokens::focus_ring_inset()))
-                    .tooltip(|window, cx| {
-                        super::super::tooltip::text("Screen size presets", window, cx)
-                    })
                     .child(Icon::new(IconName::ChevronDown).size(px(10.))),
-            ),
+            )
+            .tooltip("Screen size presets"),
             items,
             cx,
         );

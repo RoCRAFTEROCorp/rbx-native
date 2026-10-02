@@ -106,12 +106,12 @@ impl Shell {
         let overflow = menu::dropdown(
             self,
             MenuId::WallyOverflow,
-            chrome::Trigger::new(chrome::dock_options_button(
+            chrome::dock_options_trigger(
                 "wally-overflow",
                 IconName::Package,
                 14.,
                 "Wally dock options",
-            )),
+            ),
             self.move_items(Panel::Wally),
             cx,
         );

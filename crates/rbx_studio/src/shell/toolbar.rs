@@ -121,8 +121,7 @@ impl Shell {
                 .justify_center()
                 .gap(px(6.))
                 .cursor_pointer()
-                .focus_visible(|this| this.shadow(tokens::focus_ring(tokens::chrome())))
-                .tooltip(|window, cx| super::tooltip::text("Snap increments", window, cx)),
+                .focus_visible(|this| this.shadow(tokens::focus_ring(tokens::chrome()))),
             cx,
         );
 
@@ -132,36 +131,37 @@ impl Shell {
             // 11px bottom padding and its 1px border), and the toolkit
             // already offsets a popover 4px below its trigger.
             .mt(px(14.))
-            .trigger(super::chrome::Trigger::with_open(move |open| {
-                stack
-                    .child(snap_readout(
-                        IconName::Magnet,
-                        snap::studs(translate.increment),
-                        translate.enabled,
-                        open,
-                    ))
-                    .child(snap_readout(
-                        IconName::RotateCw,
-                        format!("{}°", rotate.increment),
-                        rotate.enabled,
-                        open,
-                    ))
-            }))
+            .trigger(
+                super::chrome::Trigger::with_open(move |open| {
+                    stack
+                        .child(snap_readout(
+                            IconName::Magnet,
+                            snap::studs(translate.increment),
+                            translate.enabled,
+                            open,
+                        ))
+                        .child(snap_readout(
+                            IconName::RotateCw,
+                            format!("{}°", rotate.increment),
+                            rotate.enabled,
+                            open,
+                        ))
+                })
+                .tooltip("Snap increments"),
+            )
             .content(move |_, _, cx| handle.update(cx, |shell, cx| shell.snap_fields_popover(cx)))
     }
 
     /// Align keeps its own popover of toggles; its trigger is one more tile.
     pub(super) fn align_control(&self, cx: &mut Context<Self>) -> impl IntoElement + 'static {
         self.align_popover(
-            super::chrome::Trigger::new(
-                ribbon::cluster_icon(
-                    &self.ribbon_nav,
-                    "tool-align",
-                    IconName::AlignStartVertical,
-                    cx,
-                )
-                .tooltip(|window, cx| super::tooltip::text("Align selection", window, cx)),
-            )
+            super::chrome::Trigger::new(ribbon::cluster_icon(
+                &self.ribbon_nav,
+                "tool-align",
+                IconName::AlignStartVertical,
+                cx,
+            ))
+            .tooltip("Align selection")
             .accent(tokens::tool_align()),
             cx,
         )

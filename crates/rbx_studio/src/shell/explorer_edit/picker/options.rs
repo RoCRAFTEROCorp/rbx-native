@@ -17,11 +17,7 @@ impl Shell {
         menu::dropdown(
             self,
             MenuId::InsertOptions,
-            chrome::Trigger::new(chrome::icon_button(
-                "insert-options",
-                IconName::Ellipsis,
-                "Insertion options",
-            )),
+            chrome::icon_trigger("insert-options", IconName::Ellipsis, "Insertion options"),
             vec![
                 menu::item("Increment names for new instances")
                     .checked(increment)

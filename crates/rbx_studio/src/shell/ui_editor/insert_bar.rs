@@ -134,11 +134,11 @@ impl Shell {
         let more = menu::dropdown_at(
             self,
             MenuId::UiInsert,
-            chrome::Trigger::new(chrome::icon_button(
+            chrome::icon_trigger(
                 "ui-insert-more",
                 IconName::Plus,
                 "Insert a screen, layout or modifier",
-            )),
+            ),
             items,
             Anchor::BottomLeft,
             cx,
