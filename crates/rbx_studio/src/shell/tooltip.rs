@@ -17,3 +17,43 @@ use gpui_kit::*;
 pub(crate) fn text(label: impl Into<SharedString>, window: &mut Window, cx: &mut App) -> AnyView {
     Tooltip::new(label.into()).build(window, cx)
 }
+
+/// Re-checks hover after a wheel scroll, for whatever window this is a
+/// child of.
+///
+/// GPUI only re-evaluates hover — highlights and tooltips both — when the
+/// pointer moves, and a wheel scroll moves the content instead. It does drop
+/// a tooltip that is already showing on a scroll, but not one still waiting
+/// out its delay: that one opens afterwards with the old row's name, over
+/// whatever row has scrolled under the pointer, and stays there, because its
+/// "still hovered?" check compares the pointer to the bounds the old row had
+/// when the hover began. So two frames on (one to draw the scroll, one to
+/// hit-test the result) this replays the pointer where it already is, and
+/// GPUI sorts out hover from there exactly as if the mouse had moved.
+///
+/// A zero-size element so it can sit in the title bar every window draws
+/// first: its capture-phase listener then runs before any scroll area that
+/// stops the wheel in that phase.
+pub(crate) fn rehover_on_scroll() -> impl IntoElement {
+    canvas(
+        |_, _, _| {},
+        |_, _, window, _| {
+            window.on_mouse_event(|_: &ScrollWheelEvent, phase, window, _| {
+                if phase.capture() {
+                    window.on_next_frame(|window, _| {
+                        window.on_next_frame(|window, cx| {
+                            let event = MouseMoveEvent {
+                                position: window.mouse_position(),
+                                pressed_button: None,
+                                modifiers: window.modifiers(),
+                            };
+                            window.dispatch_event(PlatformInput::MouseMove(event), cx);
+                        })
+                    });
+                }
+            })
+        },
+    )
+    .absolute()
+    .size_0()
+}
