@@ -481,9 +481,13 @@ mod tests;
 /// makes you clear it first (`view-descendants-of-matching-instances-in-
 /// explorer-search` on the devforum).
 ///
-/// Built from clones of `items`, which share each row's expansion state:
+/// A match is a clone of its row, which shares the row's expansion state:
 /// opening a match here opens it in the unfiltered tree too, so clearing the
-/// search leaves the place as browsed. A blank query filters nothing.
+/// search leaves it as browsed. The rows leading to a match are new rows,
+/// opened here only: sharing their state would open, for good, every row on
+/// the way to anything each keystroke matched, and a first letter matches
+/// most of a place. Clearing the search still reveals the selected row (see
+/// `Shell::push_root_rows`). A blank query filters nothing.
 pub(crate) fn search(items: &[TreeItem], query: &str) -> Vec<TreeItem> {
     let query = query.trim().to_lowercase();
     if query.is_empty() {
@@ -507,7 +511,9 @@ fn matching(item: &TreeItem, query: &str) -> Option<TreeItem> {
     if children.is_empty() {
         return None;
     }
-    let mut kept = item.clone().expanded(true);
-    kept.children = children;
-    Some(kept)
+    Some(
+        TreeItem::new(item.id.clone(), item.label.clone())
+            .expanded(true)
+            .children(children),
+    )
 }

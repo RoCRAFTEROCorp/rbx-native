@@ -879,8 +879,12 @@ impl Shell {
         }
         // A search can leave the selected instance without a row; the tree
         // then has nothing selected, which is the filter's doing and not a
-        // deselect.
-        if selected.is_none() && !self.explorer_query.is_empty() {
+        // deselect. One that no longer exists (a script destroyed it) is
+        // still let go.
+        let hidden = self
+            .selected()
+            .is_some_and(|reference| self.dom.get(reference).is_some());
+        if selected.is_none() && hidden && !self.explorer_query.is_empty() {
             return;
         }
         if self.selection.set(selected) {

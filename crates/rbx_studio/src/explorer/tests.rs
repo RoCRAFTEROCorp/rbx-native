@@ -499,10 +499,16 @@ fn a_search_keeps_matches_under_their_path_with_their_children_whole() {
         found[0].is_expanded() && house.is_expanded(),
         "the path is opened"
     );
-    // The clone shares the original's state: the unfiltered House is open too.
-    assert!(items[0].children[0].is_expanded());
+    // The path is opened in the results alone; a match shares its row's
+    // state, so opening it here opens it in the unfiltered tree too.
+    assert!(!items[0].is_expanded() && !items[0].children[0].is_expanded());
+    let _ = house.children[0].clone().expanded(true);
+    assert!(items[0].children[0].children[0].is_expanded());
 
     assert_eq!(labels(&search(&items, "light")), ["Lighting"]);
     assert!(search(&items, "nothing like it").is_empty());
     assert_eq!(labels(&search(&items, "   ")), ["Workspace", "Lighting"]);
+    // Case is ignored beyond ASCII too.
+    let accented = [TreeItem::new("e", "Écran")];
+    assert_eq!(labels(&search(&accented, "éCRAN")), ["Écran"]);
 }
