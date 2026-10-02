@@ -15,7 +15,11 @@
   filters it as you type, showing every matching instance under the path
   to it. A result can still be expanded and browsed without clearing the
   search, which real Studio doesn't allow, and searching doesn't lose your
-  selection. — @Vikmanou
+  selection. Escape clears the search and brings the whole tree back.
+  — @Vikmanou
+- **Ctrl/Shift-click in the Explorer.** Clicking a row with Shift, Ctrl or
+  Cmd held now adds it to the selection, or takes it out, as it already did
+  in the viewport; it used to replace the selection. — @Vikmanou
 - **Named dock layouts.** Studio Settings › Layout can now save the current
   arrangement of docks under a name and switch back to it with a click —
   which panels sit where, how big, and which float or are closed. The one

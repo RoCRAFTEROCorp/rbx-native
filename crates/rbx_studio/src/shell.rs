@@ -1041,6 +1041,25 @@ impl Shell {
         }
     }
 
+    /// Escape in the Explorer's search field: empties a typed search, as the
+    /// Settings window's does, and leaves the field focused. Returns false —
+    /// so the key goes on to the window — when there is nothing to clear or
+    /// a menu is open and should be the one to close.
+    pub(super) fn clear_explorer_search(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        if self.explorer_query.is_empty() || self.open_menu.is_some() {
+            return false;
+        }
+        // `set_value` emits no change event, so the rows are pushed here.
+        self.search
+            .update(cx, |state, cx| state.set_value("", window, cx));
+        self.search_explorer(String::new(), cx);
+        true
+    }
+
     /// Lists or hides one service in the Explorer's default view, from
     /// Studio Settings' Default services grid.
     pub(super) fn toggle_default_service(&mut self, class: &str, cx: &mut Context<Self>) {

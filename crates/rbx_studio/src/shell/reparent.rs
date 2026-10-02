@@ -107,6 +107,25 @@ pub(super) fn draggable_row(
                 }
             }
         })
+        // `Shift`/`Ctrl`/`Cmd`-click adds the row to the selection, or drops
+        // it, as the viewport does. The tree widget's own row reads no
+        // modifiers and would replace the selection, so the press stops here
+        // before it bubbles up to that row; the tree is focused by hand, the
+        // way a plain click on it would have.
+        .on_mouse_down(MouseButton::Left, {
+            let shell = shell.clone();
+            move |event: &MouseDownEvent, window, cx| {
+                let modifiers = event.modifiers;
+                if !(modifiers.shift || modifiers.control || modifiers.platform) {
+                    return;
+                }
+                cx.stop_propagation();
+                shell.update(cx, |shell, cx| {
+                    shell.extend_selection(target, cx);
+                    shell.tree.update(cx, |tree, cx| tree.focus(window, cx));
+                });
+            }
+        })
         .on_drag(dragged, |dragged, _, _, cx| {
             let label = dragged.label.clone();
             cx.new(|_| DragPreview { label })
