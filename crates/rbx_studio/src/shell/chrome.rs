@@ -906,11 +906,21 @@ impl Selectable for Trigger {
 impl RenderOnce for Trigger {
     fn render(self, _: &mut Window, _: &mut App) -> impl IntoElement {
         let accent = self.accent;
-        (self.build)(self.open).when(self.open && self.styled, |this| match accent {
-            Some(accent) => super::ribbon::selected(this, accent),
-            None => this
-                .bg(tokens::accent_soft())
-                .text_color(tokens::check_on()),
-        })
+        (self.build)(self.open)
+            .when(self.open && self.styled, |this| match accent {
+                Some(accent) => super::ribbon::selected(this, accent),
+                None => this
+                    .bg(tokens::accent_soft())
+                    .text_color(tokens::check_on()),
+            })
+            // While its menu is open the trigger is covered by an empty
+            // occluding layer, so the pointer resting on it no longer counts
+            // as a hover: its tooltip would otherwise pop up over the menu's
+            // first row. GPUI offers no way to take a tooltip back off an
+            // element, and every trigger builds its own. A click there still
+            // closes the menu, as a click outside it does.
+            .when(self.open, |this| {
+                this.child(div().absolute().inset_0().occlude())
+            })
     }
 }
