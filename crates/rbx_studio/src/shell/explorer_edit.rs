@@ -140,14 +140,18 @@ impl Shell {
             .collect()
     }
 
-    /// Escape's half of "no keyboard traps" for these two popups (WCAG
-    /// 2.1.2), plus the cancel half of an in-place rename. Returns whether
+    /// The cancel half of an in-place rename, and Escape's half of "no
+    /// keyboard traps" for the two popups (WCAG 2.1.2). Returns whether
     /// anything was actually closed, so the caller can skip the repaint when
     /// nothing was.
-    pub(super) fn close_explorer_popups(&mut self) -> bool {
+    pub(super) fn close_explorer_popups(&mut self, window: &mut Window, cx: &mut App) -> bool {
+        let renaming = self.explorer_edit.renaming.take();
+        if let Some(renaming) = &renaming {
+            renaming.give_focus_back(window, cx);
+        }
         self.explorer_edit.picker.take().is_some()
             | self.explorer_edit.menu.take().is_some()
-            | self.explorer_edit.renaming.take().is_some()
+            | renaming.is_some()
     }
 
     /// Where a popup opened from the Explorer goes. Anchored to the pointer
@@ -156,6 +160,25 @@ impl Shell {
     /// gesture that opened it happened anyway.
     fn popup_anchor(&self) -> Point<Pixels> {
         self.explorer_edit.pointer
+    }
+}
+
+/// Hands focus back to `previous` as the row menu or a name box closes — but
+/// only while focus is still in `own`, or has gone nowhere because `own`'s
+/// element just left the tree. A click that put focus somewhere else on
+/// purpose keeps it there. Without this, closing either one drops focus on
+/// the floor and the tree ignores its keys until it is clicked again.
+fn give_focus_back(
+    previous: Option<FocusHandle>,
+    own: &FocusHandle,
+    window: &mut Window,
+    cx: &mut App,
+) {
+    let Some(previous) = previous else {
+        return;
+    };
+    if own.contains_focused(window, cx) || window.focused(cx).is_none() {
+        previous.focus(window, cx);
     }
 }
 

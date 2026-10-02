@@ -1,12 +1,15 @@
 //! The decidable halves of the Explorer's row affordances: which context
 //! menu rows are live for a given row and selection, and which rows can be
-//! renamed at all. Everything else here needs a live window (see
+//! renamed at all, plus how focus is handed back when the menu or a name
+//! box closes, under GPUI's headless window. Everything else here needs a
+//! live window (see
 //! `shell::group`'s own tests for why this codebase's `Shell` methods stop
 //! being unit-testable past their `push_history`/`take_changes` pair).
 
 use rbx_dom::{Ref, WeakDom};
 use rbx_reflection::ReflectionDatabase;
 
+use super::give_focus_back;
 use super::menu::availability;
 use super::rename::renameable;
 
@@ -118,4 +121,33 @@ fn shift_f10_and_the_menu_key_open_the_row_menu_and_nothing_else_does() {
     assert!(!opens_row_menu(&key("f10", true, true)));
     assert!(!opens_row_menu(&key("menu", true, false)));
     assert!(!opens_row_menu(&key("down", false, false)));
+}
+
+/// The row menu's and the name box's shared close path: focus goes back to
+/// the tree when it was still in the closing box or had gone nowhere, and
+/// stays put when a click moved it somewhere else on purpose.
+#[gpui_kit::test]
+fn closing_hands_focus_back_only_when_nothing_else_took_it(cx: &mut gpui_kit::TestAppContext) {
+    let cx = cx.add_empty_window();
+    cx.update(|window, cx| {
+        let tree = cx.focus_handle();
+        let name_box = cx.focus_handle();
+        let viewport = cx.focus_handle();
+
+        // Enter or Escape: the box still has focus.
+        name_box.focus(window, cx);
+        give_focus_back(Some(tree.clone()), &name_box, window, cx);
+        assert!(tree.is_focused(window));
+
+        // A click into the viewport blurred the box first.
+        name_box.focus(window, cx);
+        viewport.focus(window, cx);
+        give_focus_back(Some(tree.clone()), &name_box, window, cx);
+        assert!(viewport.is_focused(window));
+
+        // The box's element left the tree and took focus with it.
+        window.blur(cx);
+        give_focus_back(Some(tree.clone()), &name_box, window, cx);
+        assert!(tree.is_focused(window));
+    });
 }

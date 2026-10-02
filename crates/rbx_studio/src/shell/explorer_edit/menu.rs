@@ -35,7 +35,7 @@ use rbx_reflection::ReflectionDatabase;
 use super::super::roving::Move;
 use super::super::{clipboard, group, keys, menu};
 use super::rename::renameable;
-use super::Shell;
+use super::{give_focus_back, Shell};
 use crate::change_class;
 
 /// Which of the menu's rows are live. Every field is the guard the row's own
@@ -154,16 +154,11 @@ impl Shell {
         true
     }
 
-    /// Closes the row menu and, if focus is still in it, hands focus back to
-    /// what had it when the menu opened, as a popover does.
+    /// Closes the row menu and hands focus back to what had it when the menu
+    /// opened, as a popover does (see [`give_focus_back`]).
     fn close_row_menu(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(menu) = self.explorer_edit.menu.take() {
-            if let Some(previous) = menu
-                .previous
-                .filter(|_| menu.focus.contains_focused(window, cx))
-            {
-                previous.focus(window, cx);
-            }
+            give_focus_back(menu.previous, &menu.focus, window, cx);
         }
         cx.notify();
     }
