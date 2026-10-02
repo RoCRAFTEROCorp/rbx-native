@@ -28,6 +28,16 @@ fn an_unstored_property_reads_its_default() {
 }
 
 #[test]
+fn an_unset_asset_id_reads_as_an_empty_string() {
+    let mut runtime = runtime();
+    let output = runtime
+        .run(r#"local d = Instance.new("Decal") print(d.Texture == "", type(Instance.new("MeshPart").MeshId))"#)
+        .expect("script must run");
+
+    assert_eq!(output.lines(), ["true string"]);
+}
+
+#[test]
 fn a_write_lands_under_the_saved_name() {
     let mut runtime = runtime();
     runtime

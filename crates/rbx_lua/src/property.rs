@@ -37,8 +37,14 @@ pub(crate) fn get(lua: &Lua, ctx: &Ctx, referent: Ref, name: &str) -> Result<Opt
         (descriptor.value_type.clone(), stored)
     };
 
-    // Neither stored nor recorded: a value only a running engine computes.
+    // Neither stored nor recorded: a value only a running engine computes —
+    // except an unset asset id (`Instance.new("Decal").Texture`), which
+    // Roblox reads as "". The bundled dump spells a ContentId `Content`,
+    // being older than the split; a newer one spells it `ContentId`.
     let Some(stored) = stored else {
+        if matches!(value_type.as_str(), "Content" | "ContentId") {
+            return Ok(Some(Value::String(lua.create_string("")?)));
+        }
         return Ok(Some(Value::Nil));
     };
     to_lua::variant_to_lua(lua, ctx, name, &value_type, &stored).map(Some)
