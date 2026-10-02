@@ -66,7 +66,7 @@ impl Shell {
                         // theme's code size and keeps its rows in proportion;
                         // under the UI scale like every other size.
                         Editor::new(&open.state)
-                            .text_size(px(script_font * crate::tokens::font_scale()))
+                            .text_size(crate::tokens::scaled(script_font))
                             .bordered(false)
                             .h(relative(1.0))
                             .w_full()

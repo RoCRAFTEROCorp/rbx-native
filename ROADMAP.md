@@ -1829,9 +1829,10 @@ against `Roblox/creator-docs` rather than assumed:
   Stage 3, minus what already shipped.** Stage 1 is met and asserted in
   tests; these are the rest, each small enough to ride along with other
   work rather than needing its own PR:
-  - **A separate editor/viewport font size**, independent of the UI scale —
-    VS Code's split between `window.zoomLevel` and `editor.fontSize`.
-    Nothing needs it yet; the moment the script editor grows, it will.
+  - **A separate viewport font size**, on top of the UI scale — VS Code's
+    split between `window.zoomLevel` and `editor.fontSize`. The script
+    editor's half shipped as Settings' Script font size; the viewport's
+    text still has only the UI scale.
   - **Named dock layouts.** Sizes persist and Reset Layout exists; saving
     several under names (Blender's "workspaces") is the piece that does not.
   - **44×44 targets on primary and destructive controls by default** (2.5.5),
