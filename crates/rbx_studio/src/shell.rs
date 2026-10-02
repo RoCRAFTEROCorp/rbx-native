@@ -32,6 +32,7 @@ mod panel_window;
 mod panels;
 mod property_element;
 mod quality;
+mod ref_pick;
 mod reparent;
 mod ribbon;
 mod roving;

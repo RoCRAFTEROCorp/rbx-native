@@ -470,6 +470,13 @@ Roblox's own engine.
     model's pivot stands in the world, read as `GetPivot` reads it, and
     moved as `PivotTo` moves it when one is typed — a model's parts and its
     pivot together, as one undo step.
+  - **Instance references** (`ObjectValue.Value`, `Weld.Part0`) are picked
+    the way Studio does it: click the row, then the instance in the
+    Explorer, which sets the property instead of selecting. An unset one is
+    listed as `nil` rather than left out; Escape backs out of a pick, the
+    row's `×` (or Delete) clears it, and an instance of the wrong class for
+    the property, per the API dump, is refused, as is a `PrimaryPart`
+    outside its model.
   - **Computed, read-only**: `Mass`, `CenterOfMass`,
     `CurrentPhysicalProperties` and the assembly's mass and centre, shown
     only where Roblox documents exactly how they are computed.
@@ -1850,10 +1857,10 @@ against `Roblox/creator-docs` rather than assumed:
     the focused row and the selected rows cannot differ — which matters
     because the Explorer multi-selects. Needs the toolkit's tree replaced or
     extended.
-- [ ] 📋 **Property editors for the two `Variant` types that still have
-  none.** The Properties panel renders a value for every type the DOM can
-  hold, but two of them are still read-only. Inventory, rationale and
-  rough sizing live in
+- [ ] 📋 **Property editors for the two `Variant` types that still lack a
+  whole one.** The Properties panel renders a value for every type the DOM
+  can hold, but a `Content` naming an instance is still read-only and `Ref`
+  is picked from the Explorer only. Inventory, rationale and rough sizing live in
   [`agents/property-editors.md`](agents/property-editors.md); the bullets
   below are what is left after the `CFrame`/`Ray`/`Vector3int16`/`Faces`/
   `Axes`/`NumberRange`/`UDim` pass, the `OptionalCFrame` one, and
@@ -1861,12 +1868,11 @@ against `Roblox/creator-docs` rather than assumed:
   implemented" → Editor).
 
   Each is its own piece of work, so each gets its own PR:
-  - **`Ref`** (`ObjectValue.Value`, `Weld.Part0`) shows the target's name
-    and cannot be changed. Needs an instance picker — an Explorer target,
-    or a pick-in-viewport mode.
+  - **`Ref`**: picking a target in the 3D viewport as well as the Explorer
+    (the Explorer pick is done, see "What's been implemented" → Editor).
   - **`Content`**'s `Content::Object` case (`Decal.Texture`,
-    `MeshPart.MeshId` pointing at an instance in the place) is a `Ref`
-    picker again. Its asset URI field is done (see "What's been
+    `MeshPart.MeshId` pointing at an instance in the place) still needs the
+    `Ref` picker wired to it. Its asset URI field is done (see "What's been
     implemented" → Editor).
 
   Smaller, and not a missing editor: `Font` edits as three typed fields
