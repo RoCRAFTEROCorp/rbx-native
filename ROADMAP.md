@@ -1397,7 +1397,8 @@ Roblox's own engine.
   deleted; a place opened from the recovery folder itself gets no copies
   and a warning that Ctrl+S saves it there. A copy is a plain place file
   in the place's own format, so — unlike a recovered Studio file, which
-  loses its place link — it opens like any other. A failed copy is a warning in Output and is tried again.
+  loses its place link — it opens like any other. A failed copy is a
+  warning in Output and is tried again.
 
 ### Platform
 - [x] Linux (X11) — the daily-driven target.
