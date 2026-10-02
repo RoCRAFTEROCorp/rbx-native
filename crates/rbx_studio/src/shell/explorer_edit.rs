@@ -40,7 +40,7 @@ pub(super) struct ExplorerEdit {
     menu: Option<menu::RowMenu>,
     renaming: Option<rename::Renaming>,
     /// Where the pointer last was, in window coordinates. Both popups anchor
-    /// here — including when a keystroke rather than a click opened one,
+    /// where it was when they opened — including when a keystroke rather than a click opened one,
     /// which is the whole reason this is tracked rather than read off the
     /// event that opened it.
     pointer: Point<Pixels>,
@@ -156,10 +156,10 @@ impl Shell {
         picker.is_some() | self.explorer_edit.menu.take().is_some() | renaming.is_some()
     }
 
-    /// Where a popup opened from the Explorer goes. Anchored to the pointer
-    /// rather than to the row: a row is 28px tall inside a virtualised list
-    /// that offers no geometry to anchor to, and the pointer is where the
-    /// gesture that opened it happened anyway.
+    /// Where a popup opened from the Explorer goes, read once as it opens.
+    /// Anchored to the pointer rather than to the row: a row is 28px tall
+    /// inside a virtualised list that offers no geometry to anchor to, and
+    /// the pointer is where the gesture that opened it happened anyway.
     fn popup_anchor(&self) -> Point<Pixels> {
         self.explorer_edit.pointer
     }

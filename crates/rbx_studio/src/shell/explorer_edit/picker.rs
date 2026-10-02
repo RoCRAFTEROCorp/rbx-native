@@ -60,6 +60,8 @@ pub(super) struct Picker {
     /// What had focus before the search field took it, given back however
     /// the picker closes.
     previous: Option<FocusHandle>,
+    /// Where it opened — see `RowMenu`'s own `anchor`.
+    anchor: Point<Pixels>,
     /// Kept alive only to stay subscribed — the list has to repaint as the
     /// query is typed, and Enter arrives as the field's own event.
     _subscription: Subscription,
@@ -167,6 +169,7 @@ impl Shell {
             highlight: 0,
             hovered: None,
             previous,
+            anchor: self.popup_anchor(),
             _subscription: subscription,
         });
         cx.notify();
@@ -307,7 +310,7 @@ impl Shell {
         Some(
             deferred(
                 anchored()
-                    .position(self.popup_anchor())
+                    .position(picker.anchor)
                     .snap_to_window_with_margin(px(8.))
                     .child(surface),
             )
