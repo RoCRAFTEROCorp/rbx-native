@@ -460,6 +460,12 @@ Roblox's own engine.
     as Studio's honeycomb picker and workable by keyboard. A part's
     `BrickColor` row reads the nearest palette colour off `Color` and writes
     a pick back to it, since `Color` is all Roblox saves.
+  - **`Content`** (`Decal.Texture`, `MeshPart.MeshId`): an asset URI field,
+    read back the way Roblox's own `Content.fromUri`/`fromAssetId` read
+    theirs — an empty field (or asset `0`) clears it to none, and a bare
+    number becomes `rbxassetid://<id>`. A `Content` pointing at an instance
+    in the place stays read-only; wiring an instance picker to it is what is
+    left.
   - **`Origin`**, which Studio lists under Transform: where a part's or
     model's pivot stands in the world, read as `GetPivot` reads it, and
     moved as `PivotTo` moves it when one is typed — a model's parts and its
@@ -1858,8 +1864,10 @@ against `Roblox/creator-docs` rather than assumed:
   - **`Ref`** (`ObjectValue.Value`, `Weld.Part0`) shows the target's name
     and cannot be changed. Needs an instance picker — an Explorer target,
     or a pick-in-viewport mode.
-  - **`Content`** (`Decal.Texture`, `MeshPart.MeshId`) needs an asset URI
-    field, and its `Content::Object` case is a `Ref` picker again.
+  - **`Content`**'s `Content::Object` case (`Decal.Texture`,
+    `MeshPart.MeshId` pointing at an instance in the place) is a `Ref`
+    picker again. Its asset URI field is done (see "What's been
+    implemented" → Editor).
 
   Smaller, and not a missing editor: `Font` edits as three typed fields
   (family, weight, style) by choice — a weight's nine names are quicker

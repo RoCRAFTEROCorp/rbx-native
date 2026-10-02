@@ -2,6 +2,13 @@
 
 ## 2026-10-01
 
+- **Edit a `Content` property as an asset URI.** A `Decal`'s `Texture` or a
+  `MeshPart`'s `MeshId` was read-only in the Properties panel; it is now a
+  field. An empty field (or `0`) clears it, a bare number becomes
+  `rbxassetid://<id>` the way Roblox's own `Content.fromAssetId` does, a
+  number that is no asset id is refused, and any other URI is kept as typed.
+  A `Content` pointing at an instance in the place stays read-only; wiring
+  an instance picker to it is what is left. — @Vikmanou
 - **Your script templates in the Model menu.** Templates in the
   `script_templates` folder were only in the ribbon's Script menu; the menu
   bar's Model menu now lists them too, at its end after Group/Ungroup,
