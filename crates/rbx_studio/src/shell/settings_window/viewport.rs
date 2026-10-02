@@ -410,9 +410,9 @@ type Value = fn(&mut rbx_viewer::Calibration) -> &mut f32;
 /// back otherwise, like settings.json refuses one, and put back from the
 /// setting whenever they are not focused, so a reset shows.
 pub(super) struct CalibrationFields {
-    sun_base: Entity<InputState>,
-    atmosphere: Entity<InputState>,
-    plastic: Entity<InputState>,
+    pub(super) sun_base: Entity<InputState>,
+    pub(super) atmosphere: Entity<InputState>,
+    pub(super) plastic: Entity<InputState>,
 }
 
 impl CalibrationFields {

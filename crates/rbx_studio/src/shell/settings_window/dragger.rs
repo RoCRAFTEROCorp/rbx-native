@@ -18,8 +18,8 @@ use super::SettingsWindow;
 /// The increment fields: committed on Enter or blur, and rewritten from the
 /// setting whenever it changed elsewhere and the field isn't focused.
 pub(super) struct Increments {
-    translate: Entity<InputState>,
-    rotate: Entity<InputState>,
+    pub(super) translate: Entity<InputState>,
+    pub(super) rotate: Entity<InputState>,
 }
 
 /// One dragger switch: which field of [`DraggerSettings`] it flips.

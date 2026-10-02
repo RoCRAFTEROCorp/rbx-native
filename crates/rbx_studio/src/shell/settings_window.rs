@@ -138,9 +138,30 @@ impl SettingsWindow {
         };
         cx.open_window(options, move |window, cx| {
             let view = cx.new(|cx| SettingsWindow::new(shell, window, cx));
+            let closing = view.downgrade();
+            window.on_window_should_close(cx, move |_, cx| {
+                closing.update(cx, |this, cx| this.commit_typed(cx)).ok();
+                true
+            });
             cx.new(|cx| Root::new(view, window, cx))
         })
         .ok()
+    }
+
+    /// Commits what a number field holds typed but not yet committed, as its
+    /// blur would: closing a window blurs nothing (see `commit_on_enter`,
+    /// which leaves a field that wasn't typed in alone).
+    fn commit_typed(&self, cx: &mut App) {
+        for input in [
+            &self.appearance.script_font,
+            &self.calibration.sun_base,
+            &self.calibration.atmosphere,
+            &self.calibration.plastic,
+            &self.increments.translate,
+            &self.increments.rotate,
+        ] {
+            input.update(cx, |_, cx| cx.emit(InputEvent::Blur));
+        }
     }
 
     fn new(shell: Entity<Shell>, window: &mut Window, cx: &mut Context<Self>) -> Self {
@@ -275,6 +296,7 @@ impl Render for SettingsWindow {
             }
         }
         let picker = self.picker_popover(cx);
+        let closing = cx.entity().downgrade();
         v_flex()
             .id("settings-window")
             .track_focus(&self.focus)
@@ -304,7 +326,12 @@ impl Render for SettingsWindow {
             .child(super::chrome::window_topbar(
                 "Settings".into(),
                 true,
-                |window, _| window.remove_window(),
+                move |window, cx| {
+                    closing.update(cx, |this, cx| this.commit_typed(cx)).ok();
+                    // After the commits: they write the field back, which
+                    // needs the window still open.
+                    window.defer(cx, |window, _| window.remove_window());
+                },
             ))
             .child(
                 h_flex()

@@ -61,7 +61,7 @@ pub(super) struct AppearanceControls {
     themes: Vec<String>,
     ui_scale: Entity<SliderState>,
     /// The Script font size field, in px at 1x.
-    script_font: Entity<InputState>,
+    pub(super) script_font: Entity<InputState>,
     /// The repository link Install from GitHub takes.
     link: Entity<InputState>,
     /// Whether the shell's install was running when last seen, to clear
