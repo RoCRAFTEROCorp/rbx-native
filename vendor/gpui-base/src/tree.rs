@@ -337,7 +337,13 @@ impl TreeState {
         self.rebuild_entries();
     }
 
+    // rbx-native addition: the selection follows its item, not its index.
+    // Expanding or collapsing a row above the selected one shifts every row
+    // under it, and upstream kept the bare index, so the selection jumped to
+    // whatever row landed there. An item now hidden under a collapsed parent
+    // leaves nothing selected.
     fn rebuild_entries(&mut self) {
+        let selected = self.selected_item().map(|item| item.id.clone());
         let roots = self
             .entries
             .iter()
@@ -345,6 +351,7 @@ impl TreeState {
             .map(|entry| entry.item.clone())
             .collect::<Vec<_>>();
         self.replace_items(roots);
+        self.selected_ix = selected.and_then(|id| self.index_of(&id));
     }
 
     fn on_action_confirm(&mut self, _: &Confirm, _: &mut Window, cx: &mut Context<Self>) {

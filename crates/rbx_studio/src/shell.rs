@@ -906,14 +906,16 @@ impl Shell {
         if selected == self.selection.get() {
             return;
         }
-        // A search can leave the selected instance without a row; the tree
-        // then has nothing selected, which is the filter's doing and not a
-        // deselect. One that no longer exists (a script destroyed it) is
-        // still let go.
-        let hidden = self
-            .selected()
-            .is_some_and(|reference| self.dom.get(reference).is_some());
-        if selected.is_none() && hidden && !self.explorer_query.is_empty() {
+        // A search, or a parent collapsed from its chevron, can leave the
+        // selected instance without a row; the tree then has nothing
+        // selected, which is the view's doing and not a deselect — a
+        // multi-selection survives it whole. One that no longer exists (a
+        // script destroyed it) is still let go.
+        let hidden = selected.is_none()
+            && self.selected().is_some_and(|reference| {
+                self.dom.get(reference).is_some() && !has_row(tree.read(cx), reference)
+            });
+        if hidden {
             return;
         }
         if self.selection.set(selected) {
@@ -1680,6 +1682,14 @@ impl Shell {
             None => name.to_owned(),
         }
     }
+}
+
+/// Whether `reference` has a row in the tree as it stands — not inside a
+/// collapsed parent, and not filtered out by a search.
+fn has_row(tree: &TreeState, reference: Ref) -> bool {
+    (0..)
+        .map_while(|index| tree.entry(index))
+        .any(|entry| crate::explorer::item_ref(&entry.item().id) == Some(reference))
 }
 
 /// One number as this editor's fields read it back: three decimals with
