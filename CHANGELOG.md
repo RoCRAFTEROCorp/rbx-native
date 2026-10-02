@@ -12,6 +12,42 @@
   name when its place next opens. — @Vikmanou
 - **File › Open Auto Saves** opens the folder Auto-Recovery's copies are
   in, the way Studio's own File menu does. — @Vikmanou
+- **Menus work from the keyboard.** In every dropdown menu (the `⋯`
+  overflow menus, the ribbon's insert menus, the Argon and Wally pickers),
+  Up and Down now move through the rows, Home and End jump to the ends, and
+  Enter or Space picks the highlighted one. Before, an open menu could only
+  be closed from the keyboard, not used. — @Vikmanou
+- **The Explorer's right-click menu from the keyboard.** Shift+F10 (or
+  the Menu key) opens it on the selected row, and inside it the arrows,
+  Home/End, Enter and Escape work as in the other menus; closing it puts
+  focus back where it was. — @Vikmanou
+- **Script font size.** Studio Settings › Appearance › Script font size is
+  live: the Script Editor's text, 8 to 32 px, saved with the other
+  settings. It sits on top of the UI scale, so the Script Editor now grows
+  and shrinks with the rest of the window too, which it didn't before.
+  — @Vikmanou
+- **Pick an instance for a reference property.** A `Weld`'s `Part0`, an
+  `ObjectValue`'s `Value` and every other property that points at an
+  instance were read-only, and an unset one wasn't listed at all. Now an
+  unset one shows as `nil`; click it, then click an instance in the
+  Explorer, and the property points there — the way Studio does it. Escape
+  backs out, `×` clears it, and a pick of the wrong kind of instance (a
+  `Folder` for a `Part0`) is refused with a message. — @Vikmanou
+- **Edit a `Content` property as an asset URI.** A `Decal`'s `Texture` or a
+  `MeshPart`'s `MeshId` was read-only in the Properties panel; it is now a
+  field. An empty field (or `0`) clears it, a bare number becomes
+  `rbxassetid://<id>` the way Roblox's own `Content.fromAssetId` does, a
+  number that is no asset id is refused, and any other URI is kept as typed.
+  A `Content` pointing at an instance in the place stays read-only; wiring
+  an instance picker to it is what is left. — @Vikmanou
+- **Your script templates in the Model menu.** Templates in the
+  `script_templates` folder were only in the ribbon's Script menu; the menu
+  bar's Model menu now lists them too, at its end after Group/Ungroup,
+  named the same way (`Insert Enemy AI (Script)`). — @Vikmanou
+- **Choose the Explorer's default services.** Studio Settings › Explorer &
+  Output › Default services is live: click a service to list or hide it in
+  the Explorer while Show all services is off, and reset to go back to
+  Studio's own set. Only what you change is saved. — @Vikmanou
 
 ## 2026-09-30
 
