@@ -353,6 +353,28 @@ fn an_unset_reference_is_listed_as_an_editable_nil() {
 }
 
 #[test]
+fn an_unset_asset_is_listed_as_an_editable_empty_field() {
+    let mut dom = WeakDom::new();
+    let decal = dom.new_instance("Decal", "Decal", None);
+    let db = ReflectionDatabase::embedded();
+    let properties = Properties::new(ReflectionDatabase::embedded());
+
+    let rows = properties.rows(&dom, &[decal], None);
+    let texture = rows
+        .iter()
+        .find(|row| row.name == "Texture")
+        .expect("a fresh Decal still lists Texture");
+    assert_eq!(texture.value, "Content(none)");
+    assert!(texture.edit.is_some());
+
+    edit::commit(&mut dom, &db, decal, "Texture", "7").unwrap();
+    assert_eq!(
+        dom.get(decal).unwrap().properties().get("Texture"),
+        Some(&Variant::Content(Content::Uri("rbxassetid://7".into())))
+    );
+}
+
+#[test]
 fn a_set_reference_edits_through_the_picker_and_parent_stays_read_only() {
     let fixture = properties(&[]);
     let mut dom = fixture.dom;

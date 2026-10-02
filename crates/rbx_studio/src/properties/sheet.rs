@@ -31,7 +31,7 @@ use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
-use rbx_dom::{Instance, Ref, Variant, WeakDom};
+use rbx_dom::{Content, Instance, Ref, Variant, WeakDom};
 use rbx_reflection::{PropertyDescriptor, ReflectionDatabase};
 
 use super::computed::COMPUTED;
@@ -124,6 +124,10 @@ impl Sheet {
                     // An unset reference is an absent key, not a missing
                     // default: listed as `nil`, so it can be picked.
                     default = Some(Variant::Ref(NIL_REF));
+                } else if default.is_none() && property.value_type == "Content" {
+                    // Likewise an unset asset (`Decal.Texture`, defaulted
+                    // only as `TextureContent`): an empty field to type into.
+                    default = Some(Variant::Content(Content::None));
                 }
                 index.insert(property.name.clone(), entries.len());
                 entries.push(Entry {

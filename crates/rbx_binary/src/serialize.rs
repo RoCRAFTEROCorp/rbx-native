@@ -203,10 +203,33 @@ fn collect_values(
             }
         })
         .collect();
+    unify_content_ids(&mut values);
     if values.iter().any(Option::is_none) {
         fill_missing(&mut values, default(&class.class_name, name));
     }
     values
+}
+
+// A file stores a legacy ContentId property (`Decal.Texture`, `MeshPart.MeshId`)
+// as a String column, while a script or a Properties edit sets it as a
+// `Content`; a column holding both is one property in two shapes, and the
+// String one is what the file already held, so a `None` or `Uri` content joins
+// it as its URI (empty for none), the same text Roblox saves a ContentId as.
+// An `Object` content has no String spelling and still errors as a mismatch.
+fn unify_content_ids(values: &mut [Option<Variant>]) {
+    use rbx_dom::Content;
+
+    if !values.iter().any(|v| matches!(v, Some(Variant::String(_)))) {
+        return;
+    }
+    for value in values.iter_mut() {
+        let uri = match value {
+            Some(Variant::Content(Content::None)) => String::new(),
+            Some(Variant::Content(Content::Uri(uri))) => std::mem::take(uri),
+            _ => continue,
+        };
+        *value = Some(Variant::String(uri));
+    }
 }
 
 // A script that sets only some properties on a freshly created instance (e.g.
@@ -402,6 +425,43 @@ mod tests {
             bare.properties().get("Anchored"),
             Some(&Variant::Bool(false))
         );
+    }
+
+    #[test]
+    fn a_contentid_column_mixing_string_and_content_saves_as_strings() {
+        use rbx_dom::Content;
+
+        // One Decal as a file loads it, one set from Luau or the Properties
+        // panel, and one with no Texture at all.
+        let mut dom = WeakDom::new();
+        let loaded = dom.new_instance("Decal", "Loaded", None);
+        let set = dom.new_instance("Decal", "Set", None);
+        let cleared = dom.new_instance("Decal", "Cleared", None);
+        let texture = |uri: &str| Variant::String(uri.to_owned());
+        dom.set_property(loaded, "Texture", texture("rbxassetid://1"))
+            .unwrap();
+        dom.set_property(
+            set,
+            "Texture",
+            Variant::Content(Content::Uri("rbxassetid://2".into())),
+        )
+        .unwrap();
+        dom.set_property(cleared, "Texture", Variant::Content(Content::None))
+            .unwrap();
+
+        let reloaded = deserialize(&serialize(&dom).unwrap()).unwrap();
+
+        let got = |r: Ref| {
+            reloaded
+                .get(r)
+                .unwrap()
+                .properties()
+                .get("Texture")
+                .cloned()
+        };
+        assert_eq!(got(loaded), Some(texture("rbxassetid://1")));
+        assert_eq!(got(set), Some(texture("rbxassetid://2")));
+        assert_eq!(got(cleared), Some(texture("")));
     }
 
     #[test]

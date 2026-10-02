@@ -3,7 +3,10 @@
 //! names an instance in the place, which needs an instance picker rather
 //! than text, so such a row stays read-only.
 
-use rbx_dom::{Content, Variant};
+use rbx_dom::{Content, Instance, Variant};
+use rbx_reflection::ReflectionDatabase;
+
+const CONTENT: &str = "Content";
 
 /// The URI itself, or an empty field for `None`. `None` for an `Object`
 /// source keeps the row read-only, the same as any type [`super::parse`]
@@ -44,6 +47,40 @@ pub(super) fn parse_content(current: &Content, text: &str) -> Result<Variant, St
         Err(_) => Content::Uri(text.to_owned()),
     };
     Ok(Variant::Content(content))
+}
+
+/// Whether the API dump types `name` on `class` as a `Content`.
+pub(super) fn is_content(db: &ReflectionDatabase, class: &str, name: &str) -> bool {
+    db.resolve_property(class, name)
+        .is_some_and(|property| property.value_type == CONTENT)
+}
+
+/// A file stores a legacy ContentId (`Decal.Texture` in most places) as a
+/// String; an edit of one reads the text as [`parse_content`] does and keeps
+/// the String shape, so the instance still matches its siblings when saved.
+pub(super) fn parse_content_id(stored: &str, text: &str) -> Result<Variant, String> {
+    let uri = match parse_content(&Content::Uri(stored.to_owned()), text)? {
+        Variant::Content(Content::Uri(uri)) => uri,
+        _ => String::new(),
+    };
+    Ok(Variant::String(uri))
+}
+
+/// What a `Content`-typed property holds where the instance stores nothing
+/// and the class has no default (`Decal.Texture`, whose default only exists
+/// under `TextureContent`): none, under the name Roblox saves it as, so a
+/// fresh instance's row can still be typed into. `None` for any other
+/// property.
+pub(super) fn none_default(
+    db: &ReflectionDatabase,
+    instance: &Instance,
+    name: &str,
+) -> Option<(String, Variant)> {
+    if !is_content(db, instance.class(), name) {
+        return None;
+    }
+    let key = *db.stored_names(instance.class(), name).first()?;
+    Some((key.to_owned(), Variant::Content(Content::None)))
 }
 
 #[cfg(test)]
@@ -133,6 +170,34 @@ mod tests {
             dom.get(decal).unwrap().properties().get("Texture"),
             Some(&uri("rbxassetid://1818"))
         );
+    }
+
+    #[test]
+    fn a_string_stored_texture_reads_an_asset_id_and_stays_a_string() {
+        use rbx_dom::{Instance, WeakDom};
+
+        let decal = Ref::new(1);
+        let mut dom = WeakDom::new();
+        let mut instance = Instance::new(decal, "Decal", "Decal");
+        instance.properties_mut().insert(
+            "Texture".to_owned(),
+            Variant::String("rbxassetid://1".into()),
+        );
+        dom.insert(instance);
+        let db = ReflectionDatabase::embedded();
+        let commit = |dom: &mut WeakDom, text: &str| {
+            crate::properties::edit::commit(dom, &db, decal, "Texture", text).unwrap();
+            dom.get(decal).unwrap().properties().get("Texture").cloned()
+        };
+
+        let string = |s: &str| Some(Variant::String(s.to_owned()));
+        assert_eq!(commit(&mut dom, "12345"), string("rbxassetid://12345"));
+        assert_eq!(
+            commit(&mut dom, "rbxasset://a.png"),
+            string("rbxasset://a.png")
+        );
+        assert_eq!(commit(&mut dom, "0"), string(""));
+        assert!(crate::properties::edit::commit(&mut dom, &db, decal, "Texture", "1.5").is_err());
     }
 
     #[test]
