@@ -21,7 +21,8 @@
   a row to the selection or takes it out, and Shift-click selects every
   visible row from the last row clicked to this one, as in Studio;
   Ctrl+Shift-click adds that range to the selection. Both used to replace
-  the selection. — @Vikmanou
+  the selection. Shift with the Up and Down arrows, Home or End does the
+  same from the keyboard. — @Vikmanou
 - **Named dock layouts.** Studio Settings › Layout can now save the current
   arrangement of docks under a name and switch back to it with a click —
   which panels sit where, how big, and which float or are closed. The one

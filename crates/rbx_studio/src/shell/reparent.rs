@@ -120,6 +120,8 @@ pub(super) fn draggable_row(
                 let modifiers = event.modifiers;
                 let toggle = modifiers.control || modifiers.platform;
                 if !(modifiers.shift || toggle) {
+                    // The tree's row selects it next; see `range_cursor`.
+                    shell.update(cx, |shell, _| shell.range_cursor = None);
                     return;
                 }
                 cx.stop_propagation();

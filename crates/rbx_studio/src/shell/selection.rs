@@ -153,6 +153,18 @@ impl Selection {
     }
 }
 
+/// Where a range starts: the first of `candidates` — the range anchor, then
+/// the selection's own anchor — that still has a visible row, else
+/// `fallback`. An anchor deleted, collapsed away or filtered out by a search
+/// is skipped rather than shrinking every range to one row.
+pub(super) fn range_anchor(visible: &[Ref], candidates: [Option<Ref>; 2], fallback: Ref) -> Ref {
+    candidates
+        .into_iter()
+        .flatten()
+        .find(|anchor| visible.contains(anchor))
+        .unwrap_or(fallback)
+}
+
 /// A `Shift`-click's range: the rows of `visible` from `anchor` to
 /// `clicked`, both included, starting at the anchor so it stays the
 /// selection's own anchor. An anchor with no visible row — collapsed away or
@@ -515,5 +527,12 @@ mod tests {
         assert_eq!(range(&visible, c, c), [c]);
         // A search or a collapse can hide the anchor's row.
         assert_eq!(range(&visible, hidden, c), [c]);
+
+        // An anchor with no row falls back to the selection's, then to the
+        // clicked row.
+        assert_eq!(range_anchor(&visible, [Some(a), Some(b)], d), a);
+        assert_eq!(range_anchor(&visible, [Some(hidden), Some(b)], d), b);
+        assert_eq!(range_anchor(&visible, [Some(hidden), None], d), d);
+        assert_eq!(range_anchor(&visible, [None, Some(hidden)], d), d);
     }
 }
