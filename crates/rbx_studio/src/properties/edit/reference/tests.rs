@@ -150,5 +150,19 @@ fn one_pick_sets_every_selected_weld() {
 fn the_stand_in_is_never_a_real_instance() {
     let place = place();
     assert!(place.dom.get(NIL_REF).is_none());
-    assert!(check_target(&place.dom, &db(), "Weld", "Part0", NIL_REF).is_ok());
+    assert!(check_target(&place.dom, &db(), place.weld, "Weld", "Part0", NIL_REF).is_ok());
+}
+
+#[test]
+fn a_primary_part_must_be_inside_its_model() {
+    let mut place = place();
+    let model = place.dom.new_instance("Model", "Model", None);
+    place.dom.set_parent(place.a, Some(model));
+    let check = |target| check_target(&place.dom, &db(), model, "Model", "PrimaryPart", target);
+
+    assert!(check(place.a).is_ok());
+    assert_eq!(
+        check(place.b),
+        Err("PrimaryPart must be a part inside this Model".to_owned())
+    );
 }

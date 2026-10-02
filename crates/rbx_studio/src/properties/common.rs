@@ -128,6 +128,8 @@ fn mixed(mut row: PropertyRow, values: &[&Variant]) -> PropertyRow {
     row.mixed = true;
     row.edit = match row.edit.take() {
         Some(EditKind::Text(_)) => Some(EditKind::Text(String::new())),
+        // An empty field that still arms a pick for every selected instance.
+        Some(EditKind::Ref(_)) => Some(EditKind::Ref(String::new())),
         Some(EditKind::Enum { items, .. }) => Some(EditKind::Enum {
             current: String::new(),
             items,

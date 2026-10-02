@@ -373,6 +373,22 @@ fn a_set_reference_edits_through_the_picker_and_parent_stays_read_only() {
 }
 
 #[test]
+fn a_mixed_reference_stays_pickable() {
+    let fixture = properties(&[]);
+    let mut dom = fixture.dom;
+    let set = dom.new_instance("Weld", "Weld", Some(workspace()));
+    dom.set_property(set, "Part0", Variant::Ref(part()))
+        .unwrap();
+    let unset = dom.new_instance("Weld", "Weld", Some(workspace()));
+
+    let rows = fixture.properties.rows(&dom, &[set, unset], None);
+    let part0 = rows.iter().find(|row| row.name == "Part0").unwrap();
+
+    assert!(part0.mixed);
+    assert_eq!(part0.edit, Some(EditKind::Ref(String::new())));
+}
+
+#[test]
 fn refs_read_as_the_target_name() {
     assert_eq!(formatted("Parent", Variant::Ref(workspace())), "Workspace");
     assert_eq!(formatted("Dangling", Variant::Ref(Ref::new(99))), "nil");

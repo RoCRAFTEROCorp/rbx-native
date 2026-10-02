@@ -468,7 +468,8 @@ Roblox's own engine.
     Explorer, which sets the property instead of selecting. An unset one is
     listed as `nil` rather than left out; Escape backs out of a pick, the
     row's `×` (or Delete) clears it, and an instance of the wrong class for
-    the property, per the API dump, is refused.
+    the property, per the API dump, is refused, as is a `PrimaryPart`
+    outside its model.
   - **Computed, read-only**: `Mass`, `CenterOfMass`,
     `CurrentPhysicalProperties` and the assembly's mass and centre, shown
     only where Roblox documents exactly how they are computed.
@@ -1844,10 +1845,10 @@ against `Roblox/creator-docs` rather than assumed:
     the focused row and the selected rows cannot differ — which matters
     because the Explorer multi-selects. Needs the toolkit's tree replaced or
     extended.
-- [ ] 📋 **Property editors for the two `Variant` types that still have
-  none.** The Properties panel renders a value for every type the DOM can
-  hold, but two of them are still read-only. Inventory, rationale and
-  rough sizing live in
+- [ ] 📋 **Property editors for the two `Variant` types that still lack a
+  whole one.** The Properties panel renders a value for every type the DOM
+  can hold, but `Content` is still read-only and `Ref` is picked from the
+  Explorer only. Inventory, rationale and rough sizing live in
   [`agents/property-editors.md`](agents/property-editors.md); the bullets
   below are what is left after the `CFrame`/`Ray`/`Vector3int16`/`Faces`/
   `Axes`/`NumberRange`/`UDim` pass, the `OptionalCFrame` one, and

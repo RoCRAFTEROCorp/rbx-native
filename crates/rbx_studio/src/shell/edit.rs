@@ -342,7 +342,7 @@ impl Shell {
     ) -> (RowEditor, Vec<Subscription>) {
         match kind {
             EditKind::Bool(_) | EditKind::BrickColor(_) | EditKind::Ref(_) => unreachable!(
-                "a checkbox and the BrickColor and Ref pickers are built where they render, in                  shell::property_element"
+                "a checkbox and the BrickColor and Ref pickers are built where they render, in shell::property_element"
             ),
             EditKind::Text(seed) => {
                 let input = cx.new(|cx| InputState::new(window, cx).default_value(seed.clone()));
@@ -657,20 +657,29 @@ impl Shell {
             return result;
         }
 
-        // See `shell::history`: snapshotted before the write below.
-        if push {
-            self.push_history();
-        }
+        // See `shell::history`: snapshotted before the write below, and
+        // pushed only once it wrote something (see `push_history_snapshot`).
+        let before = push.then(|| {
+            self.dom.take_changes();
+            self.dom.clone()
+        });
         let selection = self.selected_all().to_vec();
         let mut dom = std::mem::replace(&mut self.dom, WeakDom::new());
         let result = properties::edit::commit_all(&mut dom, &self.database, &selection, name, text);
         self.dom = dom;
-        // Reflected and recorded whether or not the commit below succeeded:
-        // a rejected value never reaches `WeakDom::set_property`, so the log
-        // is simply empty then — nothing to show, nothing to undo.
+        // A rejected value never reaches `WeakDom::set_property`, and a `nil`
+        // reference cleared again removes nothing, so the log is empty then:
+        // nothing to show, and no undo step that reverts nothing.
         let changes = self.dom.take_changes();
         self.reflect_changes(&changes, cx);
-        self.record_history_change(changes);
+        match before {
+            Some(_) if changes.is_empty() => {}
+            Some(before) => {
+                self.push_history_snapshot(before);
+                self.record_history_change(changes);
+            }
+            None => self.record_history_change(changes),
+        }
         result?;
 
         if name == NAME_PROPERTY {

@@ -67,9 +67,15 @@ pub(super) fn nil_default(
 /// Studio's own picker refuses a wrong class is not documented; the dump's
 /// type is what Roblox says the property holds, so a `Folder` in a `Part0`
 /// is a value this panel declines to write.
+///
+/// A `Model`'s `PrimaryPart` must also be inside that model: the creator
+/// docs say an outside part "will be set to that part but reset to `nil`
+/// during the next simulation step", so it is refused rather than written
+/// as a value that never sticks.
 pub(super) fn check_target(
     dom: &WeakDom,
     db: &ReflectionDatabase,
+    owner: Ref,
     class: &str,
     name: &str,
     target: Ref,
@@ -85,6 +91,13 @@ pub(super) fn check_target(
             "{name} takes a {wanted}, not a {}",
             instance.class()
         )),
+        _ if name == "PrimaryPart"
+            && db.is_subclass_of(class, "Model")
+            && !std::iter::successors(dom.parent(target), |&r| dom.parent(r))
+                .any(|r| r == owner) =>
+        {
+            Err(format!("{name} must be a part inside this {class}"))
+        }
         _ => Ok(()),
     }
 }
