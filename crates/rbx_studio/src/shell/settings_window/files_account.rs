@@ -80,7 +80,7 @@ impl SettingsWindow {
                             self.set(move |shell, cx| shell.set_auto_recovery(!enabled, cx)),
                         ),
                     )
-                    .describe("Save a recovery copy of the open place in the background while it has unsaved changes.")
+                    .describe("Save a recovery copy of the open place in the background while it has unsaved changes. Turning it off keeps a copy already written.")
                     .changed(!enabled, |shell, cx| shell.set_auto_recovery(true, cx)),
                     Row::new(
                         "Interval",

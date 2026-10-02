@@ -7,7 +7,9 @@
   killed window costs minutes of work instead of everything since the last
   Ctrl+S. Studio Settings › Files & recovery turns it on or off (on by
   default), sets the interval (1 to 10 minutes, four by default) and opens
-  the folder the copies are in. Saving deletes the place's copy. — @Vikmanou
+  the folder the copies are in. Saving deletes the place's copy. A copy
+  left by a session that crashed is kept, moved aside under a timestamped
+  name when its place next opens. — @Vikmanou
 - **File › Open Auto Saves** opens the folder Auto-Recovery's copies are
   in, the way Studio's own File menu does. — @Vikmanou
 

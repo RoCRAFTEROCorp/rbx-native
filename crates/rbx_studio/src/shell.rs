@@ -545,6 +545,7 @@ impl Shell {
 
         let initial_targets = Targets::read(&dom, &database, &Vec::from_iter(selected));
         let ui = ui_editor::UiEditor::new(window, cx);
+        let recovery = recovery::Recovery::new(auto_recovery, recovery_minutes, &path);
         let mut shell = Shell {
             menu_bar,
             title: title.into(),
@@ -631,7 +632,7 @@ impl Shell {
             ribbon_tab: ribbon::Tab::default(),
             document: Document::default(),
             open_menu: None,
-            recovery: recovery::Recovery::new(auto_recovery, recovery_minutes),
+            recovery,
             // A saved layout wins over the default, and is total over
             // whatever the file actually held (see `layout::Layout::restore`).
             layout: layout::Layout::restore(&docks),

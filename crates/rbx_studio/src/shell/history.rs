@@ -56,6 +56,9 @@ impl Shell {
     /// pushed for a write that never happened is a Ctrl+Z that reverts
     /// nothing, having cleared the redo stack to offer it.
     pub(super) fn push_history_snapshot(&mut self, before: WeakDom) {
+        // Every recorded edit lands here, including the ones (a script
+        // editor's `Source` write) that never reach `reflect_changes`.
+        self.recovery.changed();
         self.history.push(before);
     }
 
