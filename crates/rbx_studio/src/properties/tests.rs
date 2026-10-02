@@ -353,24 +353,31 @@ fn an_unset_reference_is_listed_as_an_editable_nil() {
 }
 
 #[test]
-fn an_unset_asset_is_listed_as_an_editable_empty_field() {
+fn an_unset_asset_id_is_listed_with_its_twins_default_and_edits_as_a_string() {
     let mut dom = WeakDom::new();
     let decal = dom.new_instance("Decal", "Decal", None);
+    let emitter = dom.new_instance("ParticleEmitter", "ParticleEmitter", None);
     let db = ReflectionDatabase::embedded();
     let properties = Properties::new(ReflectionDatabase::embedded());
 
-    let rows = properties.rows(&dom, &[decal], None);
-    let texture = rows
-        .iter()
-        .find(|row| row.name == "Texture")
-        .expect("a fresh Decal still lists Texture");
-    assert_eq!(texture.value, "Content(none)");
-    assert!(texture.edit.is_some());
+    let texture = |reference: Ref| {
+        properties
+            .rows(&dom, &[reference], None)
+            .into_iter()
+            .find(|row| row.name == "Texture")
+            .expect("a fresh instance still lists Texture")
+    };
+    assert_eq!(texture(decal).value, "\"\"");
+    assert!(texture(decal).edit.is_some());
+    assert_eq!(
+        texture(emitter).value,
+        "\"rbxasset://textures/particles/sparkles_main.dds\""
+    );
 
     edit::commit(&mut dom, &db, decal, "Texture", "7").unwrap();
     assert_eq!(
         dom.get(decal).unwrap().properties().get("Texture"),
-        Some(&Variant::Content(Content::Uri("rbxassetid://7".into())))
+        Some(&Variant::String("rbxassetid://7".into()))
     );
 }
 

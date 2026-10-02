@@ -38,6 +38,19 @@ fn an_unset_asset_id_reads_as_an_empty_string() {
 }
 
 #[test]
+fn an_unset_asset_id_reads_its_content_twins_default() {
+    let mut runtime = runtime();
+    let output = runtime
+        .run(r#"print(Instance.new("ParticleEmitter").Texture)"#)
+        .expect("script must run");
+
+    assert_eq!(
+        output.lines(),
+        ["rbxasset://textures/particles/sparkles_main.dds"]
+    );
+}
+
+#[test]
 fn a_write_lands_under_the_saved_name() {
     let mut runtime = runtime();
     runtime

@@ -30,21 +30,19 @@ pub(crate) fn get(lua: &Lua, ctx: &Ctx, referent: Ref, name: &str) -> Result<Opt
         // Whichever name the file stored it under, or the class default:
         // `part.Transparency` on a part a hand-written file left it off of
         // reads `0`, as it would in Roblox.
+        // An unset asset id (`Instance.new("Decal").Texture`) has no
+        // recorded default of its own: Roblox reads its `Content` twin's
+        // default, or "".
         let stored = ctx
             .database()
             .stored_or_default(instance, name)
-            .map(|(_, value)| value.clone());
+            .map(|(_, value)| value.clone())
+            .or_else(|| ctx.database().content_id_default(instance.class(), name));
         (descriptor.value_type.clone(), stored)
     };
 
-    // Neither stored nor recorded: a value only a running engine computes —
-    // except an unset asset id (`Instance.new("Decal").Texture`), which
-    // Roblox reads as "". The bundled dump spells a ContentId `Content`,
-    // being older than the split; a newer one spells it `ContentId`.
+    // Neither stored nor recorded: a value only a running engine computes.
     let Some(stored) = stored else {
-        if matches!(value_type.as_str(), "Content" | "ContentId") {
-            return Ok(Some(Value::String(lua.create_string("")?)));
-        }
         return Ok(Some(Value::Nil));
     };
     to_lua::variant_to_lua(lua, ctx, name, &value_type, &stored).map(Some)

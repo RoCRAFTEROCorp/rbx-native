@@ -5,12 +5,10 @@
 //! PRNT, END.
 
 mod chunk;
-mod content_id;
 mod inst;
 mod plan;
 mod prnt;
 mod prop;
-mod service;
 mod sstr;
 mod writer;
 
@@ -223,7 +221,7 @@ fn unify_content_ids(class: &str, name: &str, values: &mut [Option<Variant>]) {
     use rbx_dom::Content;
 
     let holds_string = values.iter().any(|v| matches!(v, Some(Variant::String(_))));
-    if !holds_string && !content_id::is_content_id(class, name) {
+    if !holds_string && !rbx_reflection::ReflectionDatabase::shared().is_content_id(class, name) {
         return;
     }
     for value in values.iter_mut() {

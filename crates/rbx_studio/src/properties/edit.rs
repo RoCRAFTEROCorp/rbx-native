@@ -16,7 +16,7 @@ pub(super) mod pivot;
 mod reference;
 mod sequence;
 
-use content::{content_text, is_content, parse_content, parse_content_id};
+use content::{content_text, parse_content, parse_content_id};
 use font::{font_text, parse_font, synced};
 pub(crate) use many::commit_all;
 use many::stored_or_default;
@@ -273,7 +273,7 @@ pub(crate) fn parse(
 ) -> Result<Variant, String> {
     let text = text.trim();
     match current {
-        Variant::String(stored) if is_content(db, class, prop_name) => {
+        Variant::String(stored) if db.is_content_id(class, prop_name) => {
             parse_content_id(stored, text)
         }
         Variant::Bool(_) => parse_bool(text).map(Variant::Bool),

@@ -14,8 +14,8 @@ const COLOR: &str = "Color";
 /// or, for a value the file never stored, the name Roblox saves it under and
 /// the class default (see `ReflectionDatabase::stored_or_default`), or a
 /// `nil` reference for an instance-typed one that has neither (see
-/// `super::reference`), or none for a `Content`-typed one (see
-/// `super::content`).
+/// `super::reference`), or for an unset asset id its `Content` twin's
+/// default or "" (see `ReflectionDatabase::content_id_default`).
 pub(super) fn stored_or_default(
     db: &ReflectionDatabase,
     instance: &Instance,
@@ -24,7 +24,13 @@ pub(super) fn stored_or_default(
     db.stored_or_default(instance, name)
         .map(|(key, value)| (key.to_owned(), value.clone()))
         .or_else(|| super::reference::nil_default(db, instance, name))
-        .or_else(|| super::content::none_default(db, instance, name))
+        .or_else(|| {
+            let key = *db.stored_names(instance.class(), name).first()?;
+            Some((
+                key.to_owned(),
+                db.content_id_default(instance.class(), name)?,
+            ))
+        })
 }
 
 /// A part's `BrickColor` is its `Color` named by the closest table colour,
