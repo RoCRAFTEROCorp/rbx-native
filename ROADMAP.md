@@ -1069,7 +1069,7 @@ Roblox's own engine.
   own documented rule — and the copy is independent of the original. Paste
   always lands in `Workspace`, matching creator-docs' `explorer.md`, never
   wherever the selection is; Duplicate lands beside the original in its own
-  existing parent instead. A service can't be copied, pasted or duplicated,
+  existing parent instead, right after it among its siblings. A service can't be copied, pasted or duplicated,
   the same refusal Group/Ungroup already enforce. One undo step per
   operation. `Ctrl+Shift+V` is "Paste Into": the clipboard goes into each
   selected instance instead of `Workspace`, one copy per parent, as
@@ -1453,7 +1453,8 @@ Roblox's own engine.
   click; only the differences from Studio's own default are saved
   (`service_overrides`), so a service Studio later starts or stops listing
   still follows Studio unless it was chosen here. The row's reset puts
-  Studio's set back.
+  Studio's set back. A ticked service lands where Studio lists it, in
+  `ReflectionMetadata.xml`'s `ExplorerOrder` (`services::EXPLORER_ORDER`).
 - [x] **Named dock layouts** in Studio Settings › Layout (Blender's
   workspaces): the current arrangement saved under a name — every edge's
   docks, tabs and size, and which panels float or are shut — and switched

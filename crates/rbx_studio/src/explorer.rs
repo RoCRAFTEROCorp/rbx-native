@@ -13,9 +13,9 @@ use rbx_dom::{Ref, WeakDom};
 
 // Studio's service order and its default-hidden services, shared with the
 // browser build's Explorer (see `rbx_viewer::services`).
-use rbx_viewer::services::rank;
 #[cfg(test)]
 use rbx_viewer::services::SERVICE_ORDER;
+use rbx_viewer::services::{explorer_rank, rank};
 pub(crate) use rbx_viewer::services::{is_default_visible, is_known_service};
 
 /// The user's own choice of which services the default view lists, where it
@@ -353,10 +353,12 @@ fn node(dom: &WeakDom, reference: Ref, parent_path: &str) -> Option<Node> {
     })
 }
 
-/// Services first, in Studio's fixed order; everything else alphabetically after.
+/// Services first, in Studio's fixed order (shown by default or ticked to
+/// show alike — see `services::explorer_rank`); everything else
+/// alphabetically after.
 fn sort_roots(roots: &mut [Node]) {
     roots.sort_by(
-        |left, right| match (rank(&left.class), rank(&right.class)) {
+        |left, right| match (explorer_rank(&left.class), explorer_rank(&right.class)) {
             (Some(left), Some(right)) => left.cmp(&right),
             (Some(_), None) => Ordering::Less,
             (None, Some(_)) => Ordering::Greater,
