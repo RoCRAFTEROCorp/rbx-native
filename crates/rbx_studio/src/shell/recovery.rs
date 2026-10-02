@@ -100,8 +100,9 @@ impl Shell {
     /// life): sweeps temp files dead writers left, refuses to copy a place
     /// that is itself in the recovery folder, claims this session's copy
     /// (its own, if another editor already has this place open), and moves
-    /// an earlier session's copy in that slot aside so this session never
-    /// overwrites or deletes it.
+    /// aside every copy of this place an earlier session left, in this
+    /// session's slot or any other no running editor holds, so none is ever
+    /// overwritten or deleted, nor left unannounced.
     fn open_recovery(&mut self) {
         let Some(folder) = recovery::folder() else {
             return;
@@ -140,36 +141,40 @@ impl Shell {
                 return;
             }
         };
-        let Ok(meta) = std::fs::metadata(&copy) else {
-            state.copy = Some(copy);
-            return;
-        };
-        let written = meta.modified().unwrap_or_else(|_| SystemTime::now());
-        let stamp = chrono::DateTime::<chrono::Local>::from(written)
-            .format("%Y-%m-%d %H-%M-%S")
-            .to_string();
-        let mut kept = recovery::kept_path(&copy, &stamp);
-        let mut n = 1;
-        while kept.exists() {
-            n += 1;
-            kept = recovery::kept_path(&copy, &format!("{stamp} ({n})"));
+        if !copy.exists() {
+            state.copy = Some(copy.clone());
         }
-        match std::fs::rename(&copy, &kept) {
-            Ok(()) => {
-                state.copy = Some(copy);
-                self.output.push_warning(&format!(
-                    "Auto-Recovery found a copy of this place from an earlier session and \
-                     kept it as {} (Studio Settings › Files & recovery › Open auto-saves).",
-                    kept.display()
-                ));
-            }
-            Err(err) => {
-                self.output.push_warning(&format!(
+        // This session's own slot first: if its old copy cannot be moved,
+        // writing would overwrite it, so this session writes none.
+        let mut left = vec![(copy.clone(), None)];
+        left.extend(
+            recovery::orphans(&folder, &state.place, &copy)
+                .into_iter()
+                .map(|(orphan, lock)| (orphan, Some(lock))),
+        );
+        for (old, _lock) in left.into_iter().filter(|(old, _)| old.exists()) {
+            match keep_aside(&old) {
+                Ok(kept) => {
+                    if old == copy {
+                        self.recovery.copy = Some(copy.clone());
+                    }
+                    self.output.push_warning(&format!(
+                        "Auto-Recovery found a copy of this place from an earlier session and \
+                         kept it as {} (Studio Settings › Files & recovery › Open auto-saves).",
+                        kept.display()
+                    ));
+                }
+                Err(err) if old == copy => self.output.push_warning(&format!(
                     "Auto-Recovery found a copy of this place from an earlier session at {} \
                      but could not move it aside ({err}), so it writes no copies this \
                      session, leaving that one as it is.",
-                    copy.display()
-                ));
+                    old.display()
+                )),
+                Err(err) => self.output.push_warning(&format!(
+                    "Auto-Recovery found a copy of this place from an earlier session at {} \
+                     but could not move it aside ({err}); it is left as it is.",
+                    old.display()
+                )),
             }
         }
     }
@@ -269,4 +274,23 @@ impl Shell {
             cx.notify();
         }
     }
+}
+
+/// Moves a copy an earlier session left to its timestamped name (when it
+/// was written, numbered if that is taken), returning where it went.
+fn keep_aside(copy: &Path) -> std::io::Result<PathBuf> {
+    let written = std::fs::metadata(copy)?
+        .modified()
+        .unwrap_or_else(|_| SystemTime::now());
+    let stamp = chrono::DateTime::<chrono::Local>::from(written)
+        .format("%Y-%m-%d %H-%M-%S")
+        .to_string();
+    let mut kept = recovery::kept_path(copy, &stamp);
+    let mut n = 1;
+    while kept.exists() {
+        n += 1;
+        kept = recovery::kept_path(copy, &format!("{stamp} ({n})"));
+    }
+    std::fs::rename(copy, &kept)?;
+    Ok(kept)
 }

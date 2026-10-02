@@ -106,6 +106,26 @@ pub(crate) fn claim(folder: &Path, place: &Path) -> std::io::Result<(PathBuf, Fi
     }
 }
 
+/// The place's other slots' copies that a crashed or killed session left
+/// (no process holds their lock), each with its lock now held so no editor
+/// starting meanwhile claims the slot before the caller moves the copy
+/// aside. `own` is this session's copy, skipped. Slots are claimed lowest
+/// first and lock files stay on disk, so the first slot without one ends
+/// the search.
+pub(crate) fn orphans(folder: &Path, place: &Path, own: &Path) -> Vec<(PathBuf, File)> {
+    let mut found = Vec::new();
+    for slot in 1.. {
+        let copy = copy_path(folder, place, slot);
+        let Ok(lock) = File::options().write(true).open(lock_path(&copy)) else {
+            break;
+        };
+        if copy != own && copy.exists() && lock.try_lock().is_ok() {
+            found.push((copy, lock));
+        }
+    }
+    found
+}
+
 /// Where a copy an earlier session left behind is moved to: its own name
 /// plus `stamp` (when that copy was written), so it is never overwritten by
 /// this session's copies nor deleted by its saves.
@@ -208,6 +228,26 @@ mod tests {
         // The first editor exits (or dies): its slot is free again.
         drop(lock);
         assert_eq!(claim(&folder, place).unwrap().0, first);
+        let _ = std::fs::remove_dir_all(&folder);
+    }
+
+    #[test]
+    fn a_crashed_editors_higher_slot_copy_is_found_but_a_running_ones_never_is() {
+        let folder =
+            std::env::temp_dir().join(format!("rbx-recovery-orphans-{}", std::process::id()));
+        let place = Path::new("/games/Obby.rbxl");
+        let (first, _first_lock) = claim(&folder, place).unwrap();
+        let (second, second_lock) = claim(&folder, place).unwrap();
+        std::fs::write(&second, b"work").unwrap();
+        // The second editor is still running: its copy is left alone.
+        assert!(orphans(&folder, place, &first).is_empty());
+        // It crashes: its copy is the first editor's to move aside.
+        drop(second_lock);
+        let found: Vec<_> = orphans(&folder, place, &first)
+            .into_iter()
+            .map(|(copy, _)| copy)
+            .collect();
+        assert_eq!(found, [second]);
         let _ = std::fs::remove_dir_all(&folder);
     }
 

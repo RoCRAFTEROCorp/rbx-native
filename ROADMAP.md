@@ -1431,7 +1431,8 @@ Roblox's own engine.
   deleted. Each session holds an OS advisory lock beside its copy (released
   when the process exits or dies), so an earlier session's copy is one no
   process holds; a second editor on a place that is already open writes its
-  own copy (`… (recovery <hash>, 2).rbxl`) and never touches the first's. A
+  own copy (`… (recovery <hash>, 2).rbxl`) and never touches the first's;
+  any such copy a crashed editor left is moved aside like slot 1's. A
   place opened from the recovery folder itself gets no copies
   and a warning that Ctrl+S saves it there. A copy is a plain place file
   in the place's own format, so — unlike a recovered Studio file, which
