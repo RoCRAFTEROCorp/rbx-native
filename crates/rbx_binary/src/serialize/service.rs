@@ -10,7 +10,7 @@ use std::sync::OnceLock;
 
 use serde_json::Value;
 
-const API_DUMP_JSON: &str = include_str!(concat!(
+pub(super) const API_DUMP_JSON: &str = include_str!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../../assets/API-Dump.json"
 ));

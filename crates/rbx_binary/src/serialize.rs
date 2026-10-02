@@ -5,6 +5,7 @@
 //! PRNT, END.
 
 mod chunk;
+mod content_id;
 mod inst;
 mod plan;
 mod prnt;
@@ -203,7 +204,7 @@ fn collect_values(
             }
         })
         .collect();
-    unify_content_ids(&mut values);
+    unify_content_ids(&class.class_name, name, &mut values);
     if values.iter().any(Option::is_none) {
         fill_missing(&mut values, default(&class.class_name, name));
     }
@@ -212,14 +213,17 @@ fn collect_values(
 
 // A file stores a legacy ContentId property (`Decal.Texture`, `MeshPart.MeshId`)
 // as a String column, while a script or a Properties edit sets it as a
-// `Content`; a column holding both is one property in two shapes, and the
-// String one is what the file already held, so a `None` or `Uri` content joins
-// it as its URI (empty for none), the same text Roblox saves a ContentId as.
-// An `Object` content has no String spelling and still errors as a mismatch.
-fn unify_content_ids(values: &mut [Option<Variant>]) {
+// `Content`. Either way it is written the way Roblox saves it: a `None` or
+// `Uri` content becomes its URI (empty for none), the text a ContentId holds.
+// That applies to a property the API dump types as a ContentId, and to any
+// other column that already holds a String next to a `Content`, which can only
+// be one property in two shapes. An `Object` content has no String spelling,
+// so it is left as is and still errors as a mismatch.
+fn unify_content_ids(class: &str, name: &str, values: &mut [Option<Variant>]) {
     use rbx_dom::Content;
 
-    if !values.iter().any(|v| matches!(v, Some(Variant::String(_)))) {
+    let holds_string = values.iter().any(|v| matches!(v, Some(Variant::String(_))));
+    if !holds_string && !content_id::is_content_id(class, name) {
         return;
     }
     for value in values.iter_mut() {
@@ -462,6 +466,33 @@ mod tests {
         assert_eq!(got(loaded), Some(texture("rbxassetid://1")));
         assert_eq!(got(set), Some(texture("rbxassetid://2")));
         assert_eq!(got(cleared), Some(texture("")));
+    }
+
+    #[test]
+    fn an_all_content_contentid_column_is_written_as_strings() {
+        use rbx_dom::Content;
+
+        // Every Decal created from Luau: `Texture` holds only `Content`.
+        let mut dom = WeakDom::new();
+        let set = dom.new_instance("Decal", "Set", None);
+        let cleared = dom.new_instance("Decal", "Cleared", None);
+        let uri = Variant::Content(Content::Uri("rbxassetid://2".into()));
+        dom.set_property(set, "Texture", uri.clone()).unwrap();
+        dom.set_property(cleared, "Texture", Variant::Content(Content::None))
+            .unwrap();
+        // A true Content property keeps its own shape.
+        dom.set_property(set, "TextureContent", uri.clone())
+            .unwrap();
+        dom.set_property(cleared, "TextureContent", uri.clone())
+            .unwrap();
+
+        let reloaded = deserialize(&serialize(&dom).unwrap()).unwrap();
+
+        let got = |r: Ref, name: &str| reloaded.get(r).unwrap().properties().get(name).cloned();
+        let string = |s: &str| Some(Variant::String(s.to_owned()));
+        assert_eq!(got(set, "Texture"), string("rbxassetid://2"));
+        assert_eq!(got(cleared, "Texture"), string(""));
+        assert_eq!(got(set, "TextureContent"), Some(uri));
     }
 
     #[test]
