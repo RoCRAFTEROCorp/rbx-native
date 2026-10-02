@@ -1005,11 +1005,6 @@ impl Shell {
         cx.notify();
     }
 
-    /// Puts the docks back where they started.
-    ///
-    /// The companion every persisted layout needs: a dock dragged to a few
-    /// pixels wide is saved that way, and without this the only way back is
-    /// to find and delete the settings file.
     pub(super) fn named_layouts(&self) -> &[crate::settings::NamedLayout] {
         &self.named_layouts
     }
@@ -1068,6 +1063,11 @@ impl Shell {
         }
     }
 
+    /// Puts the docks back where they started.
+    ///
+    /// The companion every persisted layout needs: a dock dragged to a few
+    /// pixels wide is saved that way, and without this the only way back is
+    /// to find and delete the settings file.
     pub(crate) fn reset_layout(&mut self, cx: &mut Context<Self>) {
         self.layout = layout::Layout::default();
         self.output_collapsed = false;
