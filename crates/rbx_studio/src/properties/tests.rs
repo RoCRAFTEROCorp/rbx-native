@@ -971,7 +971,7 @@ fn udim2_edits_as_four_labeled_fields() {
 }
 
 #[test]
-fn rows_group_by_category_in_alphabetical_order_with_no_empty_groups() {
+fn rows_group_by_category_in_studio_order_with_no_empty_groups() {
     let rows = properties(&[
         ("Anchored", Variant::Bool(true)),
         (
@@ -991,23 +991,43 @@ fn rows_group_by_category_in_alphabetical_order_with_no_empty_groups() {
         .iter()
         .map(|(category, _)| category.as_str())
         .collect();
-    // Every category a Part's rows fall in, the ones its defaults fill in
-    // included.
+    // Studio's ranked categories first, then the rest by name.
     assert_eq!(
         categories,
         [
             "Appearance",
-            "Assembly",
+            "Data",
+            "Transform",
+            "Pivot",
             "Behavior",
             "Collision",
-            "Data",
             "Part",
-            "Pivot",
+            "Assembly",
             "Surface",
-            "Transform"
         ]
     );
     assert!(groups.iter().all(|(_, rows)| !rows.is_empty()));
+}
+
+#[test]
+fn unranked_categories_sort_by_name_after_ranked_ones() {
+    let rows = ["Zzz", UNCATEGORIZED, "Aaa", "Part", "Data"]
+        .into_iter()
+        .map(|category| PropertyRow {
+            name: category.into(),
+            value: String::new(),
+            category: category.into(),
+            edit: None,
+            mixed: false,
+        })
+        .collect();
+
+    let groups = group_by_category(rows);
+    let categories: Vec<&str> = groups
+        .iter()
+        .map(|(category, _)| category.as_str())
+        .collect();
+    assert_eq!(categories, ["Data", "Part", "Aaa", UNCATEGORIZED, "Zzz"]);
 }
 
 /// A Workspace holding one instance of `class` carrying `values`, for the
