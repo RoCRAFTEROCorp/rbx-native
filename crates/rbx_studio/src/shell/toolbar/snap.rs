@@ -14,6 +14,9 @@
 //! increment to apply to yet, and a live-looking control that does nothing
 //! would say less than a visibly disabled one.
 
+use std::cell::Cell;
+use std::rc::Rc;
+
 use gpui_kit::assets::IconName;
 use gpui_kit::component::input::{Input, InputEvent, InputState, NumberInputEvent, StepAction};
 use gpui_kit::component::{h_flex, v_flex, Icon};
@@ -32,8 +35,8 @@ use super::super::{rows, Shell};
 /// rebuilt under a keystroke loses the caret, and this one is typed into while
 /// the viewport beside it is redrawing continuously.
 pub(crate) struct SnapFields {
-    translate: Entity<InputState>,
-    rotate: Entity<InputState>,
+    translate: NumberField,
+    rotate: NumberField,
 }
 
 impl SnapFields {
@@ -44,49 +47,35 @@ impl SnapFields {
         window: &mut Window,
         cx: &mut Context<Shell>,
     ) -> (Self, [Subscription; 4]) {
-        let fields = SnapFields {
-            translate: field(transform.translate, window, cx),
-            rotate: field(transform.rotate, window, cx),
-        };
+        let (translate, translate_typed) =
+            field(transform.translate, SnapKind::Translate, window, cx);
+        let (rotate, rotate_typed) = field(transform.rotate, SnapKind::Rotate, window, cx);
         let subscriptions = [
-            watch(&fields.translate, SnapKind::Translate, window, cx),
-            watch(&fields.rotate, SnapKind::Rotate, window, cx),
-            watch_steps(&fields.translate, SnapKind::Translate, window, cx),
-            watch_steps(&fields.rotate, SnapKind::Rotate, window, cx),
+            translate_typed,
+            rotate_typed,
+            watch_steps(&translate.input, SnapKind::Translate, window, cx),
+            watch_steps(&rotate.input, SnapKind::Rotate, window, cx),
         ];
+        let fields = SnapFields { translate, rotate };
         (fields, subscriptions)
     }
 
-    /// Rewrites a field whose text no longer says its increment, as after a
-    /// change from Settings. A field being typed in is left alone: "1." on
-    /// the way to "1.5" is not a disagreement to correct, and is committed
-    /// on Enter or blur (see `commit_on_enter`).
+    /// Every render: see [`NumberField::sync`].
     pub(crate) fn sync(
         &self,
         transform: crate::transform::Transform,
         window: &mut Window,
         cx: &mut App,
     ) {
-        for (input, increment) in [
-            (&self.translate, transform.translate.increment),
-            (&self.rotate, transform.rotate.increment),
-        ] {
-            let state = input.read(cx);
-            if state.focus_handle(cx).is_focused(window)
-                || transform::parse_increment(&state.value()) == Some(increment)
-            {
-                continue;
-            }
-            input.update(cx, |state, cx| {
-                state.set_value(format!("{increment}"), window, cx)
-            });
-        }
+        self.translate
+            .sync(transform.translate.increment, window, cx);
+        self.rotate.sync(transform.rotate.increment, window, cx);
     }
 
     fn of(&self, kind: SnapKind) -> &Entity<InputState> {
         match kind {
-            SnapKind::Translate => &self.translate,
-            SnapKind::Rotate => &self.rotate,
+            SnapKind::Translate => &self.translate.input,
+            SnapKind::Rotate => &self.rotate.input,
         }
     }
 
@@ -101,53 +90,111 @@ impl SnapFields {
     }
 }
 
-fn field(snap: Snap, window: &mut Window, cx: &mut Context<Shell>) -> Entity<InputState> {
-    cx.new(|cx| InputState::new(window, cx).default_value(format!("{}", snap.increment)))
-}
-
-/// On Enter or blur, not per keystroke: "0.5" passes through "0" and "0.",
-/// and a per-keystroke field applied the zero, saving settings.json each
-/// time.
-fn watch(
-    input: &Entity<InputState>,
+/// On Enter or leaving the field, not per keystroke: "0.5" passes through
+/// "0" and "0.", and a per-keystroke field applied the zero, saving
+/// settings.json each time.
+fn field(
+    snap: Snap,
     kind: SnapKind,
-    window: &Window,
+    window: &mut Window,
     cx: &mut Context<Shell>,
-) -> Subscription {
-    commit_on_enter(input, window, cx, move |shell, text, cx| {
+) -> (NumberField, Subscription) {
+    NumberField::new(snap.increment, window, cx, move |shell, text, cx| {
         shell.commit_snap_increment(kind, text, cx)
     })
 }
 
-/// Commits a number field on Enter or blur, not per keystroke, so the `8` on
-/// the way to `80` never lands, and only once it was typed in, so leaving an
-/// untouched field doesn't put back a value reset meanwhile. `commit`
-/// applies what it accepts of the text and returns the value then in effect,
-/// which the field is rewritten to: a clamped or refused entry shows what was
-/// kept. Shared with Studio Settings' number fields.
-pub(in crate::shell) fn commit_on_enter<T: 'static>(
-    input: &Entity<InputState>,
-    window: &Window,
-    cx: &mut Context<T>,
-    commit: impl Fn(&mut T, &str, &mut Context<T>) -> f32 + 'static,
-) -> Subscription {
-    let mut edited = false;
-    cx.subscribe_in(
-        input,
-        window,
-        move |this, input, event: &InputEvent, window, cx| match event {
-            InputEvent::Change => edited = true,
-            InputEvent::PressEnter { .. } | InputEvent::Blur if edited => {
-                edited = false;
-                let text = input.read(cx).value().to_string();
-                let kept = format!("{}", commit(this, &text, cx));
-                if text.trim() != kept {
-                    input.update(cx, |state, cx| state.set_value(kept, window, cx));
+/// A number field committed on Enter or once focus leaves it, never per
+/// keystroke, so the `8` on the way to `80` never lands. Shared with Studio
+/// Settings' number fields.
+pub(in crate::shell) struct NumberField {
+    pub(in crate::shell) input: Entity<InputState>,
+    /// Typed in since the last commit. The render-time [`sync`](Self::sync)
+    /// must not rewrite such a field from the setting, or the commit would
+    /// see the old value.
+    typed: Rc<Cell<bool>>,
+}
+
+/// What [`NumberField::sync`] does with a field this render.
+#[derive(Debug, PartialEq)]
+enum Resync {
+    Leave,
+    /// Focus left with typed text in it.
+    Commit,
+    /// The setting changed elsewhere (a reset, the other editor).
+    Rewrite,
+}
+
+fn resync(focused: bool, typed: bool, shown: Option<f32>, value: f32) -> Resync {
+    if focused {
+        Resync::Leave
+    } else if typed {
+        Resync::Commit
+    } else if shown != Some(value) {
+        Resync::Rewrite
+    } else {
+        Resync::Leave
+    }
+}
+
+impl NumberField {
+    /// `commit` applies what it accepts of the text and returns the value
+    /// then in effect, which the field is rewritten to: a clamped or refused
+    /// entry shows what was kept.
+    pub(in crate::shell) fn new<T: 'static>(
+        value: f32,
+        window: &mut Window,
+        cx: &mut Context<T>,
+        commit: impl Fn(&mut T, &str, &mut Context<T>) -> f32 + 'static,
+    ) -> (Self, Subscription) {
+        let input = cx.new(|cx| InputState::new(window, cx).default_value(format!("{value}")));
+        let typed = Rc::new(Cell::new(false));
+        let subscription = cx.subscribe_in(&input, window, {
+            let typed = typed.clone();
+            move |this, input, event: &InputEvent, window, cx| match event {
+                InputEvent::Change => typed.set(true),
+                InputEvent::PressEnter { .. } | InputEvent::Blur if typed.get() => {
+                    typed.set(false);
+                    let text = input.read(cx).value().to_string();
+                    let kept = format!("{}", commit(this, &text, cx));
+                    if text.trim() != kept {
+                        input.update(cx, |state, cx| state.set_value(kept, window, cx));
+                    }
                 }
+                _ => {}
             }
-            _ => {}
-        },
-    )
+        });
+        (NumberField { input, typed }, subscription)
+    }
+
+    /// Run every render with the setting's value. A field focus has left with
+    /// typed text in it is committed from here: gpui sends `Blur` only after
+    /// the frame focus moved in has been drawn (`Window::draw` runs focus
+    /// listeners after `draw_roots`), and never while the window is
+    /// inactive. Otherwise an unfocused field is rewritten from the setting
+    /// when it changed elsewhere.
+    pub(in crate::shell) fn sync(&self, value: f32, window: &mut Window, cx: &mut App) {
+        let state = self.input.read(cx);
+        let focused = state.focus_handle(cx).is_focused(window);
+        let shown = state.value().trim().parse::<f32>().ok();
+        match resync(focused, self.typed.get(), shown, value) {
+            Resync::Leave => {}
+            Resync::Commit => self.commit_typed(cx),
+            Resync::Rewrite => self.input.update(cx, |state, cx| {
+                state.set_value(format!("{value}"), window, cx)
+            }),
+        }
+    }
+
+    /// Commits typed text, as Enter would, for a field whose window is
+    /// closing. A field that wasn't typed in is left alone, so it can't put
+    /// back a value reset meanwhile. The commit runs once the current update
+    /// ends, and needs the window still open then.
+    pub(in crate::shell) fn commit_typed(&self, cx: &mut App) {
+        if self.typed.get() {
+            self.input.update(cx, |_, cx| cx.emit(InputEvent::Blur));
+        }
+    }
 }
 
 /// The spinner buttons §5.1 puts on a numeric field. One press is one
@@ -384,7 +431,20 @@ impl Shell {
 
 #[cfg(test)]
 mod tests {
-    use super::studs;
+    use super::{resync, studs, Resync};
+
+    #[test]
+    fn a_field_left_with_typed_text_commits_rather_than_resyncs() {
+        // Still being typed in: left alone, whatever it shows.
+        assert_eq!(resync(true, true, Some(2.), 32.), Resync::Leave);
+        assert_eq!(resync(true, false, Some(2.), 32.), Resync::Leave);
+        // Focus left with `20` typed over 32: commit it, don't write 32 back.
+        assert_eq!(resync(false, true, Some(20.), 32.), Resync::Commit);
+        // Changed elsewhere (a reset) and not typed in: show the setting.
+        assert_eq!(resync(false, false, Some(20.), 13.), Resync::Rewrite);
+        assert_eq!(resync(false, false, None, 13.), Resync::Rewrite);
+        assert_eq!(resync(false, false, Some(13.), 13.), Resync::Leave);
+    }
 
     #[test]
     fn the_pill_says_stud_for_exactly_one_and_studs_otherwise() {

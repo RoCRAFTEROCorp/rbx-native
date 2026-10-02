@@ -8,18 +8,17 @@ use gpui_kit::*;
 
 use crate::settings::DraggerSettings;
 use crate::tokens;
-use crate::transform::{self, SnapKind, Transform};
+use crate::transform::{SnapKind, Transform};
 
-use super::super::toolbar::snap::commit_on_enter;
+use super::super::toolbar::snap::NumberField;
 use super::super::Shell;
 use super::kit::{toggle, Row, Section};
 use super::SettingsWindow;
 
-/// The increment fields: committed on Enter or blur, and rewritten from the
-/// setting whenever it changed elsewhere and the field isn't focused.
+/// The increment fields, committed on Enter or leaving the field.
 pub(super) struct Increments {
-    pub(super) translate: Entity<InputState>,
-    pub(super) rotate: Entity<InputState>,
+    pub(super) translate: NumberField,
+    pub(super) rotate: NumberField,
 }
 
 /// One dragger switch: which field of [`DraggerSettings`] it flips.
@@ -34,38 +33,19 @@ impl Increments {
         let mut subscriptions = Vec::new();
         let mut field = |kind: SnapKind, cx: &mut Context<SettingsWindow>| {
             let value = shell.read(cx).snap_increment(kind);
-            let input = cx.new(|cx| InputState::new(window, cx).default_value(format!("{value}")));
-            // On Enter or blur, by the popover's own rule.
-            subscriptions.push(commit_on_enter(
-                &input,
-                window,
-                cx,
-                move |this, text, cx| {
-                    this.shell
-                        .update(cx, |shell, cx| shell.commit_snap_increment(kind, text, cx))
-                },
-            ));
-            input
+            // By the popover's own rule.
+            let (field, typed) = NumberField::new(value, window, cx, move |this, text, cx| {
+                this.shell
+                    .update(cx, |shell, cx| shell.commit_snap_increment(kind, text, cx))
+            });
+            subscriptions.push(typed);
+            field
         };
         let increments = Increments {
             translate: field(SnapKind::Translate, cx),
             rotate: field(SnapKind::Rotate, cx),
         };
         (increments, subscriptions)
-    }
-
-    fn sync(&self, [translate, rotate]: [f32; 2], window: &mut Window, cx: &mut App) {
-        for (input, increment) in [(&self.translate, translate), (&self.rotate, rotate)] {
-            let state = input.read(cx);
-            if state.focus_handle(cx).is_focused(window)
-                || transform::parse_increment(&state.value()) == Some(increment)
-            {
-                continue;
-            }
-            input.update(cx, |state, cx| {
-                state.set_value(format!("{increment}"), window, cx)
-            });
-        }
     }
 }
 
@@ -83,9 +63,11 @@ impl SettingsWindow {
                 shell.snap_increment(SnapKind::Rotate),
             )
         };
-        self.increments.sync([translate, rotate], window, cx);
-        let focused = [&self.increments.translate, &self.increments.rotate]
-            .map(|input| input.read(cx).focus_handle(cx).is_focused(window));
+        let focused = [
+            &self.increments.translate.input,
+            &self.increments.rotate.input,
+        ]
+        .map(|input| input.read(cx).focus_handle(cx).is_focused(window));
         let defaults = DraggerSettings::default();
         let switch = |id: &'static str, label, description, field: Switch| {
             let on = *field(&mut { dragger });
@@ -149,7 +131,7 @@ impl SettingsWindow {
                 ),
                 Row::new(
                     "Move increment",
-                    number(&self.increments.translate, "studs", focused[0]),
+                    number(&self.increments.translate.input, "studs", focused[0]),
                 )
                 .describe("Also in the ribbon\u{2019}s Snap popover.")
                 .changed(
@@ -164,7 +146,7 @@ impl SettingsWindow {
                 ),
                 Row::new(
                     "Rotate increment",
-                    number(&self.increments.rotate, "\u{b0}", focused[1]),
+                    number(&self.increments.rotate.input, "\u{b0}", focused[1]),
                 )
                 .describe("Snap angle for the Rotate tool.")
                 .changed(rotate != defaults.rotate.increment, move |shell, cx| {

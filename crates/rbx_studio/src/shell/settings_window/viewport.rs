@@ -12,7 +12,7 @@ use crate::pacing::UnfocusedFps;
 use crate::settings::FEEL_SCALE_RANGE;
 use crate::tokens;
 
-use super::super::toolbar::snap::commit_on_enter;
+use super::super::toolbar::snap::NumberField;
 use super::super::Shell;
 use super::dragger::{committed, number};
 use super::kit::{self, mono, readout, segmented, slider, text, toggle, Row, Section};
@@ -307,7 +307,6 @@ impl SettingsWindow {
     fn advanced(&mut self, window: &mut Window, cx: &mut Context<Self>) -> Section {
         let open = self.advanced_open;
         let calibration = self.shell.read(cx).calibration();
-        self.calibration.sync(calibration, window, cx);
         let disclosure = h_flex()
             .id("calibration")
             .w_full()
@@ -348,7 +347,11 @@ impl SettingsWindow {
             vec![
                 Row::new(
                     "SUN_BASE",
-                    number(&fields.sun_base, "", focused(&fields.sun_base, cx)),
+                    number(
+                        &fields.sun_base.input,
+                        "",
+                        focused(&fields.sun_base.input, cx),
+                    ),
                 )
                 .mono()
                 .describe("The sun lamp\u{2019}s strength at Brightness 1.")
@@ -362,7 +365,11 @@ impl SettingsWindow {
                 ),
                 Row::new(
                     "ATMOSPHERE_DENSITY_SCALE",
-                    number(&fields.atmosphere, "", focused(&fields.atmosphere, cx)),
+                    number(
+                        &fields.atmosphere.input,
+                        "",
+                        focused(&fields.atmosphere.input, cx),
+                    ),
                 )
                 .mono()
                 .describe("Haze per stud at Atmosphere Density 1.")
@@ -376,7 +383,11 @@ impl SettingsWindow {
                 ),
                 Row::new(
                     "PLASTIC_SPEC_STRENGTH",
-                    number(&fields.plastic, "", focused(&fields.plastic, cx)),
+                    number(
+                        &fields.plastic.input,
+                        "",
+                        focused(&fields.plastic.input, cx),
+                    ),
                 )
                 .mono()
                 .describe("Plastic\u{2019}s highlight; every textured material scales from it.")
@@ -406,13 +417,12 @@ impl SettingsWindow {
 type Value = fn(&mut rbx_viewer::Calibration) -> &mut f32;
 
 /// Advanced's three calibration fields. Typed into as numbers, applied on
-/// Enter or blur when in range (see `settings::calibration_range`) and put
-/// back otherwise, like settings.json refuses one, and put back from the
-/// setting whenever they are not focused, so a reset shows.
+/// Enter or leaving the field when in range (see `settings::calibration_range`)
+/// and put back otherwise, like settings.json refuses one.
 pub(super) struct CalibrationFields {
-    pub(super) sun_base: Entity<InputState>,
-    pub(super) atmosphere: Entity<InputState>,
-    pub(super) plastic: Entity<InputState>,
+    pub(super) sun_base: NumberField,
+    pub(super) atmosphere: NumberField,
+    pub(super) plastic: NumberField,
 }
 
 impl CalibrationFields {
@@ -426,25 +436,20 @@ impl CalibrationFields {
         let mut field = |value: Value, cx: &mut Context<SettingsWindow>| {
             let mut seed = current;
             let shown = *value(&mut seed);
-            let input = cx.new(|cx| InputState::new(window, cx).default_value(format!("{shown}")));
-            subscriptions.push(commit_on_enter(
-                &input,
-                window,
-                cx,
-                move |this, text, cx| {
-                    let mut tuned = rbx_viewer::Calibration::default();
-                    let range = crate::settings::calibration_range(*value(&mut tuned));
-                    if let Some(typed) = committed(text, range, false) {
-                        this.shell.update(cx, |shell, cx| {
-                            let mut calibration = shell.calibration();
-                            *value(&mut calibration) = typed;
-                            shell.set_calibration(calibration, cx);
-                        });
-                    }
-                    *value(&mut this.shell.read(cx).calibration())
-                },
-            ));
-            input
+            let (field, typed) = NumberField::new(shown, window, cx, move |this, text, cx| {
+                let mut tuned = rbx_viewer::Calibration::default();
+                let range = crate::settings::calibration_range(*value(&mut tuned));
+                if let Some(typed) = committed(text, range, false) {
+                    this.shell.update(cx, |shell, cx| {
+                        let mut calibration = shell.calibration();
+                        *value(&mut calibration) = typed;
+                        shell.set_calibration(calibration, cx);
+                    });
+                }
+                *value(&mut this.shell.read(cx).calibration())
+            });
+            subscriptions.push(typed);
+            field
         };
         let fields = CalibrationFields {
             sun_base: field(|c| &mut c.sun_base, cx),
@@ -452,24 +457,6 @@ impl CalibrationFields {
             plastic: field(|c| &mut c.plastic_spec_strength, cx),
         };
         (fields, subscriptions)
-    }
-
-    fn sync(&self, calibration: rbx_viewer::Calibration, window: &mut Window, cx: &mut App) {
-        for (input, value) in [
-            (&self.sun_base, calibration.sun_base),
-            (&self.atmosphere, calibration.atmosphere_density_scale),
-            (&self.plastic, calibration.plastic_spec_strength),
-        ] {
-            let state = input.read(cx);
-            if state.focus_handle(cx).is_focused(window)
-                || state.value().trim().parse::<f32>().ok() == Some(value)
-            {
-                continue;
-            }
-            input.update(cx, |state, cx| {
-                state.set_value(format!("{value}"), window, cx)
-            });
-        }
     }
 }
 

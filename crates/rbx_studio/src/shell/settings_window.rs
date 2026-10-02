@@ -18,6 +18,7 @@ use gpui_kit::*;
 
 use crate::tokens;
 
+use super::toolbar::snap::NumberField;
 use super::Shell;
 
 mod appearance;
@@ -148,19 +149,35 @@ impl SettingsWindow {
         .ok()
     }
 
-    /// Commits what a number field holds typed but not yet committed, as its
-    /// blur would: closing a window blurs nothing (see `commit_on_enter`,
-    /// which leaves a field that wasn't typed in alone).
+    /// The six number fields with their settings' values.
+    fn numbers(&self, cx: &App) -> [(&NumberField, f32); 6] {
+        use crate::transform::SnapKind;
+        let shell = self.shell.read(cx);
+        let calibration = shell.calibration();
+        [
+            (&self.appearance.script_font, shell.script_font_size()),
+            (&self.calibration.sun_base, calibration.sun_base),
+            (
+                &self.calibration.atmosphere,
+                calibration.atmosphere_density_scale,
+            ),
+            (&self.calibration.plastic, calibration.plastic_spec_strength),
+            (
+                &self.increments.translate,
+                shell.snap_increment(SnapKind::Translate),
+            ),
+            (
+                &self.increments.rotate,
+                shell.snap_increment(SnapKind::Rotate),
+            ),
+        ]
+    }
+
+    /// Commits what a number field holds typed but not yet committed:
+    /// closing a window blurs nothing (see `NumberField::commit_typed`).
     fn commit_typed(&self, cx: &mut App) {
-        for input in [
-            &self.appearance.script_font,
-            &self.calibration.sun_base,
-            &self.calibration.atmosphere,
-            &self.calibration.plastic,
-            &self.increments.translate,
-            &self.increments.rotate,
-        ] {
-            input.update(cx, |_, cx| cx.emit(InputEvent::Blur));
+        for (field, _) in self.numbers(cx) {
+            field.commit_typed(cx);
         }
     }
 
@@ -294,6 +311,11 @@ impl Render for SettingsWindow {
                 let anchor = point(right - px(280.), swatch.bottom() + px(3.));
                 self.open_picker(appearance::Target::Accent, start, anchor, window, cx);
             }
+        }
+        // Every render, whichever page is shown, so a field left by
+        // switching pages still commits.
+        for (field, value) in self.numbers(cx) {
+            field.sync(value, window, cx);
         }
         let picker = self.picker_popover(cx);
         let closing = cx.entity().downgrade();
