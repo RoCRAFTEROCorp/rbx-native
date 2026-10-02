@@ -24,7 +24,9 @@ And, in `src/tree.rs`, a click on a row only selects it rather than also
 expanding it (Roblox Studio expands from the arrow alone), plus a public
 `TreeState::toggle_expanded` for the Explorer's chevron to call, and
 `rebuild_entries` keeping the selection on its item (by id) rather than on
-a bare index that expanding a row above it would shift. All are marked
+a bare index that expanding a row above it would shift, and remembering
+it (`hidden_selection`) while a collapsed parent hides its row, so
+expanding the parent selects it again. All are marked
 "rbx-native addition"; the last is tested from `rbx_studio`
 (`shell/tree_keys/tests.rs`), since this crate's own tests do not run
 inside the workspace.

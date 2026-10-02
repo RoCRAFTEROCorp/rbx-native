@@ -191,9 +191,20 @@ fn the_tree_selection_follows_its_item_across_expansion(cx: &mut gpui_kit::TestA
         assert_eq!(selected(tree).as_deref(), Some("Players"));
         tree.toggle_expanded(0, cx);
         assert_eq!(selected(tree).as_deref(), Some("Players"));
-        // Collapsing the selection's own parent hides it: nothing selected.
+        // Collapsing the selection's own parent hides it: no row selected.
         tree.set_selected_index(Some(2), cx);
         assert_eq!(selected(tree).as_deref(), Some("Player1"));
+        tree.toggle_expanded(1, cx);
+        assert_eq!(tree.selected_index(), None);
+        // Expanding it again brings the selection back, even with another
+        // row opened and closed above it in between.
+        tree.toggle_expanded(0, cx);
+        tree.toggle_expanded(0, cx);
+        tree.toggle_expanded(1, cx);
+        assert_eq!(selected(tree).as_deref(), Some("Player1"));
+        // An explicit deselect while hidden is not undone by expanding.
+        tree.toggle_expanded(1, cx);
+        tree.set_selected_index(None, cx);
         tree.toggle_expanded(1, cx);
         assert_eq!(tree.selected_index(), None);
     });
