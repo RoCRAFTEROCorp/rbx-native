@@ -57,6 +57,8 @@ pub(crate) struct SettingsWindow {
     shell: Entity<Shell>,
     page: Page,
     search: Entity<InputState>,
+    /// Layout's name field for a new named layout.
+    layout_name: Entity<InputState>,
     sliders: viewport::Sliders,
     /// Matching rows per page while a search is typed, for the nav.
     search_counts: Vec<(Page, usize)>,
@@ -156,6 +158,16 @@ impl SettingsWindow {
             }
             state
         });
+        let layout_name = cx.new(|cx| InputState::new(window, cx).placeholder("Name this layout"));
+        subscriptions.push(cx.subscribe_in(
+            &layout_name,
+            window,
+            |this, _, event: &InputEvent, window, cx| {
+                if matches!(event, InputEvent::PressEnter { .. }) {
+                    this.save_named_layout(window, cx);
+                }
+            },
+        ));
         // Anything that changes a setting elsewhere — the dock, a menu —
         // notifies the shell; this window has nothing of its own to redraw
         // from.
@@ -173,6 +185,7 @@ impl SettingsWindow {
             shell,
             page,
             search,
+            layout_name,
             sliders,
             search_counts: Vec::new(),
             increments,

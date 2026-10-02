@@ -1,12 +1,15 @@
 //! The Explorer & Output, Layout and Accessibility pages.
 
+use gpui_kit::component::input::Input;
 use gpui_kit::component::{h_flex, v_flex};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
 use crate::tokens;
 
-use super::kit::{icon, secondary_button, segmented, still_toggle, text, toggle, Row, Section};
+use super::kit::{
+    ghost_icon, icon, secondary_button, segmented, still_toggle, text, toggle, Row, Section,
+};
 use super::nav::Page;
 use super::SettingsWindow;
 
@@ -137,34 +140,47 @@ impl SettingsWindow {
     }
 
     pub(super) fn layout_page(&mut self, cx: &mut Context<Self>) -> Vec<Section> {
-        let collapsed = self.shell.read(cx).output_collapsed;
-        let layouts = [
-            (
-                "Build",
-                "Explorer left, Properties right, Output bottom",
-                true,
-            ),
-            ("Scripting", "Script Editor wide, Explorer left", false),
-            ("Review", "Argon and Output stacked right", false),
-        ];
+        let (collapsed, saved) = {
+            let shell = self.shell.read(cx);
+            let saved: Vec<(String, bool)> = shell
+                .named_layouts()
+                .iter()
+                .map(|named| (named.name.clone(), shell.is_current_layout(named)))
+                .collect();
+            (shell.output_collapsed, saved)
+        };
         let list = v_flex()
             .gap(px(6.))
-            .children(layouts.map(|(name, what, active)| {
+            .when(saved.is_empty(), |this| {
+                this.child(
+                    text(11.5, 16.)
+                        .text_color(tokens::text3())
+                        .child("Nothing saved yet."),
+                )
+            })
+            .children(saved.into_iter().map(|(name, active)| {
+                let apply = name.clone();
+                let delete = name.clone();
                 h_flex()
+                    .id(SharedString::from(format!("layout-{name}")))
                     .h(px(40.))
                     .px(px(12.))
                     .gap(px(10.))
                     .items_center()
                     .border_1()
                     .rounded(px(6.))
+                    .cursor_pointer()
                     .map(|this| {
                         if active {
                             this.border_color(tokens::accent_line())
                                 .bg(tokens::accent_soft())
                         } else {
-                            this.border_color(tokens::border()).bg(tokens::dock())
+                            this.border_color(tokens::border())
+                                .bg(tokens::dock())
+                                .hover(|this| this.bg(tokens::hover()))
                         }
                     })
+                    .on_click(self.set(move |shell, cx| shell.apply_named_layout(&apply, cx)))
                     .child(
                         div()
                             .text_color(tokens::text2())
@@ -172,16 +188,12 @@ impl SettingsWindow {
                     )
                     .child(
                         div()
+                            .flex_1()
+                            .min_w_0()
+                            .truncate()
                             .text_size(px(12.))
                             .font_weight(FontWeight::SEMIBOLD)
-                            .child(name),
-                    )
-                    .child(
-                        div()
-                            .flex_1()
-                            .text_size(px(11.5))
-                            .text_color(tokens::text2())
-                            .child(what),
+                            .child(name.clone()),
                     )
                     .when(active, |this| {
                         this.child(
@@ -192,6 +204,21 @@ impl SettingsWindow {
                                 .child("Active"),
                         )
                     })
+                    .child(
+                        ghost_icon(
+                            SharedString::from(format!("delete-layout-{name}")),
+                            "trash",
+                            "Delete",
+                        )
+                        .on_click({
+                            let shell = self.shell.clone();
+                            move |_, _, cx| {
+                                cx.stop_propagation();
+                                shell
+                                    .update(cx, |shell, cx| shell.delete_named_layout(&delete, cx));
+                            }
+                        }),
+                    )
             }));
         let docks = Section::new(
             "Docks",
@@ -214,16 +241,48 @@ impl SettingsWindow {
                 .changed(collapsed, |shell, cx| shell.set_output_collapsed(false, cx)),
             ],
         );
+        let field = self.layout_name.clone();
+        let save = h_flex()
+            .gap(px(8.))
+            .items_center()
+            .child(
+                h_flex()
+                    .w(px(180.))
+                    .h(px(30.))
+                    .px(px(10.))
+                    .items_center()
+                    .border_1()
+                    .border_color(tokens::border2())
+                    .rounded(px(6.))
+                    .bg(tokens::dock())
+                    .child(Input::new(&field).appearance(false)),
+            )
+            .child(
+                secondary_button("save-layout", "plus", "Save current").on_click(
+                    cx.listener(|this, _, window, cx| this.save_named_layout(window, cx)),
+                ),
+            );
         let named = Section::new(
             "Named layouts",
-            vec![Row::new("Saved layouts", secondary_button("save-layout", "plus", "Save current\u{2026}"))
+            vec![Row::new("Saved layouts", save)
                 .describe(
-                    "Save the current arrangement under a name and switch between them, like Blender workspaces.",
+                    "Save the current arrangement under a name, then click one to switch to it. Saving under a name you have already used replaces it.",
                 )
-                .soon()
                 .below(list)],
         );
         vec![docks, named]
+    }
+
+    /// Saves the arrangement under the typed name and empties the field.
+    pub(super) fn save_named_layout(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let name = self.layout_name.read(cx).value().to_string();
+        if name.trim().is_empty() {
+            return;
+        }
+        self.shell
+            .update(cx, |shell, cx| shell.save_named_layout(&name, cx));
+        self.layout_name
+            .update(cx, |state, cx| state.set_value("", window, cx));
     }
 
     pub(super) fn accessibility_page(&mut self, cx: &mut Context<Self>) -> Vec<Section> {

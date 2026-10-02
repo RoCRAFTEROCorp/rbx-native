@@ -2,6 +2,10 @@
 
 ## 2026-10-01
 
+- **Named dock layouts.** Studio Settings › Layout can now save the current
+  arrangement of docks under a name and switch back to it with a click —
+  which panels sit where, how big, and which float or are closed. The one
+  in use is marked Active, and each can be deleted. — @Vikmanou
 - **Auto-Recovery.** While a place has unsaved changes, the editor now
   writes a copy of it in the background every few minutes, so a crash or a
   killed window costs minutes of work instead of everything since the last

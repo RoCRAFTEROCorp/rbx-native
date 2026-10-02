@@ -1441,6 +1441,13 @@ Roblox's own engine.
   (`service_overrides`), so a service Studio later starts or stops listing
   still follows Studio unless it was chosen here. The row's reset puts
   Studio's set back.
+- [x] **Named dock layouts** in Studio Settings › Layout (Blender's
+  workspaces): the current arrangement saved under a name — every edge's
+  docks, tabs and size, and which panels float or are shut — and switched
+  back to with a click, through the same `Layout::restore` a launch uses,
+  so a floating panel gets its window back. The one matching the docks is
+  marked Active; saving under a used name replaces it, and each has a
+  delete. Kept in `settings.json` as `named_layouts`.
 
 ### Platform
 - [x] Linux (X11) — the daily-driven target.
@@ -1884,8 +1891,6 @@ against `Roblox/creator-docs` rather than assumed:
     split between `window.zoomLevel` and `editor.fontSize`. The script
     editor's half shipped as Settings' Script font size; the viewport's
     text still has only the UI scale.
-  - **Named dock layouts.** Sizes persist and Reset Layout exists; saving
-    several under names (Blender's "workspaces") is the piece that does not.
   - **44×44 targets on primary and destructive controls by default** (2.5.5),
     rather than only when Large Click Targets is on — Save, Delete, and
     Play/Stop once they exist.
@@ -2023,7 +2028,7 @@ against `Roblox/creator-docs` rather than assumed:
   `PLASTIC_SPEC_STRENGTH` and the quality bands as real settings; the two
   WGSL ones are compile-time shader constants today and need a uniform),
   Play's **test-copy name**,
-  **several accounts**, **named layouts**, the
+  **several accounts**, the
   eyedropper in the colour popover (GPUI has no way to sample the
   screen), and
   **Keyboard shortcuts** — real Studio's own separate

@@ -85,6 +85,9 @@ pub(crate) struct Settings {
     /// Read back through `shell::Layout::restore`, which is total over
     /// whatever the file holds, so nothing here has to validate it.
     pub(crate) docks: SavedLayout,
+    /// Dock layouts saved under a name from Studio Settings › Layout, to
+    /// switch between (Blender's workspaces); see [`NamedLayout`].
+    pub(crate) named_layouts: Vec<NamedLayout>,
     pub(crate) output_collapsed: bool,
     /// Whether Output rows print their time.
     pub(crate) output_timestamps: bool,
@@ -106,6 +109,13 @@ pub(crate) struct Settings {
     pub(crate) argon_address: String,
     /// Argon's own plugin settings, per level — see [`argon::ArgonSettings`].
     pub(crate) argon: argon::ArgonSettings,
+}
+
+/// A dock layout saved under a name.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct NamedLayout {
+    pub(crate) name: String,
+    pub(crate) layout: SavedLayout,
 }
 
 /// The Script Editor's default text size: the toolkit theme's own code size
@@ -154,6 +164,7 @@ impl Default for Settings {
             // defaults live with the layout in `shell::layout`, and
             // duplicating them here is how the two drift apart.
             docks: SavedLayout::default(),
+            named_layouts: Vec::new(),
             output_collapsed: false,
             output_timestamps: false,
             increment_names: true,
@@ -326,6 +337,7 @@ fn load_from(path: &Path) -> Settings {
             .unwrap_or(false),
         reduce_motion: value.get("reduce_motion").and_then(|v| v.as_bool()),
         docks: read_docks(&value),
+        named_layouts: read_named_layouts(&value),
         output_collapsed: value
             .get("output_collapsed")
             .and_then(|v| v.as_bool())
@@ -362,10 +374,11 @@ fn load_from(path: &Path) -> Settings {
 /// here has — a hand-edited or future-version settings file must not stop
 /// the editor from opening.
 fn read_docks(value: &serde_json::Value) -> SavedLayout {
-    let Some(docks) = value.get("docks") else {
-        return SavedLayout::default();
-    };
+    value.get("docks").map(read_layout).unwrap_or_default()
+}
 
+/// One saved layout's object — `docks`, or a named layout's `layout`.
+fn read_layout(docks: &serde_json::Value) -> SavedLayout {
     let names = |value: Option<&serde_json::Value>| -> Vec<String> {
         value
             .and_then(serde_json::Value::as_array)
@@ -441,6 +454,61 @@ fn parse_unfocused_fps(fps: u64) -> UnfocusedFps {
     }
 }
 
+/// [`read_layout`]'s inverse.
+fn layout_json(layout: &SavedLayout) -> serde_json::Value {
+    serde_json::json!({
+        "edges": layout
+            .edges
+            .iter()
+            .map(|edge| {
+                serde_json::json!({
+                    "edge": crate::shell::edge_key(edge.edge),
+                    "size": edge.size,
+                    "groups": edge
+                        .groups
+                        .iter()
+                        .map(|group| serde_json::json!({
+                            "panels": group.panels,
+                            "active": group.active,
+                        }))
+                        .collect::<Vec<_>>(),
+                })
+            })
+            .collect::<Vec<_>>(),
+        "floating": layout.floating,
+        "closed": layout.closed,
+    })
+}
+
+/// The saved named layouts. One without a name, or with a name an earlier
+/// entry already has, is left out: names are how they are told apart.
+fn read_named_layouts(value: &serde_json::Value) -> Vec<NamedLayout> {
+    let mut layouts: Vec<NamedLayout> = Vec::new();
+    for entry in value
+        .get("named_layouts")
+        .and_then(serde_json::Value::as_array)
+        .into_iter()
+        .flatten()
+    {
+        let Some(name) = entry
+            .get("name")
+            .and_then(serde_json::Value::as_str)
+            .map(str::trim)
+            .filter(|name| !name.is_empty())
+        else {
+            continue;
+        };
+        if layouts.iter().any(|named| named.name == name) {
+            continue;
+        }
+        layouts.push(NamedLayout {
+            name: name.to_owned(),
+            layout: entry.get("layout").map(read_layout).unwrap_or_default(),
+        });
+    }
+    layouts
+}
+
 fn save_to(settings: &Settings, path: &Path) -> Result<(), SettingsError> {
     let [camera, snap] = settings.controls.json();
     let value = serde_json::json!({
@@ -459,29 +527,15 @@ fn save_to(settings: &Settings, path: &Path) -> Result<(), SettingsError> {
         "script_font_size": settings.script_font_size,
         "large_targets": settings.large_targets,
         "reduce_motion": settings.reduce_motion,
-        "docks": {
-            "edges": settings
-                .docks
-                .edges
-                .iter()
-                .map(|edge| {
-                    serde_json::json!({
-                        "edge": crate::shell::edge_key(edge.edge),
-                        "size": edge.size,
-                        "groups": edge
-                            .groups
-                            .iter()
-                            .map(|group| serde_json::json!({
-                                "panels": group.panels,
-                                "active": group.active,
-                            }))
-                            .collect::<Vec<_>>(),
-                    })
-                })
-                .collect::<Vec<_>>(),
-            "floating": settings.docks.floating,
-            "closed": settings.docks.closed,
-        },
+        "docks": layout_json(&settings.docks),
+        "named_layouts": settings
+            .named_layouts
+            .iter()
+            .map(|named| serde_json::json!({
+                "name": named.name,
+                "layout": layout_json(&named.layout),
+            }))
+            .collect::<Vec<_>>(),
         "output_collapsed": settings.output_collapsed,
         "output_timestamps": settings.output_timestamps,
         "increment_names": settings.increment_names,
@@ -947,6 +1001,47 @@ mod tests {
             read.reduce_motion, None,
             "no recorded choice means follow the desktop, not 'off'"
         );
+    }
+
+    #[test]
+    fn named_layouts_round_trip_and_a_nameless_or_repeated_one_is_dropped() {
+        let path = temp_settings_path();
+        let layout = SavedLayout {
+            edges: vec![SavedEdge {
+                edge: Edge::Left,
+                groups: vec![SavedGroup {
+                    panels: vec!["Explorer".into()],
+                    active: 0,
+                }],
+                size: 320.,
+            }],
+            floating: vec!["Output".into()],
+            closed: Vec::new(),
+        };
+        let settings = Settings {
+            named_layouts: vec![NamedLayout {
+                name: "Scripting".into(),
+                layout: layout.clone(),
+            }],
+            ..Settings::default()
+        };
+        save_to(&settings, &path).expect("save settings");
+        assert_eq!(load_from(&path).named_layouts, settings.named_layouts);
+
+        std::fs::write(
+            &path,
+            br#"{"named_layouts": [
+                {"name": "  ", "layout": {}},
+                {"name": "Build", "layout": {}},
+                {"name": "Build", "layout": {"closed": ["Output"]}},
+                {"layout": {}}
+            ]}"#,
+        )
+        .expect("write settings");
+        let loaded = load_from(&path).named_layouts;
+        assert_eq!(loaded.len(), 1);
+        assert_eq!(loaded[0].name, "Build");
+        assert!(loaded[0].layout.closed.is_empty());
     }
 
     /// A hand-edited file must not be able to collapse the editor.
