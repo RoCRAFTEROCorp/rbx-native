@@ -232,6 +232,14 @@ pub(crate) struct Shell {
     attribute_edits: attributes_panel::AttributeEdits,
     /// Mirrors the tree's selected row (see [`Shell::sync_selection`]).
     selection: Selection,
+    /// Where a `Shift`-click's range starts in the Explorer: the row last
+    /// clicked plainly or with `Ctrl`/`Cmd` (see [`Shell::select_range`]).
+    range_anchor: Option<Ref>,
+    /// The row a `Shift`+arrow left the tree's cursor on, which a range from
+    /// the anchor does not start at: `sync_selection` must not read the
+    /// tree pointing there as a plain selection of it. Let go by any other
+    /// selection change and by a plain press on a row.
+    range_cursor: Option<Ref>,
     /// This window's own copy/paste clipboard, replaced whole by every
     /// `Ctrl+C` — see `shell::clipboard`.
     clipboard: Vec<clipboard::Clipped>,
@@ -623,6 +631,8 @@ impl Shell {
             edits: edit::Edits::default(),
             attribute_edits: attributes_panel::AttributeEdits::default(),
             selection: Selection::new(selected),
+            range_anchor: None,
+            range_cursor: None,
             clipboard: Vec::new(),
             script_templates: user.script_templates,
             hovered: Vec::new(),
@@ -907,7 +917,8 @@ impl Shell {
     /// to what it already showed means the user picked something else.
     fn sync_selection(&mut self, tree: &Entity<TreeState>, cx: &mut Context<Self>) {
         let selected = Selection::of_item(tree.read(cx).selected_item());
-        if selected == self.selection.get() {
+        if selected == self.selection.get() || (selected.is_some() && selected == self.range_cursor)
+        {
             return;
         }
         // A search can leave the selected instance without a row; the tree
@@ -920,6 +931,7 @@ impl Shell {
         if selected.is_none() && hidden && !self.explorer_query.is_empty() {
             return;
         }
+        self.range_anchor = selected;
         if self.selection.set(selected) {
             self.selection_changed(cx);
         }
@@ -931,6 +943,7 @@ impl Shell {
     /// Properties editor belonged to the old selection, and the viewport's
     /// outline and draggers have to move to the new one.
     fn selection_changed(&mut self, cx: &mut Context<Self>) {
+        self.range_cursor = None;
         self.edits.clear();
         self.attribute_edits.clear();
         self.sync_viewport_selection(cx);
@@ -1043,6 +1056,25 @@ impl Shell {
             self.explorer_query = query;
             self.push_root_rows(cx);
         }
+    }
+
+    /// Escape in the Explorer's search field: empties a typed search, as the
+    /// Settings window's does, and leaves the field focused. Returns false —
+    /// so the key goes on to the window — when there is nothing to clear or
+    /// a menu is open and should be the one to close.
+    pub(super) fn clear_explorer_search(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        if self.explorer_query.is_empty() || self.open_menu.is_some() {
+            return false;
+        }
+        // `set_value` emits no change event, so the rows are pushed here.
+        self.search
+            .update(cx, |state, cx| state.set_value("", window, cx));
+        self.search_explorer(String::new(), cx);
+        true
     }
 
     /// Lists or hides one service in the Explorer's default view, from

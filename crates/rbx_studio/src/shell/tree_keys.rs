@@ -89,6 +89,24 @@ pub(super) fn nav_for(keystroke: &Keystroke, is_folder: bool, expanded: bool) ->
     }
 }
 
+/// `Shift` with Up, Down, Home or End: the move that, instead of selecting
+/// the row it lands on, selects the range from the anchor to it (see
+/// [`Shell::extend_tree_range`]). Any other modifier with it is not the
+/// tree's.
+pub(super) fn range_nav_for(keystroke: &Keystroke) -> Option<Nav> {
+    let modifiers = keystroke.modifiers;
+    if !modifiers.shift || modifiers.control || modifiers.alt || modifiers.platform {
+        return None;
+    }
+    match keystroke.key.as_str() {
+        "up" => Some(Nav::Previous),
+        "down" => Some(Nav::Next),
+        "home" => Some(Nav::First),
+        "end" => Some(Nav::Last),
+        _ => None,
+    }
+}
+
 /// The four arrows, classified against the focused row's own state. Split
 /// from [`nav_for`] because the arrows arrive as actions and Home/End as
 /// plain keystrokes — the same contract, two delivery paths.
@@ -267,6 +285,10 @@ impl Shell {
             return false;
         };
 
+        if let Some(nav) = range_nav_for(keystroke) {
+            self.extend_tree_range(nav, len, focused, cx);
+            return true;
+        }
         if let Some(nav) = nav_for(keystroke, is_folder, expanded) {
             return self.apply_tree_nav(nav, len, focused, cx);
         }
@@ -285,6 +307,37 @@ impl Shell {
         }
 
         false
+    }
+
+    /// `Shift`+Up/Down/Home/End: moves the tree's cursor, then selects every
+    /// visible row from the range anchor to it, as a `Shift`-click there
+    /// would (see `selection::range`). The anchor stays put; Properties and
+    /// the gizmo stay on it.
+    fn extend_tree_range(&mut self, nav: Nav, len: usize, focused: usize, cx: &mut Context<Self>) {
+        let target = match nav {
+            Nav::Previous => focused.saturating_sub(1),
+            Nav::Next => (focused + 1).min(len - 1),
+            Nav::First => 0,
+            _ => len - 1,
+        };
+        let visible = self.visible_rows(cx);
+        let (Some(&from), Some(&to)) = (visible.get(focused), visible.get(target)) else {
+            return;
+        };
+        let anchor = super::selection::range_anchor(
+            &visible,
+            [self.range_anchor, self.selection.get()],
+            from,
+        );
+        if self
+            .selection
+            .replace(super::selection::range(&visible, anchor, to))
+        {
+            self.selection_changed(cx);
+        }
+        self.range_cursor = Some(to);
+        let tree = self.tree.clone();
+        self.focus_tree_row(&tree, target, cx);
     }
 
     fn focus_tree_row(&mut self, tree: &Entity<TreeState>, index: usize, cx: &mut Context<Self>) {
