@@ -326,6 +326,11 @@ impl Shell {
             .occlude()
             .on_mouse_down_out(cx.listener(|shell, _: &MouseDownEvent, window, cx| {
                 shell.close_row_menu(window, cx);
+                // The click that closes the menu does nothing else, as a
+                // native menu's does: it is caught on its way down (this
+                // runs in the capture phase), so the row beneath is neither
+                // selected nor expanded by it.
+                cx.stop_propagation();
             }))
             .children(rows);
 

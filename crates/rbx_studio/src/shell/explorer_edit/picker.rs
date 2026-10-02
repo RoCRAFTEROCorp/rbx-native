@@ -256,6 +256,9 @@ impl Shell {
                 if let Some(picker) = shell.explorer_edit.picker.take() {
                     picker.give_focus_back(window, cx);
                 }
+                // See `RowMenu`'s identical handler: the closing click only
+                // closes.
+                cx.stop_propagation();
                 cx.notify();
             }))
             .capture_action(cx.listener(|shell, _: &MoveUp, _, cx| {
