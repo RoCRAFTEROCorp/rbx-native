@@ -123,6 +123,10 @@ impl Offscreen {
         self.renderer.set_quality(&self.device, quality);
     }
 
+    pub(crate) fn set_calibration(&mut self, calibration: crate::lighting::Calibration) {
+        self.renderer.set_calibration(calibration);
+    }
+
     /// Looks from another height, in degrees above the target.
     pub(crate) fn pitch(&mut self, degrees: f32) {
         self.renderer.pitch(degrees);

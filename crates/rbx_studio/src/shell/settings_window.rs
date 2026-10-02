@@ -60,6 +60,8 @@ pub(crate) struct SettingsWindow {
     /// Layout's name field for a new named layout.
     layout_name: Entity<InputState>,
     sliders: viewport::Sliders,
+    /// Viewport › Advanced's calibration fields.
+    calibration: viewport::CalibrationFields,
     /// Matching rows per page while a search is typed, for the nav.
     search_counts: Vec<(Page, usize)>,
     increments: dragger::Increments,
@@ -145,6 +147,8 @@ impl SettingsWindow {
         let (sliders, mut subscriptions) = viewport::Sliders::new(&shell, cx);
         let (increments, typed) = dragger::Increments::new(&shell, window, cx);
         subscriptions.extend(typed);
+        let (calibration, calibrated) = viewport::CalibrationFields::new(&shell, window, cx);
+        subscriptions.extend(calibrated);
         let (argon, picked) = argon::ArgonControls::new(window, cx);
         subscriptions.extend(picked);
         let (appearance, chosen) = appearance::AppearanceControls::new(&shell, window, cx);
@@ -187,6 +191,7 @@ impl SettingsWindow {
             search,
             layout_name,
             sliders,
+            calibration,
             search_counts: Vec::new(),
             increments,
             argon,

@@ -1456,6 +1456,15 @@ Roblox's own engine.
   so a floating panel gets its window back. The one matching the docks is
   marked Active; saving under a used name replaces it, and each has a
   delete. Kept in `settings.json` as `named_layouts`.
+- [x] **Renderer calibration** in Studio Settings › Viewport › Advanced:
+  `SUN_BASE`, `ATMOSPHERE_DENSITY_SCALE` and `PLASTIC_SPEC_STRENGTH` are
+  settings (`rbx_viewer::Calibration`, defaulting to the tuned values and
+  kept within ten times them either way), for a place lit unlike the
+  captures they were tuned against. The two that were WGSL constants are
+  read from a `calibration` row on the lighting uniform; `SUN_BASE` scales
+  the sun and fill lamps by its ratio to the tuned base. The default renders
+  pixel-identical to before; `ViewportFrame`s keep the tuned set, since
+  they are lit by their own properties.
 
 ### Platform
 - [x] Linux (X11) — the daily-driven target.
@@ -2010,9 +2019,10 @@ against `Roblox/creator-docs` rather than assumed:
   default quality, sandbox naming for Play) beyond what's already
   persisted — and, worth folding into the same effort rather than treating
   separately, **exposing the renderer's calibration constants as real
-  settings** instead of hardcoded Rust values (`SUN_BASE`,
-  `ATMOSPHERE_DENSITY_SCALE`, `PLASTIC_SPEC_STRENGTH`, the movement-easing
-  time constant, the quality-level bands) — every one of these was tuned
+  settings** instead of hardcoded Rust values (the movement-easing time
+  constant and the quality-level bands; `SUN_BASE`,
+  `ATMOSPHERE_DENSITY_SCALE` and `PLASTIC_SPEC_STRENGTH` shipped as
+  **Renderer calibration**) — every one of these was tuned
   empirically tonight against specific real captures, and a place with
   different lighting conditions may want to nudge them without a rebuild.
   Everything this bullet and the next few settings-shaped items describe
@@ -2021,9 +2031,8 @@ against `Roblox/creator-docs` rather than assumed:
 - [ ] 📋 **What Studio Settings still shows as `SOON`.** The screen itself
   shipped (see "What's been implemented" → Editor); these rows are drawn
   there, faded and inert, until what they stand for exists:
-  **renderer calibration** (`SUN_BASE`, `ATMOSPHERE_DENSITY_SCALE`,
-  `PLASTIC_SPEC_STRENGTH` and the quality bands as real settings; the two
-  WGSL ones are compile-time shader constants today and need a uniform),
+  the **quality bands** under renderer calibration (the three tuned
+  constants beside them are settings now),
   Play's **test-copy name**,
   **several accounts**, the
   eyedropper in the colour popover (GPUI has no way to sample the

@@ -24,14 +24,15 @@ fn unshadowed(lighting: &Lighting, camera: Vec3) -> LightingRaw {
         (Lamp::None, &Fit::unfitted()),
         0,
         &top(),
+        &Calibration::default(),
     )
 }
 
 #[test]
-fn the_uniform_is_twenty_eight_vec4s_and_nothing_else() {
+fn the_uniform_is_twenty_nine_vec4s_and_nothing_else() {
     // What `LightingUniform` in lighting.wgsl declares. A mismatch here is a
     // silently misread uniform buffer, not a compile error.
-    assert_eq!(LightingRaw::SIZE, 28 * 16);
+    assert_eq!(LightingRaw::SIZE, 29 * 16);
 }
 
 // An unlimited render distance has to reach the shader as 0 and not as an
@@ -49,6 +50,7 @@ fn the_quality_row_flattens_an_unlimited_render_distance_to_zero() {
         (Lamp::None, &Fit::unfitted()),
         0,
         &QualityLevel::Level(1).profile(),
+        &Calibration::default(),
     );
 
     assert_eq!(low.quality[0], 500.0);
@@ -195,6 +197,7 @@ fn the_uniform_and_the_shader_declare_the_same_fields_in_the_same_order() {
             "quality",
             "clouds_color",
             "clouds_extra",
+            "calibration",
         ]
     );
 
@@ -224,6 +227,7 @@ fn the_lamp_marker_says_which_term_the_map_applies_to() {
             (lamp, &fit),
             0,
             &top(),
+            &Calibration::default(),
         );
         assert_eq!(raw.shadow_lamp[0], marker);
     }
@@ -246,6 +250,7 @@ fn shadow_softness_becomes_a_kernel_radius_in_texels() {
             (Lamp::Sun, &fit),
             0,
             &top(),
+            &Calibration::default(),
         )
         .shadow_params[0]
     };
@@ -273,6 +278,7 @@ fn the_receiver_bias_is_scaled_by_the_maps_own_depth_range() {
         (Lamp::Sun, &fit),
         0,
         &top(),
+        &Calibration::default(),
     );
 
     assert_eq!(raw.shadow_params[3], DEPTH_BIAS_STUDS / 1200.0);
@@ -298,6 +304,7 @@ fn a_low_quality_level_hardens_the_shadow_edge() {
         (Lamp::Sun, &Fit::unfitted()),
         0,
         &hard,
+        &Calibration::default(),
     );
 
     assert_eq!(raw.shadow_params[0], 0.0);
@@ -314,6 +321,7 @@ fn the_local_light_count_reaches_the_shader_as_a_float() {
         (Lamp::None, &Fit::unfitted()),
         7,
         &top(),
+        &Calibration::default(),
     );
 
     assert_eq!(raw.locals, [7.0, 0.0, 0.0, 0.0]);
@@ -346,4 +354,34 @@ fn clouds_cover_density_and_color_land_in_the_slots_the_shader_reads() {
 
     assert_eq!(raw.clouds_color, [0.2, 0.3, 0.4, 0.0]);
     assert_eq!(raw.clouds_extra, [0.9, 0.65, 0.0, 0.0]);
+}
+
+/// The tuned set packs exactly what the shaders used to hard-code, and a
+/// recalibrated sun scales both lamps by its ratio to the tuned base, since
+/// `SUN_BASE` feeds the fill (moon) lamp as well as the sun.
+#[test]
+fn the_calibration_row_carries_the_tuned_constants_and_scales_both_lamps() {
+    let lighting = Lighting::default();
+    let tuned = unshadowed(&lighting, Vec3::ZERO);
+    assert_eq!(tuned.calibration, [0.0013, 0.28, 0.0, 0.0]);
+
+    let brighter = Calibration {
+        sun_base: 0.9,
+        atmosphere_density_scale: 0.002,
+        plastic_spec_strength: 0.5,
+    };
+    let raw = LightingRaw::new(
+        &lighting,
+        Vec3::ZERO,
+        &probe(),
+        (Lamp::None, &Fit::unfitted()),
+        0,
+        &top(),
+        &brighter,
+    );
+    assert_eq!(raw.calibration, [0.002, 0.5, 0.0, 0.0]);
+    for channel in 0..3 {
+        assert!((raw.sun_color[channel] - tuned.sun_color[channel] * 2.0).abs() < 1e-6);
+        assert!((raw.fill_color[channel] - tuned.fill_color[channel] * 2.0).abs() < 1e-6);
+    }
 }

@@ -2,6 +2,11 @@
 
 ## 2026-10-01
 
+- **Renderer calibration.** Studio Settings › Viewport › Advanced now lets
+  you nudge the three constants the renderer was tuned with — the sun's
+  base strength, how thick Atmosphere haze is per stud, and Plastic's
+  highlight — for a place that looks off against Roblox. The defaults
+  render exactly as before, and each has a reset. — @Vikmanou
 - **Search the Explorer.** The search field above the Explorer tree now
   filters it as you type, showing every matching instance under the path
   to it. A result can still be expanded and browsed without clearing the

@@ -107,13 +107,6 @@ impl Row {
         self
     }
 
-    /// On the roadmap, inside a block whose `SOON` pill is on its heading:
-    /// dimmed and inert.
-    pub(in crate::shell::settings_window) fn inert(mut self) -> Self {
-        self.soon = true;
-        self
-    }
-
     pub(in crate::shell::settings_window) fn below(mut self, below: impl IntoElement) -> Self {
         self.below = Some(below.into_any_element());
         self

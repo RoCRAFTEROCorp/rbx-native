@@ -235,6 +235,12 @@ impl Headless {
         self.offscreen.set_quality(&level.profile());
     }
 
+    /// Recalibrates the renderer's tuned constants (see
+    /// [`crate::Calibration`]); the next frame draws with them.
+    pub fn set_calibration(&mut self, calibration: crate::lighting::Calibration) {
+        self.offscreen.set_calibration(calibration);
+    }
+
     /// The level [`Headless::set_quality`] last set.
     pub fn quality(&self) -> QualityLevel {
         self.quality

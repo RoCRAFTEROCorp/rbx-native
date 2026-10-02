@@ -231,6 +231,10 @@ impl Viewports {
                 (Lamp::None, &Fit::unfitted()),
                 0,
                 &self.quality,
+                // A `ViewportFrame` is lit by its own properties rather than
+                // the place's sun, so the user's sun calibration has nothing
+                // to scale here.
+                &crate::lighting::Calibration::default(),
             )),
         );
 
