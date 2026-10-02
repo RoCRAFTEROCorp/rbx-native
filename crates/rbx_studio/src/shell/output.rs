@@ -414,13 +414,18 @@ fn output_row(
     let mut row = h_flex()
         .id(format!("output-entry-{index}"))
         .w_full()
+        .items_start()
         .gap_2()
         .px_2()
         .py_1()
         .on_click(cx.listener(move |shell, _, window, cx| {
             shell.recall_command(&source, window, cx);
         }))
-        .child(icon);
+        // Top-aligned so a wrapped message keeps its icon and source on its
+        // first line. The zero-width space makes the icon's box one text
+        // line tall, centring it on that line as `items_center` did on a
+        // single-line row.
+        .child(h_flex().flex_none().text_xs().child(icon).child("\u{200B}"));
 
     if show_timestamp {
         row = row.child(
