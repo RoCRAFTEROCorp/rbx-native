@@ -217,6 +217,35 @@ impl WeakDom {
         });
     }
 
+    /// Moves `child` to sit right after `anchor` among their shared parent's
+    /// children (or among the roots). A no-op unless the two are distinct
+    /// siblings. Logs nothing of its own: it is meant for a child whose
+    /// `Added` or `Parent` change is already in the log, which is what makes
+    /// [`WeakDom::snapshot`] copy the parent — and so this order — anyway.
+    pub fn place_after(&mut self, child: Ref, anchor: Ref) {
+        let parent = self.parents.get(&anchor).copied();
+        if child == anchor
+            || !self.instances.contains_key(&child)
+            || !self.instances.contains_key(&anchor)
+            || self.parents.get(&child).copied() != parent
+        {
+            return;
+        }
+        let siblings = match parent {
+            Some(parent) => match self.instances.get_mut(&parent) {
+                Some(instance) => instance.children_mut(),
+                None => return,
+            },
+            None => &mut self.root_refs,
+        };
+        siblings.retain(|&sibling| sibling != child);
+        let at = siblings
+            .iter()
+            .position(|&sibling| sibling == anchor)
+            .map_or(siblings.len(), |index| index + 1);
+        siblings.insert(at, child);
+    }
+
     fn detach(&mut self, child: Ref) {
         match self.parents.remove(&child) {
             Some(old_parent) => {

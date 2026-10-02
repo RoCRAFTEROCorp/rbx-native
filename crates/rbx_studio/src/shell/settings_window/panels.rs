@@ -142,10 +142,11 @@ impl SettingsWindow {
     pub(super) fn layout_page(&mut self, cx: &mut Context<Self>) -> Vec<Section> {
         let (collapsed, saved) = {
             let shell = self.shell.read(cx);
+            let active = shell.active_named_layout();
             let saved: Vec<(String, bool)> = shell
                 .named_layouts()
                 .iter()
-                .map(|named| (named.name.clone(), shell.is_current_layout(named)))
+                .map(|named| (named.name.clone(), Some(named.name.as_str()) == active))
                 .collect();
             (shell.output_collapsed, saved)
         };
