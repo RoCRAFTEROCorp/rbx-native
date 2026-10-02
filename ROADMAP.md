@@ -1408,6 +1408,23 @@ Roblox's own engine.
   description or `settings.json` key and shows it live. Keyboard shortcuts
   stay a window of their own, as in Studio; what the screen still shows as
   `SOON` is its own bullet under "What's planned".
+- [x] **Auto-Recovery**, real Studio's own (Studio Settings › Files &
+  recovery): while the open place has changes Ctrl+S has not written, a
+  copy of it is written in the background every few minutes (1 to 10, four
+  by default; on by default). The place is cloned on the UI thread (a short
+  hitch on a large place) and serialized off it, through the same
+  temp-file-then-rename path as Ctrl+S, so a copy is never left
+  half-written. One copy per place in `<config>/recovery`, named after the
+  place with a short hash of its canonical path so two `Place.rbxl`s never
+  share one; a successful Ctrl+S deletes the copy this session wrote, since
+  nothing is left to recover. A copy an earlier session left behind (it
+  crashed, or was killed) is moved aside under a timestamped name when its
+  place next opens, with a note in Output, so it is never overwritten or
+  deleted; a place opened from the recovery folder itself gets no copies
+  and a warning that Ctrl+S saves it there. A copy is a plain place file
+  in the place's own format, so — unlike a recovered Studio file, which
+  loses its place link — it opens like any other. A failed copy is a
+  warning in Output and is tried again.
 - [x] **Script font size** in Studio Settings › Appearance: the Script
   Editor's text size, 8 to 32 px, multiplied by the UI scale like every
   other size, so the editor now also follows the UI scale, which it did
@@ -2002,8 +2019,7 @@ against `Roblox/creator-docs` rather than assumed:
   **renderer calibration** (`SUN_BASE`, `ATMOSPHERE_DENSITY_SCALE`,
   `PLASTIC_SPEC_STRENGTH` and the quality bands as real settings; the two
   WGSL ones are compile-time shader constants today and need a uniform),
-  the **Auto-Recovery** toggle, interval and folder and
-  Play's **test-copy name** (waiting on the autosave item below),
+  Play's **test-copy name**,
   **several accounts**, **named layouts**, the
   eyedropper in the colour popover (GPUI has no way to sample the
   screen), and
@@ -2047,21 +2063,11 @@ against `Roblox/creator-docs` rather than assumed:
   this one: a real, in-app way to ship a half-finished feature switched
   off by default instead of either blocking a merge on it being complete
   or shipping it fully live before it's ready.
-- [ ] 📋 **Autosave and crash recovery**, matching real Studio's own
-  Auto-Recovery (`File > Studio Settings` → Studio tab → Auto-Recovery;
-  saves on an interval, typically every 5–10 minutes and configurable down
-  to 1–2; recovered files reachable afterwards via
-  `File > Advanced > Open Auto Saves`). Today's save is manual (`Ctrl+S`)
-  only, with nothing kept if the editor crashes or is killed first. Worth
-  deliberately avoiding real Studio's own known complaint here rather than
-  reproducing it: a recovered file there loses its place/universe link,
-  which this project could sidestep since a place here is just a local
-  file path to begin with, nothing tying it to a remote id the way a
-  crash-recovered copy would need to reconstruct. Distinct from, and a
-  local complement to, the **remote** Open Cloud place-version-history
-  item under "Save/Publish to Roblox from the editor UI" above — that one
-  is versions Roblox's servers already have; this one is unsaved local
-  work surviving a crash before anything was ever published at all.
+- [ ] 📋 **A File-menu way to the recovery copies**, matching real Studio's
+  `File > Advanced > Open Auto Saves`. Auto-Recovery itself shipped (see
+  "What's been implemented" → Editor); its copies are reached from Studio
+  Settings › Files & recovery › Open auto-saves, which opens the folder,
+  and nothing in the File menu leads there yet.
 - [ ] 📋 **More New templates on Home.** Home's New section has Baseplate
   only. Flat Terrain needs a `Terrain.SmoothGrid` writer, which nothing
   in the tree has yet; a terrain template without its voxels would be a

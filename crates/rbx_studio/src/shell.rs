@@ -32,6 +32,7 @@ mod panel_window;
 mod panels;
 mod property_element;
 mod quality;
+mod recovery;
 mod ref_pick;
 mod reparent;
 mod ribbon;
@@ -352,6 +353,8 @@ pub(crate) struct Shell {
     /// popover so that opening one closes the last, and so a menu item can
     /// close the menu it was clicked in (see `shell::menu`).
     open_menu: Option<MenuId>,
+    /// Auto-Recovery's switch, interval and progress (see `shell::recovery`).
+    recovery: recovery::Recovery,
     /// The open menu's keyboard focus and highlighted row (see `shell::menu`).
     menu_nav: menu::MenuNav,
     /// Which panel is on which edge and how big each edge is — the data
@@ -396,6 +399,8 @@ impl Shell {
             icon_pack,
             unfocused_fps,
             font_scale,
+            auto_recovery,
+            recovery_minutes,
             script_font_size,
             large_targets,
             reduce_motion,
@@ -549,6 +554,7 @@ impl Shell {
 
         let initial_targets = Targets::read(&dom, &database, &Vec::from_iter(selected));
         let ui = ui_editor::UiEditor::new(window, cx);
+        let recovery = recovery::Recovery::new(auto_recovery, recovery_minutes, &path);
         let mut shell = Shell {
             menu_bar,
             title: title.into(),
@@ -637,6 +643,7 @@ impl Shell {
             ribbon_tab: ribbon::Tab::default(),
             document: Document::default(),
             open_menu: None,
+            recovery,
             menu_nav: menu::MenuNav::new(cx),
             // A saved layout wins over the default, and is total over
             // whatever the file actually held (see `layout::Layout::restore`).
@@ -816,6 +823,7 @@ impl Shell {
         shell.apply_debug_save(cx);
 
         shell.watch_theme(cx);
+        shell.watch_recovery(cx);
 
         shell
     }
@@ -1295,6 +1303,8 @@ impl Shell {
             icon_pack: self.icon_pack,
             unfocused_fps: self.unfocused_fps,
             font_scale: tokens::font_scale(),
+            auto_recovery: self.recovery.enabled(),
+            recovery_minutes: self.recovery.minutes(),
             script_font_size: self.script_font_size,
             large_targets: tokens::large_targets(),
             reduce_motion: self.reduce_motion,

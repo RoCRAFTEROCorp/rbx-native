@@ -237,6 +237,7 @@ impl Shell {
         if changes.is_empty() {
             return;
         }
+        self.recovery.changed();
         self.properties.dom_changed(changes);
         let refresh = refresh_for(changes, &self.covered);
         // The instances the log names, not the tree: a drag reflects a

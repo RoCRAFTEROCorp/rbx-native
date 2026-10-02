@@ -86,6 +86,7 @@ mod pacing;
 mod packs;
 mod pointer_lock;
 mod properties;
+mod recovery;
 mod render_image;
 mod save;
 mod scale;

@@ -59,6 +59,10 @@ pub(crate) struct Settings {
     /// WCAG 1.4.4's 200% resize, since there is no browser zoom to lean on;
     /// the range is Blender's Resolution Scale range, for the same reason.
     pub(crate) font_scale: f32,
+    /// Whether Auto-Recovery writes a background copy of the open place
+    /// (see `crate::recovery`), and how many minutes apart.
+    pub(crate) auto_recovery: bool,
+    pub(crate) recovery_minutes: u32,
     /// The Script Editor's text size at 1x, in px, before [`Self::font_scale`]
     /// multiplies it like every other size. See [`SCRIPT_FONT_SIZE`].
     pub(crate) script_font_size: f32,
@@ -139,6 +143,8 @@ impl Default for Settings {
             icon_pack: IconPack::Dark,
             unfocused_fps: UnfocusedFps::DEFAULT,
             font_scale: 1.,
+            auto_recovery: true,
+            recovery_minutes: crate::recovery::INTERVAL_DEFAULT,
             script_font_size: SCRIPT_FONT_SIZE,
             large_targets: false,
             reduce_motion: None,
@@ -300,6 +306,15 @@ fn load_from(path: &Path) -> Settings {
         icon_pack,
         unfocused_fps,
         font_scale,
+        auto_recovery: value
+            .get("auto_recovery")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(true),
+        recovery_minutes: value
+            .get("recovery_minutes")
+            .and_then(|v| v.as_u64())
+            .map(crate::recovery::clamp_minutes)
+            .unwrap_or(crate::recovery::INTERVAL_DEFAULT),
         script_font_size: value
             .get("script_font_size")
             .and_then(|v| v.as_f64())
@@ -439,6 +454,8 @@ fn save_to(settings: &Settings, path: &Path) -> Result<(), SettingsError> {
         "icon_pack": format_icon_pack(settings.icon_pack),
         "unfocused_fps": settings.unfocused_fps.fps(),
         "font_scale": settings.font_scale,
+        "auto_recovery": settings.auto_recovery,
+        "recovery_minutes": settings.recovery_minutes,
         "script_font_size": settings.script_font_size,
         "large_targets": settings.large_targets,
         "reduce_motion": settings.reduce_motion,
@@ -801,6 +818,31 @@ mod tests {
 
         save_to(&settings, &path).expect("save settings");
         assert_eq!(load_from(&path).font_scale, 1.5);
+    }
+
+    #[test]
+    fn auto_recovery_round_trips_and_defaults_on_every_four_minutes() {
+        let path = temp_settings_path();
+        let settings = Settings {
+            auto_recovery: false,
+            recovery_minutes: 9,
+            ..Settings::default()
+        };
+        save_to(&settings, &path).expect("save settings");
+        let loaded = load_from(&path);
+        assert!(!loaded.auto_recovery);
+        assert_eq!(loaded.recovery_minutes, 9);
+
+        std::fs::write(&path, br#"{"recovery_minutes": 60}"#).expect("write settings");
+        let loaded = load_from(&path);
+        assert!(loaded.auto_recovery);
+        assert_eq!(loaded.recovery_minutes, 10);
+
+        std::fs::write(&path, b"{}").expect("write settings");
+        assert_eq!(
+            load_from(&path).recovery_minutes,
+            crate::recovery::INTERVAL_DEFAULT
+        );
     }
 
     #[test]
