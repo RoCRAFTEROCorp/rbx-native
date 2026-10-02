@@ -1428,7 +1428,11 @@ Roblox's own engine.
   nothing is left to recover. A copy an earlier session left behind (it
   crashed, or was killed) is moved aside under a timestamped name when its
   place next opens, with a note in Output, so it is never overwritten or
-  deleted; a place opened from the recovery folder itself gets no copies
+  deleted. Each session holds an OS advisory lock beside its copy (released
+  when the process exits or dies), so an earlier session's copy is one no
+  process holds; a second editor on a place that is already open writes its
+  own copy (`… (recovery <hash>, 2).rbxl`) and never touches the first's. A
+  place opened from the recovery folder itself gets no copies
   and a warning that Ctrl+S saves it there. A copy is a plain place file
   in the place's own format, so — unlike a recovered Studio file, which
   loses its place link — it opens like any other. A failed copy is a

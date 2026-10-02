@@ -8,10 +8,14 @@
 //! manual save deletes it: what it held is now in the place itself. A copy
 //! an earlier session left behind (it crashed, or was killed) is never
 //! overwritten or deleted: opening its place moves it aside under a
-//! timestamped name (see [`kept_path`]). Unlike
+//! timestamped name (see [`kept_path`]). A copy a running editor owns is
+//! never touched by another: each session holds an OS lock beside its copy,
+//! and a second editor on the same place writes its own (see [`claim`]).
+//! Unlike
 //! Studio's, a recovered copy loses nothing that tied it to its place — a
 //! place here is a local file, and the copy is the same kind of file.
 
+use std::fs::{File, TryLockError};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -52,8 +56,10 @@ pub(crate) fn open_folder(cx: &mut gpui_kit::App) {
 /// `DefaultHasher`, whose output Rust does not promise to keep between
 /// releases: a copy written before an update has to be found again after
 /// one, to be moved aside when its place next opens. `place` should be
-/// canonical, so two spellings of one path share a copy.
-pub(crate) fn copy_path(folder: &Path, place: &Path) -> PathBuf {
+/// canonical, so two spellings of one path share a copy. `slot` is 1 for
+/// the first editor on the place; a second one running at once writes slot
+/// 2, and so on (see [`claim`]).
+pub(crate) fn copy_path(folder: &Path, place: &Path, slot: u32) -> PathBuf {
     let stem = place
         .file_stem()
         .map_or_else(|| "place".into(), |stem| stem.to_string_lossy());
@@ -61,7 +67,43 @@ pub(crate) fn copy_path(folder: &Path, place: &Path) -> PathBuf {
         .extension()
         .map_or_else(|| "rbxl".into(), |ext| ext.to_string_lossy());
     let hash = fnv1a(place.to_string_lossy().as_bytes()) as u32;
-    folder.join(format!("{stem} (recovery {hash:08x}).{extension}"))
+    let slot = if slot > 1 {
+        format!(", {slot}")
+    } else {
+        String::new()
+    };
+    folder.join(format!("{stem} (recovery {hash:08x}{slot}).{extension}"))
+}
+
+/// The lock file beside `copy`. It stays on disk; only the OS lock on it
+/// means anything, and the OS drops that when its holder exits or dies.
+fn lock_path(copy: &Path) -> PathBuf {
+    let mut name = copy.file_name().unwrap_or_default().to_os_string();
+    name.push(".lock");
+    copy.with_file_name(name)
+}
+
+/// The copy this session writes, and the held lock that makes it this
+/// session's: the place's first slot whose lock no running editor holds.
+/// Whatever copy already sits in that slot was left by a session that
+/// crashed or was killed (a live one would hold the lock), so it is the
+/// caller's to move aside. The lock is released when the `File` drops.
+pub(crate) fn claim(folder: &Path, place: &Path) -> std::io::Result<(PathBuf, File)> {
+    std::fs::create_dir_all(folder)?;
+    let mut slot = 1;
+    loop {
+        let copy = copy_path(folder, place, slot);
+        let lock = File::options()
+            .create(true)
+            .write(true)
+            .truncate(false)
+            .open(lock_path(&copy))?;
+        match lock.try_lock() {
+            Ok(()) => return Ok((copy, lock)),
+            Err(TryLockError::WouldBlock) => slot += 1,
+            Err(TryLockError::Error(err)) => return Err(err),
+        }
+    }
 }
 
 /// Where a copy an earlier session left behind is moved to: its own name
@@ -101,7 +143,7 @@ mod tests {
 
     #[test]
     fn a_copy_keeps_the_places_name_and_format() {
-        let copy = copy_path(Path::new("/r"), Path::new("/games/Obby.rbxlx"));
+        let copy = copy_path(Path::new("/r"), Path::new("/games/Obby.rbxlx"), 1);
         let name = copy.file_name().unwrap().to_string_lossy().into_owned();
         assert!(name.starts_with("Obby (recovery "), "{name}");
         assert!(name.ends_with(").rbxlx"), "{name}");
@@ -111,10 +153,10 @@ mod tests {
     #[test]
     fn two_places_with_one_name_get_two_copies_and_one_place_always_the_same() {
         let folder = Path::new("/r");
-        let a = copy_path(folder, Path::new("/one/Place.rbxl"));
-        let b = copy_path(folder, Path::new("/two/Place.rbxl"));
+        let a = copy_path(folder, Path::new("/one/Place.rbxl"), 1);
+        let b = copy_path(folder, Path::new("/two/Place.rbxl"), 1);
         assert_ne!(a, b);
-        assert_eq!(a, copy_path(folder, Path::new("/one/Place.rbxl")));
+        assert_eq!(a, copy_path(folder, Path::new("/one/Place.rbxl"), 1));
     }
 
     /// Pinned, so a change to the hash (which would orphan every copy
@@ -128,12 +170,45 @@ mod tests {
 
     #[test]
     fn a_kept_copy_never_shares_the_live_copys_name() {
-        let copy = copy_path(Path::new("/r"), Path::new("/games/Obby.rbxl"));
+        let copy = copy_path(Path::new("/r"), Path::new("/games/Obby.rbxl"), 1);
         let kept = kept_path(&copy, "2026-10-02 14-03-11");
         assert_ne!(kept, copy);
         let name = kept.file_name().unwrap().to_string_lossy().into_owned();
         assert!(name.starts_with("Obby (recovery "), "{name}");
         assert!(name.ends_with(") 2026-10-02 14-03-11.rbxl"), "{name}");
+    }
+
+    #[test]
+    fn a_second_editors_copy_and_lock_never_share_the_firsts_names() {
+        let place = Path::new("/games/Obby.rbxl");
+        let first = copy_path(Path::new("/r"), place, 1);
+        let second = copy_path(Path::new("/r"), place, 2);
+        assert_ne!(first, second);
+        let name = second.file_name().unwrap().to_string_lossy().into_owned();
+        assert!(name.starts_with("Obby (recovery "), "{name}");
+        assert!(name.ends_with(", 2).rbxl"), "{name}");
+        assert_eq!(
+            lock_path(&first),
+            Path::new(&format!("{}.lock", first.display()))
+        );
+        assert!(!is_temp(&lock_path(&first).to_string_lossy()));
+    }
+
+    /// Each `File` holds its own lock (flock on Unix, LockFileEx on
+    /// Windows), so two claims in one process behave like two editors.
+    #[test]
+    fn a_held_lock_sends_the_next_editor_to_its_own_copy_and_a_dropped_one_frees_it() {
+        let folder =
+            std::env::temp_dir().join(format!("rbx-recovery-claim-{}", std::process::id()));
+        let place = Path::new("/games/Obby.rbxl");
+        let (first, lock) = claim(&folder, place).unwrap();
+        assert_eq!(first, copy_path(&folder, place, 1));
+        let (second, _second_lock) = claim(&folder, place).unwrap();
+        assert_eq!(second, copy_path(&folder, place, 2));
+        // The first editor exits (or dies): its slot is free again.
+        drop(lock);
+        assert_eq!(claim(&folder, place).unwrap().0, first);
+        let _ = std::fs::remove_dir_all(&folder);
     }
 
     #[test]
