@@ -2,6 +2,11 @@
 
 ## 2026-10-01
 
+- **Search the Explorer.** The search field above the Explorer tree now
+  filters it as you type, showing every matching instance under the path
+  to it. A result can still be expanded and browsed without clearing the
+  search, which real Studio doesn't allow, and searching doesn't lose your
+  selection. — @Vikmanou
 - **Named dock layouts.** Studio Settings › Layout can now save the current
   arrangement of docks under a name and switch back to it with a click —
   which panels sit where, how big, and which float or are closed. The one

@@ -263,15 +263,17 @@ impl Shell {
     }
 
     /// The Explorer's rows as things stand: the UI alone while the canvas
-    /// is up, the place otherwise. Every place that pushes rows into the
+    /// is up, the place otherwise, either one through the Explorer's search
+    /// (see `explorer::search`). Every place that pushes rows into the
     /// tree asks this, so none of them can put the wrong set back.
     pub(super) fn explorer_items(&self) -> Vec<TreeItem> {
-        match self.ui_canvas_active() {
+        let items = match self.ui_canvas_active() {
             true => self.explorer.ui_items(),
             false => self
                 .explorer
                 .items(self.show_all_services, &self.service_overrides),
-        }
+        };
+        crate::explorer::search(&items, &self.explorer_query)
     }
 
     /// The docks left out of the layout as things stand: the canvas's own

@@ -217,6 +217,9 @@ pub(crate) struct Shell {
     increment_names: bool,
     expand_on_select: bool,
     search: Entity<InputState>,
+    /// What the Explorer's search field holds, trimmed; see
+    /// `explorer::search`.
+    explorer_query: String,
     filter: Entity<InputState>,
     properties: Properties,
     /// One open `Input` per Properties row currently being edited, keyed by
@@ -377,7 +380,7 @@ pub(crate) struct Shell {
     /// is raised with it once rather than fought over every frame.
     window_was_active: bool,
     /// Kept only to stay subscribed: dropping these unregisters the listeners.
-    _subscriptions: [Subscription; 14],
+    _subscriptions: [Subscription; 15],
 }
 
 impl Shell {
@@ -482,6 +485,14 @@ impl Shell {
         let filtered = cx.subscribe(&filter, |_, _, event: &InputEvent, cx| {
             if matches!(event, InputEvent::Change) {
                 cx.notify();
+            }
+        });
+
+        let search = cx.new(|cx| InputState::new(window, cx).placeholder("Search"));
+        let searched = cx.subscribe(&search, |shell, input, event: &InputEvent, cx| {
+            if matches!(event, InputEvent::Change) {
+                let query = input.read(cx).value().trim().to_owned();
+                shell.search_explorer(query, cx);
             }
         });
 
@@ -597,7 +608,8 @@ impl Shell {
             explorer_edit: explorer_edit::ExplorerEdit::default(),
             increment_names,
             expand_on_select,
-            search: cx.new(|cx| InputState::new(window, cx).placeholder("Search")),
+            search,
+            explorer_query: String::new(),
             filter,
             properties,
             edits: edit::Edits::default(),
@@ -672,6 +684,7 @@ impl Shell {
                 rotate_stepped,
                 canvas_drawn,
                 wally_query_changed,
+                searched,
             ],
         };
 
@@ -888,6 +901,16 @@ impl Shell {
         if selected == self.selection.get() {
             return;
         }
+        // A search can leave the selected instance without a row; the tree
+        // then has nothing selected, which is the filter's doing and not a
+        // deselect. One that no longer exists (a script destroyed it) is
+        // still let go.
+        let hidden = self
+            .selected()
+            .is_some_and(|reference| self.dom.get(reference).is_some());
+        if selected.is_none() && hidden && !self.explorer_query.is_empty() {
+            return;
+        }
         if self.selection.set(selected) {
             self.selection_changed(cx);
         }
@@ -984,6 +1007,14 @@ impl Shell {
         self.refresh_root_rows(cx);
     }
 
+    /// Filters the Explorer by what its search field holds, as it is typed.
+    fn search_explorer(&mut self, query: String, cx: &mut Context<Self>) {
+        if query != self.explorer_query {
+            self.explorer_query = query;
+            self.push_root_rows(cx);
+        }
+    }
+
     /// Lists or hides one service in the Explorer's default view, from
     /// Studio Settings' Default services grid.
     pub(super) fn toggle_default_service(&mut self, class: &str, cx: &mut Context<Self>) {
@@ -1005,8 +1036,15 @@ impl Shell {
     }
 
     /// Pushes the root rows the visibility settings now call for into the
-    /// tree, and saves them.
+    /// tree, and saves the settings that chose them.
     fn refresh_root_rows(&mut self, cx: &mut Context<Self>) {
+        self.push_root_rows(cx);
+        self.save_settings();
+    }
+
+    /// Pushes the root rows the visibility settings and the search now call
+    /// for into the tree.
+    fn push_root_rows(&mut self, cx: &mut Context<Self>) {
         let items = self.explorer_items();
         // Replacing the rows drops the tree's selection; putting it back in the
         // same update keeps the observer from ever seeing the gap. A selected
@@ -1019,7 +1057,6 @@ impl Shell {
             tree.set_selected_item(selected.as_ref(), cx);
         });
         cx.notify();
-        self.save_settings();
     }
 
     /// Suppresses or restores motion, and remembers the choice.
