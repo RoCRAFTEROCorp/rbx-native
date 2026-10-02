@@ -232,6 +232,9 @@ pub(crate) struct Shell {
     attribute_edits: attributes_panel::AttributeEdits,
     /// Mirrors the tree's selected row (see [`Shell::sync_selection`]).
     selection: Selection,
+    /// Where a `Shift`-click's range starts in the Explorer: the row last
+    /// clicked plainly or with `Ctrl`/`Cmd` (see [`Shell::select_range`]).
+    range_anchor: Option<Ref>,
     /// This window's own copy/paste clipboard, replaced whole by every
     /// `Ctrl+C` — see `shell::clipboard`.
     clipboard: Vec<clipboard::Clipped>,
@@ -620,6 +623,7 @@ impl Shell {
             edits: edit::Edits::default(),
             attribute_edits: attributes_panel::AttributeEdits::default(),
             selection: Selection::new(selected),
+            range_anchor: None,
             clipboard: Vec::new(),
             script_templates: user.script_templates,
             hovered: Vec::new(),
@@ -916,6 +920,7 @@ impl Shell {
         if selected.is_none() && hidden && !self.explorer_query.is_empty() {
             return;
         }
+        self.range_anchor = selected;
         if self.selection.set(selected) {
             self.selection_changed(cx);
         }

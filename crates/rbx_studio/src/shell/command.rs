@@ -163,6 +163,41 @@ impl Shell {
         self.selection_changed(cx);
     }
 
+    /// `Shift`-click on an Explorer row: selects every row from the range
+    /// anchor to `clicked`, in the tree's visible order (so collapsed and
+    /// filtered-out rows are skipped), replacing the selection — or, with
+    /// `add` (`Ctrl`+`Shift`), adding to it. The anchor stays where it was.
+    pub(super) fn select_range(&mut self, clicked: Ref, add: bool, cx: &mut Context<Self>) {
+        let anchor = self
+            .range_anchor
+            .or(self.selection.get())
+            .unwrap_or(clicked);
+        let visible: Vec<Ref> = {
+            let tree = self.tree.read(cx);
+            (0..)
+                .map_while(|index| tree.entry(index))
+                .filter_map(|entry| explorer::item_ref(&entry.item().id))
+                .collect()
+        };
+        let mut kept = if add {
+            self.selection.all().to_vec()
+        } else {
+            Vec::new()
+        };
+        for reference in super::selection::range(&visible, anchor, clicked) {
+            if !kept.contains(&reference) {
+                kept.push(reference);
+            }
+        }
+
+        let first = kept.first().and_then(|&r| self.explorer.item(r));
+        let tree = self.tree.clone();
+        tree.update(cx, |tree, cx| tree.set_selected_item(first.as_ref(), cx));
+        if self.selection.replace(kept) {
+            self.selection_changed(cx);
+        }
+    }
+
     /// Enter in the Command Bar: reads the input's current text and runs it.
     pub(super) fn run_typed_command(&mut self, cx: &mut Context<Self>) {
         let source = self.command_bar.input().read(cx).value().to_string();

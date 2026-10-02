@@ -107,8 +107,10 @@ pub(super) fn draggable_row(
                 }
             }
         })
-        // `Shift`/`Ctrl`/`Cmd`-click adds the row to the selection, or drops
-        // it, as the viewport does. The tree widget's own row reads no
+        // Modifier clicks, as Studio's Explorer takes them: `Ctrl`/`Cmd`
+        // adds the row to the selection or drops it, and moves the range
+        // anchor there; `Shift` selects the range from the anchor, and
+        // `Ctrl`+`Shift` adds that range. The tree widget's own row reads no
         // modifiers and would replace the selection, so the press stops here
         // before it bubbles up to that row; the tree is focused by hand, the
         // way a plain click on it would have.
@@ -116,12 +118,18 @@ pub(super) fn draggable_row(
             let shell = shell.clone();
             move |event: &MouseDownEvent, window, cx| {
                 let modifiers = event.modifiers;
-                if !(modifiers.shift || modifiers.control || modifiers.platform) {
+                let toggle = modifiers.control || modifiers.platform;
+                if !(modifiers.shift || toggle) {
                     return;
                 }
                 cx.stop_propagation();
                 shell.update(cx, |shell, cx| {
-                    shell.extend_selection(target, cx);
+                    if modifiers.shift {
+                        shell.select_range(target, toggle, cx);
+                    } else {
+                        shell.extend_selection(target, cx);
+                        shell.range_anchor = Some(target);
+                    }
                     shell.tree.update(cx, |tree, cx| tree.focus(window, cx));
                 });
             }

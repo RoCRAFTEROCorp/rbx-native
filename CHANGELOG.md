@@ -17,9 +17,11 @@
   search, which real Studio doesn't allow, and searching doesn't lose your
   selection. Escape clears the search and brings the whole tree back.
   — @Vikmanou
-- **Ctrl/Shift-click in the Explorer.** Clicking a row with Shift, Ctrl or
-  Cmd held now adds it to the selection, or takes it out, as it already did
-  in the viewport; it used to replace the selection. — @Vikmanou
+- **Ctrl/Shift-click in the Explorer.** Ctrl-click (Cmd on a Mac) now adds
+  a row to the selection or takes it out, and Shift-click selects every
+  visible row from the last row clicked to this one, as in Studio;
+  Ctrl+Shift-click adds that range to the selection. Both used to replace
+  the selection. — @Vikmanou
 - **Named dock layouts.** Studio Settings › Layout can now save the current
   arrangement of docks under a name and switch back to it with a click —
   which panels sit where, how big, and which float or are closed. The one
