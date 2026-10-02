@@ -1395,9 +1395,9 @@ Roblox's own engine.
   crashed, or was killed) is moved aside under a timestamped name when its
   place next opens, with a note in Output, so it is never overwritten or
   deleted; a place opened from the recovery folder itself gets no copies
-  and a warning that Ctrl+S saves it there. A copy is a plain place file in the place's own format, so — unlike a
-  recovered Studio file, which loses its place link — it opens like any
-  other. A failed copy is a warning in Output and is tried again.
+  and a warning that Ctrl+S saves it there. A copy is a plain place file
+  in the place's own format, so — unlike a recovered Studio file, which
+  loses its place link — it opens like any other. A failed copy is a warning in Output and is tried again.
 
 ### Platform
 - [x] Linux (X11) — the daily-driven target.
