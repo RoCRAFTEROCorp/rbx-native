@@ -13,14 +13,7 @@ use crate::shell::{Panel, Shell};
 use super::*;
 
 pub(super) fn install(shell: Entity<Shell>, cx: &mut App) {
-    // Auto-Recovery's folder (see `crate::recovery`), made if no copy has
-    // been written yet so the file manager opens on it rather than failing.
-    cx.on_action(|_: &MenuOpenAutoSaves, cx| {
-        if let Some(folder) = crate::recovery::folder() {
-            let _ = std::fs::create_dir_all(&folder);
-            cx.open_with_system(&folder);
-        }
-    });
+    cx.on_action(|_: &MenuOpenAutoSaves, cx| crate::recovery::open_folder(cx));
     cx.on_action({
         let shell = shell.clone();
         move |_: &MenuSave, cx| {
