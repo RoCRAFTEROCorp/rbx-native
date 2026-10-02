@@ -352,3 +352,21 @@ fn duplicating_two_instances_is_one_batch_of_changes() {
         .count();
     assert_eq!(added, 2, "both duplicates land in the same change log");
 }
+
+#[test]
+fn a_duplicate_lands_right_after_its_original() {
+    let mut dom = WeakDom::new();
+    let workspace = dom.new_instance("Workspace", "Workspace", None);
+    let lobby = dom.new_instance("Model", "Lobby", Some(workspace));
+    let arena = dom.new_instance("Model", "Arena", Some(workspace));
+    let spawn = dom.new_instance("Part", "Spawn", Some(workspace));
+
+    let lobby_copy = duplicate(&mut dom, lobby, true).unwrap();
+    let spawn_copy = duplicate(&mut dom, spawn, true).unwrap();
+
+    assert_eq!(
+        dom.get(workspace).unwrap().children(),
+        [lobby, lobby_copy, arena, spawn, spawn_copy]
+    );
+    assert_eq!(dom.get(lobby_copy).unwrap().name(), "Lobby1");
+}
