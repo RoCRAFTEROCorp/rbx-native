@@ -11,6 +11,9 @@
 //! The text doubles as the accessible label for the control it belongs to
 //! (§7.3), which is why every icon-only button in the shell has one.
 
+use std::cell::Cell;
+use std::rc::Rc;
+
 use gpui_kit::component::tooltip::Tooltip;
 use gpui_kit::*;
 
@@ -31,6 +34,16 @@ pub(crate) fn text(label: impl Into<SharedString>, window: &mut Window, cx: &mut
 /// hit-test the result) this replays the pointer where it already is, and
 /// GPUI sorts out hover from there exactly as if the mouse had moved.
 ///
+/// A touchpad or kinetic scroll sends dozens of wheel events a second, so
+/// they coalesce: each one bumps a per-window counter, and only the replay
+/// queued by the latest one still matches it when its two frames are up.
+///
+/// The replayed move has no button pressed whatever the real state is. The
+/// viewport is the one place that notices: a wheel zoom in the middle of a
+/// part or handle drag records the move as the drag's next step, which
+/// re-raycasts under the new camera so the part stays under the cursor, as
+/// it does in Studio.
+///
 /// A zero-size element so it can sit in the title bar every window draws
 /// first: its capture-phase listener then runs before any scroll area that
 /// stops the wheel in that phase.
@@ -38,19 +51,32 @@ pub(crate) fn rehover_on_scroll() -> impl IntoElement {
     canvas(
         |_, _, _| {},
         |_, _, window, _| {
-            window.on_mouse_event(|_: &ScrollWheelEvent, phase, window, _| {
-                if phase.capture() {
-                    window.on_next_frame(|window, _| {
-                        window.on_next_frame(|window, cx| {
-                            let event = MouseMoveEvent {
-                                position: window.mouse_position(),
-                                pressed_button: None,
-                                modifiers: window.modifiers(),
-                            };
-                            window.dispatch_event(PlatformInput::MouseMove(event), cx);
-                        })
-                    });
+            let latest = window.with_global_id("rehover-on-scroll".into(), |id, window| {
+                window.with_element_state(id, |latest: Option<Rc<Cell<u64>>>, _| {
+                    let latest = latest.unwrap_or_default();
+                    (latest.clone(), latest)
+                })
+            });
+            window.on_mouse_event(move |_: &ScrollWheelEvent, phase, window, _| {
+                if !phase.capture() {
+                    return;
                 }
+                let this = latest.get().wrapping_add(1);
+                latest.set(this);
+                let latest = latest.clone();
+                window.on_next_frame(move |window, _| {
+                    window.on_next_frame(move |window, cx| {
+                        if latest.get() != this {
+                            return;
+                        }
+                        let event = MouseMoveEvent {
+                            position: window.mouse_position(),
+                            pressed_button: None,
+                            modifiers: window.modifiers(),
+                        };
+                        window.dispatch_event(PlatformInput::MouseMove(event), cx);
+                    })
+                });
             })
         },
     )
