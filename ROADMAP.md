@@ -1328,6 +1328,15 @@ Roblox's own engine.
   `UX_GUIDELINES.md` §11 lists every deviation from the frame with its
   reason, and §1 states where the editor stands against the reference
   guidance's Stage 1/2/3 — failures included.
+- [x] **Arrow keys inside the editor's dropdown menus** (`shell::menu`:
+  every overflow `⋯`, the ribbon's insert menus, the Argon and Wally
+  pickers), per the APG menu pattern: an open menu holds focus, Up/Down
+  move a highlight and wrap, Home/End jump to the ends, Enter or Space
+  runs the highlighted row like a click, and Escape closes it with focus
+  back on the trigger. A menu opened from the keyboard starts on its first
+  row. Disabled rows take the highlight but cannot run, as the pattern
+  asks. The pointer moves the same highlight. The moves are the roving
+  groups' own (`roving::Move`).
 - [x] **Output window: the half of real Studio's filter/display feature
   set that does not need the sandbox**, checked against `studio/output.md`
   rather than assumed and built against what the Command Bar and app
@@ -2112,9 +2121,9 @@ against `Roblox/creator-docs` rather than assumed:
   still without an editor): hover feedback is instant — `gpui` has no
   CSS-style property transitions and cannot transform a `Div`;
   `gpui_base::transition` animates one value explicitly (the ghost dock's
-  ease uses it), but putting it behind every hover state is a larger job —
-  and keyboard arrow-navigation inside the hand-built menus
-  (`shell::menu`) isn't wired.
+  ease uses it), but putting it behind every hover state is a larger job.
+  The Explorer's right-click menu, which builds its own rows rather than
+  going through `shell::menu`, still has no arrow keys either.
 
 ### Play / Test workflow
 - [ ] 📋 The sandbox-place design (private per-developer place, injected

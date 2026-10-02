@@ -10,6 +10,33 @@ fn arrows_wrap_around_a_strip() {
     assert_eq!(Move::Previous.apply(2, 3), 1);
 }
 
+/// A menu opened by the mouse has no highlight until a key moves it: Down
+/// and Home start at the top, Up and End at the bottom, and an empty menu
+/// has nothing to land on.
+#[test]
+fn a_highlight_on_no_row_yet_starts_from_the_end_the_key_points_at() {
+    assert_eq!(Move::Next.from(None, 4), Some(0));
+    assert_eq!(Move::First.from(None, 4), Some(0));
+    assert_eq!(Move::Previous.from(None, 4), Some(3));
+    assert_eq!(Move::Last.from(None, 4), Some(3));
+    assert_eq!(Move::Next.from(Some(3), 4), Some(0));
+    for movement in [Move::Previous, Move::Next, Move::First, Move::Last] {
+        assert_eq!(movement.from(None, 0), None);
+    }
+}
+
+/// A menu whose items shrink while it is open keeps its highlight on a row
+/// that still exists.
+#[test]
+fn a_highlight_past_the_end_lands_on_the_last_row() {
+    assert_eq!(clamp(Some(5), 3), Some(2));
+    assert_eq!(clamp(Some(1), 3), Some(1));
+    assert_eq!(clamp(Some(1), 0), None);
+    assert_eq!(clamp(None, 3), None);
+    assert_eq!(Move::Previous.from(Some(5), 3), Some(1));
+    assert_eq!(Move::Next.from(Some(5), 3), Some(0));
+}
+
 #[test]
 fn home_and_end_reach_the_ends_of_any_strip() {
     assert_eq!(Move::First.apply(2, 5), 0);

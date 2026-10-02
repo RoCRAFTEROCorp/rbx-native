@@ -2,6 +2,11 @@
 
 ## 2026-10-01
 
+- **Menus work from the keyboard.** In every dropdown menu (the `⋯`
+  overflow menus, the ribbon's insert menus, the Argon and Wally pickers),
+  Up and Down now move through the rows, Home and End jump to the ends, and
+  Enter or Space picks the highlighted one. Before, an open menu could only
+  be closed from the keyboard, not used. — @Vikmanou
 - **Script font size.** Studio Settings › Appearance › Script font size is
   live: the Script Editor's text, 8 to 32 px, saved with the other
   settings. It sits on top of the UI scale, so the Script Editor now grows
