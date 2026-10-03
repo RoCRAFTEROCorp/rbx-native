@@ -795,3 +795,19 @@ fn a_partial_layout_restores_to_a_whole_one_that_restores_to_itself() {
     assert_ne!(whole, partial);
     assert_eq!(Layout::restore(&whole).saved(), whole);
 }
+
+#[test]
+fn only_one_matching_named_layout_is_active() {
+    // The last saved or applied name wins while it still matches.
+    assert_eq!(
+        active_layout(&["Build", "Script"], Some("Script")),
+        Some("Script")
+    );
+    // Otherwise (nothing touched yet, or the docks moved off it) the first match.
+    assert_eq!(active_layout(&["Build", "Script"], None), Some("Build"));
+    assert_eq!(
+        active_layout(&["Build", "Script"], Some("Gone")),
+        Some("Build")
+    );
+    assert_eq!(active_layout(&[], Some("Script")), None);
+}

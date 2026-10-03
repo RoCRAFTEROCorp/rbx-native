@@ -182,12 +182,12 @@ impl Shell {
         let overflow = menu::dropdown(
             self,
             MenuId::ArgonOverflow,
-            chrome::Trigger::new(chrome::dock_options_button(
+            chrome::dock_options_trigger(
                 "argon-overflow",
                 IconName::Ellipsis,
                 16.,
                 "Argon dock options",
-            )),
+            ),
             self.move_items(Panel::Argon),
             cx,
         );

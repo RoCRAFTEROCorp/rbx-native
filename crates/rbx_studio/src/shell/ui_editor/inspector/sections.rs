@@ -336,11 +336,11 @@ impl Shell {
         let add = menu::dropdown_at(
             self,
             MenuId::UiConstraint,
-            chrome::Trigger::new(chrome::icon_button(
+            chrome::icon_trigger(
                 "ui-inspect-constraint-add",
                 IconName::Plus,
                 "Add a constraint",
-            )),
+            ),
             items,
             Anchor::TopRight,
             cx,

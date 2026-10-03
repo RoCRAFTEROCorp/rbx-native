@@ -21,17 +21,21 @@ pub struct ReflectionDatabase {
     enums: HashMap<String, EnumDescriptor>,
     /// Shared rather than copied: a database is cloned per Command Bar run.
     pub(crate) defaults: Arc<Defaults>,
+    /// The dump's name for a legacy ContentId (see `content_id`).
+    pub(crate) content_id_type: &'static str,
 }
 
 impl ReflectionDatabase {
     /// Parses a JSON API dump into a searchable database.
     pub fn from_json_str(json: &str) -> Result<Self, ReflectionError> {
         let (classes, enums) = parse_dump(json)?;
+        let content_id_type = crate::content_id::spelling(&classes);
 
         Ok(ReflectionDatabase {
             classes: classes.into_iter().map(|c| (c.name.clone(), c)).collect(),
             enums: enums.into_iter().map(|e| (e.name.clone(), e)).collect(),
             defaults: Arc::default(),
+            content_id_type,
         })
     }
 

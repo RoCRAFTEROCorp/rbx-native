@@ -40,7 +40,7 @@ pub(super) struct ExplorerEdit {
     menu: Option<menu::RowMenu>,
     renaming: Option<rename::Renaming>,
     /// Where the pointer last was, in window coordinates. Both popups anchor
-    /// here — including when a keystroke rather than a click opened one,
+    /// where it was when they opened — including when a keystroke rather than a click opened one,
     /// which is the whole reason this is tracked rather than read off the
     /// event that opened it.
     pointer: Point<Pixels>,
@@ -140,22 +140,48 @@ impl Shell {
             .collect()
     }
 
-    /// Escape's half of "no keyboard traps" for these two popups (WCAG
-    /// 2.1.2), plus the cancel half of an in-place rename. Returns whether
+    /// The cancel half of an in-place rename, and Escape's half of "no
+    /// keyboard traps" for the two popups (WCAG 2.1.2). Returns whether
     /// anything was actually closed, so the caller can skip the repaint when
     /// nothing was.
-    pub(super) fn close_explorer_popups(&mut self) -> bool {
-        self.explorer_edit.picker.take().is_some()
-            | self.explorer_edit.menu.take().is_some()
-            | self.explorer_edit.renaming.take().is_some()
+    pub(super) fn close_explorer_popups(&mut self, window: &mut Window, cx: &mut App) -> bool {
+        let renaming = self.explorer_edit.renaming.take();
+        if let Some(renaming) = &renaming {
+            renaming.give_focus_back(window, cx);
+        }
+        let picker = self.explorer_edit.picker.take();
+        if let Some(picker) = &picker {
+            picker.give_focus_back(window, cx);
+        }
+        picker.is_some() | self.explorer_edit.menu.take().is_some() | renaming.is_some()
     }
 
-    /// Where a popup opened from the Explorer goes. Anchored to the pointer
-    /// rather than to the row: a row is 28px tall inside a virtualised list
-    /// that offers no geometry to anchor to, and the pointer is where the
-    /// gesture that opened it happened anyway.
+    /// Where a popup opened from the Explorer goes, read once as it opens.
+    /// Anchored to the pointer rather than to the row: a row is 28px tall
+    /// inside a virtualised list that offers no geometry to anchor to, and
+    /// the pointer is where the gesture that opened it happened anyway.
     fn popup_anchor(&self) -> Point<Pixels> {
         self.explorer_edit.pointer
+    }
+}
+
+/// Hands focus back to `previous` as the row menu, the picker or a name box
+/// closes — but
+/// only while focus is still in `own`, or has gone nowhere because `own`'s
+/// element just left the tree. A click that put focus somewhere else on
+/// purpose keeps it there. Without this, closing either one drops focus on
+/// the floor and the tree ignores its keys until it is clicked again.
+fn give_focus_back(
+    previous: Option<FocusHandle>,
+    own: &FocusHandle,
+    window: &mut Window,
+    cx: &mut App,
+) {
+    let Some(previous) = previous else {
+        return;
+    };
+    if own.contains_focused(window, cx) || window.focused(cx).is_none() {
+        previous.focus(window, cx);
     }
 }
 

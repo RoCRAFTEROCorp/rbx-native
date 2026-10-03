@@ -232,6 +232,14 @@ pub(crate) struct Shell {
     attribute_edits: attributes_panel::AttributeEdits,
     /// Mirrors the tree's selected row (see [`Shell::sync_selection`]).
     selection: Selection,
+    /// Where a `Shift`-click's range starts in the Explorer: the row last
+    /// clicked plainly or with `Ctrl`/`Cmd` (see [`Shell::select_range`]).
+    range_anchor: Option<Ref>,
+    /// The row a `Shift`+arrow left the tree's cursor on, which a range from
+    /// the anchor does not start at: `sync_selection` must not read the
+    /// tree pointing there as a plain selection of it. Let go by any other
+    /// selection change and by a plain press on a row.
+    range_cursor: Option<Ref>,
     /// This window's own copy/paste clipboard, replaced whole by every
     /// `Ctrl+C` — see `shell::clipboard`.
     clipboard: Vec<clipboard::Clipped>,
@@ -369,6 +377,9 @@ pub(crate) struct Shell {
     layout: layout::Layout,
     /// See `Settings::named_layouts`; persisted.
     named_layouts: Vec<crate::settings::NamedLayout>,
+    /// The named layout most recently saved or applied, which is the one
+    /// marked Active when several names hold the docks' arrangement.
+    last_named_layout: Option<String>,
     output_collapsed: bool,
     drag: Option<Drag>,
     /// The dock currently being dragged by its tab, which is what puts the
@@ -620,6 +631,8 @@ impl Shell {
             edits: edit::Edits::default(),
             attribute_edits: attributes_panel::AttributeEdits::default(),
             selection: Selection::new(selected),
+            range_anchor: None,
+            range_cursor: None,
             clipboard: Vec::new(),
             script_templates: user.script_templates,
             hovered: Vec::new(),
@@ -669,6 +682,7 @@ impl Shell {
             // whatever the file actually held (see `layout::Layout::restore`).
             layout: layout::Layout::restore(&docks),
             named_layouts,
+            last_named_layout: None,
             dragging_panel: None,
             panel_windows: HashMap::new(),
             window_was_active: true,
@@ -903,19 +917,23 @@ impl Shell {
     /// to what it already showed means the user picked something else.
     fn sync_selection(&mut self, tree: &Entity<TreeState>, cx: &mut Context<Self>) {
         let selected = Selection::of_item(tree.read(cx).selected_item());
-        if selected == self.selection.get() {
+        if selected == self.selection.get() || (selected.is_some() && selected == self.range_cursor)
+        {
             return;
         }
-        // A search can leave the selected instance without a row; the tree
-        // then has nothing selected, which is the filter's doing and not a
-        // deselect. One that no longer exists (a script destroyed it) is
-        // still let go.
-        let hidden = self
-            .selected()
-            .is_some_and(|reference| self.dom.get(reference).is_some());
-        if selected.is_none() && hidden && !self.explorer_query.is_empty() {
+        // A search, or a parent collapsed from its chevron, can leave the
+        // selected instance without a row; the tree then has nothing
+        // selected, which is the view's doing and not a deselect — a
+        // multi-selection survives it whole. One that no longer exists (a
+        // script destroyed it) is still let go.
+        let hidden = selected.is_none()
+            && self.selected().is_some_and(|reference| {
+                self.dom.get(reference).is_some() && !has_row(tree.read(cx), reference)
+            });
+        if hidden {
             return;
         }
+        self.range_anchor = selected;
         if self.selection.set(selected) {
             self.selection_changed(cx);
         }
@@ -927,6 +945,7 @@ impl Shell {
     /// Properties editor belonged to the old selection, and the viewport's
     /// outline and draggers have to move to the new one.
     fn selection_changed(&mut self, cx: &mut Context<Self>) {
+        self.range_cursor = None;
         self.edits.clear();
         self.attribute_edits.clear();
         self.sync_viewport_selection(cx);
@@ -1041,6 +1060,25 @@ impl Shell {
         }
     }
 
+    /// Escape in the Explorer's search field: empties a typed search, as the
+    /// Settings window's does, and leaves the field focused. Returns false —
+    /// so the key goes on to the window — when there is nothing to clear or
+    /// a menu is open and should be the one to close.
+    pub(super) fn clear_explorer_search(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        if self.explorer_query.is_empty() || self.open_menu.is_some() {
+            return false;
+        }
+        // `set_value` emits no change event, so the rows are pushed here.
+        self.search
+            .update(cx, |state, cx| state.set_value("", window, cx));
+        self.search_explorer(String::new(), cx);
+        true
+    }
+
     /// Lists or hides one service in the Explorer's default view, from
     /// Studio Settings' Default services grid.
     pub(super) fn toggle_default_service(&mut self, class: &str, cx: &mut Context<Self>) {
@@ -1118,13 +1156,19 @@ impl Shell {
         &self.named_layouts
     }
 
-    /// Whether the docks are arranged as applying `named` would leave them.
-    /// Compared after a restore rather than as saved: a layout that leaves
-    /// panels out (a hand-edited one, or one saved before a panel existed)
-    /// gets them back on their own edges when applied, and is still the
-    /// layout in use.
-    pub(super) fn is_current_layout(&self, named: &crate::settings::NamedLayout) -> bool {
-        self.layout.saved() == layout::Layout::restore(&named.layout).saved()
+    /// The saved layout the docks are arranged as, if any. Matched after a
+    /// restore rather than as saved: a layout that leaves panels out (a
+    /// hand-edited one, or one saved before a panel existed) gets them back
+    /// on their own edges when applied, and is still the layout in use.
+    pub(super) fn active_named_layout(&self) -> Option<&str> {
+        let current = self.layout.saved();
+        let matching: Vec<&str> = self
+            .named_layouts
+            .iter()
+            .filter(|named| layout::Layout::restore(&named.layout).saved() == current)
+            .map(|named| named.name.as_str())
+            .collect();
+        layout::active_layout(&matching, self.last_named_layout.as_deref())
     }
 
     /// Saves the current dock arrangement as `name`, replacing a layout
@@ -1146,6 +1190,7 @@ impl Shell {
                 layout,
             }),
         }
+        self.last_named_layout = Some(name.to_owned());
         self.save_settings();
         cx.notify();
     }
@@ -1159,6 +1204,7 @@ impl Shell {
             return;
         };
         self.layout = layout::Layout::restore(&named.layout);
+        self.last_named_layout = Some(named.name.clone());
         self.save_settings();
         cx.notify();
     }
@@ -1680,6 +1726,14 @@ impl Shell {
             None => name.to_owned(),
         }
     }
+}
+
+/// Whether `reference` has a row in the tree as it stands — not inside a
+/// collapsed parent, and not filtered out by a search.
+fn has_row(tree: &TreeState, reference: Ref) -> bool {
+    (0..)
+        .map_while(|index| tree.entry(index))
+        .any(|entry| crate::explorer::item_ref(&entry.item().id) == Some(reference))
 }
 
 /// One number as this editor's fields read it back: three decimals with

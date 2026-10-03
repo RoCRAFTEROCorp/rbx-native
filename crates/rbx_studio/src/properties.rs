@@ -206,17 +206,44 @@ pub(crate) struct PropertyRow {
     pub(crate) mixed: bool,
 }
 
-/// Groups rows by [`PropertyRow::category`], sorted alphabetically by
-/// category name (there is no canonical order to reproduce, unlike Studio's
-/// own panel — see `AGENTS.md`'s note on this); a row's order within its
+/// Groups rows by [`PropertyRow::category`] in the order Studio's own
+/// Properties panel uses: [`CATEGORY_ORDER`] first, then every other
+/// category alphabetically ([`UNCATEGORIZED`] included, as Studio does with
+/// its own "Missing Property Metadata" bucket). A row's order within its
 /// group is unchanged. Every group is non-empty by construction.
 pub(crate) fn group_by_category(rows: Vec<PropertyRow>) -> Vec<(String, Vec<PropertyRow>)> {
     let mut grouped: BTreeMap<String, Vec<PropertyRow>> = BTreeMap::new();
     for row in rows {
         grouped.entry(row.category.clone()).or_default().push(row);
     }
-    grouped.into_iter().collect()
+    let mut groups: Vec<(String, Vec<PropertyRow>)> = grouped.into_iter().collect();
+    // Stable, so the categories outside the list keep the map's alphabetical
+    // order.
+    groups.sort_by_key(|(category, _)| {
+        CATEGORY_ORDER
+            .iter()
+            .position(|known| known == category)
+            .unwrap_or(CATEGORY_ORDER.len())
+    });
+    groups
 }
+
+/// The categories Studio ranks ahead of the rest, in its order: the table in
+/// the built-in Properties plugin's `createGeneralFilter` (Roblox-Client-
+/// Tracker, `CompiledPackages/Properties/*/Properties/Injectables/Host/
+/// PropertiesTabsContextProvider`), which matches creator-docs'
+/// `studio/properties.md` screenshot (Appearance, Data, Transform). Anything
+/// else shares one rank and sorts by name, before Tags then Attributes
+/// (`shell::attributes_panel`).
+const CATEGORY_ORDER: &[&str] = &[
+    "Appearance",
+    "Data",
+    "Transform",
+    "Pivot",
+    "Behavior",
+    "Collision",
+    "Part",
+];
 
 /// The reflection data that turns enum ordinals into names. The DOM is borrowed
 /// per call rather than owned: the panel reads the one tree `Shell` mutates, so

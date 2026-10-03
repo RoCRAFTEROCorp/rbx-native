@@ -20,6 +20,17 @@ same reason `on_mouse_move` in `src/input/base/state.rs` no longer raises the
 kit's diagnostic popover (painted boxless in those colours); rbx_studio's
 hover provider shows the problem's message instead.
 
+And, in `src/tree.rs`, a click on a row only selects it rather than also
+expanding it (Roblox Studio expands from the arrow alone), plus a public
+`TreeState::toggle_expanded` for the Explorer's chevron to call, and
+`rebuild_entries` keeping the selection on its item (by id) rather than on
+a bare index that expanding a row above it would shift, and remembering
+it (`hidden_selection`) while a collapsed parent hides its row, so
+expanding the parent selects it again. All are marked
+"rbx-native addition"; the last is tested from `rbx_studio`
+(`shell/tree_keys/tests.rs`), since this crate's own tests do not run
+inside the workspace.
+
 And one gutter slot, `src/input/base/gutter.rs` plus `set_gutter` on the
 editor state and the hooks marked the same way in `src/input/base/element.rs`:
 a per-line marker cell over the line-number column that reports mouse
@@ -32,5 +43,5 @@ to the next / every match of the selection) has to add selections, and
 upstream keeps the selection list private (still true in 0.6.6).
 
 To upgrade GPUI Kit: re-copy the matching `gpui-base` from
-`~/.cargo/registry/src/*/`, re-apply the two methods, the two diagnostic fixes and the gutter slot, and bump the version.
+`~/.cargo/registry/src/*/`, re-apply the two methods, the two diagnostic fixes, the tree changes and the gutter slot, and bump the version.
 Delete this directory and the patch once upstream has an equivalent.

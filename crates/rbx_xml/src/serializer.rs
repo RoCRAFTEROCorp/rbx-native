@@ -167,6 +167,36 @@ mod tests {
     }
 
     #[test]
+    fn a_texture_stored_as_string_and_as_content_both_round_trip() {
+        // XML writes each instance's value on its own, so the two shapes a
+        // Decal.Texture can hold never have to agree the way a binary column does.
+        let mut dom = WeakDom::new();
+        let loaded = dom.new_instance("Decal", "Loaded", None);
+        let set = dom.new_instance("Decal", "Set", None);
+        let string = Variant::String("rbxassetid://1".into());
+        let content = Variant::Content(Content::Uri("rbxassetid://2".into()));
+        dom.set_property(loaded, "Texture", string.clone()).unwrap();
+        dom.set_property(set, "Texture", content.clone()).unwrap();
+
+        let reloaded = crate::deserialize(&serialize(&dom).unwrap()).unwrap();
+
+        let mut textures: Vec<_> = reloaded
+            .root_refs()
+            .iter()
+            .map(|&r| {
+                reloaded
+                    .get(r)
+                    .unwrap()
+                    .properties()
+                    .get("Texture")
+                    .cloned()
+            })
+            .collect();
+        textures.sort_by_key(|v| format!("{v:?}"));
+        assert_eq!(textures, vec![Some(content), Some(string)]);
+    }
+
+    #[test]
     fn non_utf8_unknown_blob_round_trips_through_binary_string() {
         let mut dom = WeakDom::new();
         dom.insert(Instance::new(Ref::new(1), "Terrain", "Terrain"));

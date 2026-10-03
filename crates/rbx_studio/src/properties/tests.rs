@@ -353,6 +353,35 @@ fn an_unset_reference_is_listed_as_an_editable_nil() {
 }
 
 #[test]
+fn an_unset_asset_id_is_listed_with_its_twins_default_and_edits_as_a_string() {
+    let mut dom = WeakDom::new();
+    let decal = dom.new_instance("Decal", "Decal", None);
+    let emitter = dom.new_instance("ParticleEmitter", "ParticleEmitter", None);
+    let db = ReflectionDatabase::embedded();
+    let properties = Properties::new(ReflectionDatabase::embedded());
+
+    let texture = |reference: Ref| {
+        properties
+            .rows(&dom, &[reference], None)
+            .into_iter()
+            .find(|row| row.name == "Texture")
+            .expect("a fresh instance still lists Texture")
+    };
+    assert_eq!(texture(decal).value, "\"\"");
+    assert!(texture(decal).edit.is_some());
+    assert_eq!(
+        texture(emitter).value,
+        "\"rbxasset://textures/particles/sparkles_main.dds\""
+    );
+
+    edit::commit(&mut dom, &db, decal, "Texture", "7").unwrap();
+    assert_eq!(
+        dom.get(decal).unwrap().properties().get("Texture"),
+        Some(&Variant::String("rbxassetid://7".into()))
+    );
+}
+
+#[test]
 fn a_set_reference_edits_through_the_picker_and_parent_stays_read_only() {
     let fixture = properties(&[]);
     let mut dom = fixture.dom;
@@ -942,7 +971,7 @@ fn udim2_edits_as_four_labeled_fields() {
 }
 
 #[test]
-fn rows_group_by_category_in_alphabetical_order_with_no_empty_groups() {
+fn rows_group_by_category_in_studio_order_with_no_empty_groups() {
     let rows = properties(&[
         ("Anchored", Variant::Bool(true)),
         (
@@ -962,23 +991,43 @@ fn rows_group_by_category_in_alphabetical_order_with_no_empty_groups() {
         .iter()
         .map(|(category, _)| category.as_str())
         .collect();
-    // Every category a Part's rows fall in, the ones its defaults fill in
-    // included.
+    // Studio's ranked categories first, then the rest by name.
     assert_eq!(
         categories,
         [
             "Appearance",
-            "Assembly",
+            "Data",
+            "Transform",
+            "Pivot",
             "Behavior",
             "Collision",
-            "Data",
             "Part",
-            "Pivot",
+            "Assembly",
             "Surface",
-            "Transform"
         ]
     );
     assert!(groups.iter().all(|(_, rows)| !rows.is_empty()));
+}
+
+#[test]
+fn unranked_categories_sort_by_name_after_ranked_ones() {
+    let rows = ["Zzz", UNCATEGORIZED, "Aaa", "Part", "Data"]
+        .into_iter()
+        .map(|category| PropertyRow {
+            name: category.into(),
+            value: String::new(),
+            category: category.into(),
+            edit: None,
+            mixed: false,
+        })
+        .collect();
+
+    let groups = group_by_category(rows);
+    let categories: Vec<&str> = groups
+        .iter()
+        .map(|(category, _)| category.as_str())
+        .collect();
+    assert_eq!(categories, ["Data", "Part", "Aaa", UNCATEGORIZED, "Zzz"]);
 }
 
 /// A Workspace holding one instance of `class` carrying `values`, for the

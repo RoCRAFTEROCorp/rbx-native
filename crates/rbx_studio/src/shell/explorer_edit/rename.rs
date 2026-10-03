@@ -14,7 +14,7 @@ use rbx_reflection::ReflectionDatabase;
 
 use crate::tokens;
 
-use super::Shell;
+use super::{give_focus_back, Shell};
 
 /// Whether an instance can be renamed at all. A service cannot: Roblox
 /// creates exactly one of each and scripts reach it by class through
@@ -30,6 +30,9 @@ pub(super) fn renameable(dom: &WeakDom, database: &ReflectionDatabase, reference
 pub(super) struct Renaming {
     target: Ref,
     input: Entity<InputState>,
+    /// What had focus before the box took it — the tree, from `F2` or the
+    /// row menu — given back however the box closes.
+    previous: Option<FocusHandle>,
     /// Kept alive only to stay subscribed — see `shell::edit::RowEdit`'s
     /// identical convention.
     _subscription: Subscription,
@@ -42,6 +45,13 @@ impl Renaming {
 
     pub(super) fn input(&self) -> &Entity<InputState> {
         &self.input
+    }
+
+    /// See [`give_focus_back`]: Enter and Escape close a box that still has
+    /// focus, a click away closes one that has just lost it.
+    pub(super) fn give_focus_back(&self, window: &mut Window, cx: &mut App) {
+        let own = self.input.read(cx).focus_handle(cx);
+        give_focus_back(self.previous.clone(), &own, window, cx);
     }
 }
 
@@ -90,11 +100,15 @@ impl Shell {
         };
 
         let input = cx.new(|cx| InputState::new(window, cx).default_value(name));
-        let subscription = cx.subscribe(&input, |shell, _, event: &InputEvent, cx| {
-            if matches!(event, InputEvent::PressEnter { .. } | InputEvent::Blur) {
-                shell.commit_rename(cx);
-            }
-        });
+        let subscription = cx.subscribe_in(
+            &input,
+            window,
+            |shell, _, event: &InputEvent, window, cx| {
+                if matches!(event, InputEvent::PressEnter { .. } | InputEvent::Blur) {
+                    shell.commit_rename(window, cx);
+                }
+            },
+        );
         self.explorer_edit.focus_next = Some(input.clone());
 
         self.explorer_edit.picker = None;
@@ -102,6 +116,7 @@ impl Shell {
         self.explorer_edit.renaming = Some(Renaming {
             target: reference,
             input,
+            previous: window.focused(cx),
             _subscription: subscription,
         });
         cx.notify();
@@ -123,10 +138,11 @@ impl Shell {
     /// unchanged name closes the box without touching the DOM: `Instance`
     /// has no meaningful empty name, and a rename that renames nothing must
     /// not push an undo step that undoes nothing.
-    fn commit_rename(&mut self, cx: &mut Context<Self>) {
+    fn commit_rename(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let Some(renaming) = self.explorer_edit.renaming.take() else {
             return;
         };
+        renaming.give_focus_back(window, cx);
         let typed = renaming.input.read(cx).value().trim().to_owned();
         let current = self
             .dom

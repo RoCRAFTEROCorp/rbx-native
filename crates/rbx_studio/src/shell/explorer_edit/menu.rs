@@ -35,7 +35,7 @@ use rbx_reflection::ReflectionDatabase;
 use super::super::roving::Move;
 use super::super::{clipboard, group, keys, menu};
 use super::rename::renameable;
-use super::Shell;
+use super::{give_focus_back, Shell};
 use crate::change_class;
 
 /// Which of the menu's rows are live. Every field is the guard the row's own
@@ -85,6 +85,10 @@ pub(super) struct RowMenu {
     cursor: Option<usize>,
     /// What had focus before the menu took it, given back on close.
     previous: Option<FocusHandle>,
+    /// Where it opened, kept rather than read off the pointer each frame:
+    /// a menu that followed the pointer would slide under the click meant
+    /// to dismiss it.
+    anchor: Point<Pixels>,
 }
 
 impl RowMenu {
@@ -120,7 +124,6 @@ impl Shell {
         if !self.selected_all().contains(&target) {
             self.select(target, cx);
         }
-        self.explorer_edit.pointer = position;
         self.explorer_edit.picker = None;
         self.explorer_edit.renaming = None;
         // A menu reopened over another keeps what the first one took
@@ -135,6 +138,7 @@ impl Shell {
             focus: cx.focus_handle(),
             cursor: None,
             previous,
+            anchor: position,
         });
         self.explorer_edit.focus_menu = true;
         cx.notify();
@@ -154,16 +158,11 @@ impl Shell {
         true
     }
 
-    /// Closes the row menu and, if focus is still in it, hands focus back to
-    /// what had it when the menu opened, as a popover does.
+    /// Closes the row menu and hands focus back to what had it when the menu
+    /// opened, as a popover does (see [`give_focus_back`]).
     fn close_row_menu(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(menu) = self.explorer_edit.menu.take() {
-            if let Some(previous) = menu
-                .previous
-                .filter(|_| menu.focus.contains_focused(window, cx))
-            {
-                previous.focus(window, cx);
-            }
+            give_focus_back(menu.previous, &menu.focus, window, cx);
         }
         cx.notify();
     }
@@ -213,7 +212,8 @@ impl Shell {
 
     pub(super) fn row_menu_popup(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
         let open = self.explorer_edit.menu.as_ref()?;
-        let (target, focus, cursor) = (open.target, open.focus.clone(), open.cursor);
+        let (target, focus, cursor, anchor) =
+            (open.target, open.focus.clone(), open.cursor, open.anchor);
         let mut live = availability(
             &self.dom,
             &self.database,
@@ -326,13 +326,18 @@ impl Shell {
             .occlude()
             .on_mouse_down_out(cx.listener(|shell, _: &MouseDownEvent, window, cx| {
                 shell.close_row_menu(window, cx);
+                // The click that closes the menu does nothing else, as a
+                // native menu's does: it is caught on its way down (this
+                // runs in the capture phase), so the row beneath is neither
+                // selected nor expanded by it.
+                cx.stop_propagation();
             }))
             .children(rows);
 
         Some(
             deferred(
                 anchored()
-                    .position(self.popup_anchor())
+                    .position(anchor)
                     .snap_to_window_with_margin(px(8.))
                     .child(surface),
             )

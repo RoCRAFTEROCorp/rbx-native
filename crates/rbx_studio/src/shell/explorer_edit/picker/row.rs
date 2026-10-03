@@ -117,8 +117,8 @@ pub(super) fn class_row(
                 .text_color(tokens::text_strong())
                 .hover(|this| tokens::hover_fx(this).bg(tokens::hover()))
                 .active(|this| this.bg(tokens::selection()))
-                .on_click(cx.listener(move |shell, _, _, cx| {
-                    shell.commit_picked(picked.clone(), cx);
+                .on_click(cx.listener(move |shell, _, window, cx| {
+                    shell.commit_picked(picked.clone(), window, cx);
                 })),
             Some(reason) => this
                 .cursor_not_allowed()

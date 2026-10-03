@@ -318,6 +318,7 @@ pub(crate) fn topbar_frame(title: SharedString) -> Div {
         .bg(tokens::black())
         .border_b(px(1.))
         .border_color(tokens::border())
+        .child(super::tooltip::rehover_on_scroll())
         .child(
             h_flex()
                 .flex_none()
@@ -500,6 +501,7 @@ pub(crate) fn panel_topbar(
         .flex_none()
         .items_center()
         .bg(tokens::black())
+        .child(super::tooltip::rehover_on_scroll())
         .child(
             h_flex()
                 .flex_none()
@@ -699,13 +701,13 @@ pub(super) fn dock_content(content: impl IntoElement) -> Div {
 
 /// A dock's tab-row overflow: 28×28, square-bottomed so it sits in the
 /// strip like a tab, `icon` at `icon_size` in `text3`.
-pub(super) fn dock_options_button(
-    id: &'static str,
+pub(super) fn dock_options_trigger(
+    id: impl Into<ElementId>,
     icon: IconName,
     icon_size: f32,
     label: &'static str,
-) -> Stateful<Div> {
-    div()
+) -> Trigger {
+    let button = div()
         .id(id)
         .flex_none()
         .size(px(28.))
@@ -721,8 +723,8 @@ pub(super) fn dock_options_button(
                 .text_color(tokens::text())
         })
         .focus_visible(|this| this.shadow(tokens::focus_ring(tokens::dock())))
-        .tooltip(move |window, cx| super::tooltip::text(label, window, cx))
-        .child(Icon::new(icon).size(px(icon_size)))
+        .child(Icon::new(icon).size(px(icon_size)));
+    Trigger::new(button).tooltip(label)
 }
 
 /// A small icon button for panel chrome: an overflow "…", a collapse
@@ -733,6 +735,20 @@ pub(super) fn icon_button(
     icon: IconName,
     label: &'static str,
 ) -> Stateful<Div> {
+    icon_glyph_button(id, icon).tooltip(move |window, cx| super::tooltip::text(label, window, cx))
+}
+
+/// [`icon_button`] opening a menu: its tooltip rides on the [`Trigger`],
+/// which drops it while the menu is open.
+pub(super) fn icon_trigger(
+    id: impl Into<ElementId>,
+    icon: IconName,
+    label: &'static str,
+) -> Trigger {
+    Trigger::new(icon_glyph_button(id, icon)).tooltip(label)
+}
+
+fn icon_glyph_button(id: impl Into<ElementId>, icon: IconName) -> Stateful<Div> {
     div()
         .id(id.into())
         .flex_none()
@@ -752,7 +768,6 @@ pub(super) fn icon_button(
         })
         .active(|this| this.bg(tokens::ribbon_tab_active()))
         .focus_visible(|this| this.shadow(tokens::focus_ring(tokens::black())))
-        .tooltip(move |window, cx| super::tooltip::text(label, window, cx))
         .child(Icon::new(icon).size(tokens::text_md()))
 }
 
@@ -857,6 +872,7 @@ pub(super) struct Trigger {
     styled: bool,
     open: bool,
     accent: Option<Rgba>,
+    tooltip: Option<SharedString>,
 }
 
 impl Trigger {
@@ -866,6 +882,7 @@ impl Trigger {
             styled: true,
             open: false,
             accent: None,
+            tooltip: None,
         }
     }
 
@@ -879,6 +896,7 @@ impl Trigger {
             styled: false,
             open: false,
             accent: None,
+            tooltip: None,
         }
     }
 
@@ -888,6 +906,16 @@ impl Trigger {
     /// lives in a popover rather than in `Transform::tool`.
     pub(super) fn accent(mut self, accent: Rgba) -> Self {
         self.accent = Some(accent);
+        self
+    }
+
+    /// The trigger's hover label. Given here rather than on the element so
+    /// it can be left off while the menu is open: GPUI cancels a pending or
+    /// showing tooltip once its element stops registering one, and nothing
+    /// else does — a label queued by the hover before a quick click would
+    /// otherwise pop up over the menu's first row.
+    pub(super) fn tooltip(mut self, label: impl Into<SharedString>) -> Self {
+        self.tooltip = Some(label.into());
         self
     }
 }
@@ -906,11 +934,16 @@ impl Selectable for Trigger {
 impl RenderOnce for Trigger {
     fn render(self, _: &mut Window, _: &mut App) -> impl IntoElement {
         let accent = self.accent;
-        (self.build)(self.open).when(self.open && self.styled, |this| match accent {
-            Some(accent) => super::ribbon::selected(this, accent),
-            None => this
-                .bg(tokens::accent_soft())
-                .text_color(tokens::check_on()),
-        })
+        let tooltip = self.tooltip.filter(|_| !self.open);
+        (self.build)(self.open)
+            .when(self.open && self.styled, |this| match accent {
+                Some(accent) => super::ribbon::selected(this, accent),
+                None => this
+                    .bg(tokens::accent_soft())
+                    .text_color(tokens::check_on()),
+            })
+            .when_some(tooltip, |this, label| {
+                this.tooltip(move |window, cx| super::tooltip::text(label.clone(), window, cx))
+            })
     }
 }

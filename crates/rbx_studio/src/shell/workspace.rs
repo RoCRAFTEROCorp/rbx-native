@@ -196,11 +196,7 @@ impl Shell {
         let overflow = menu::dropdown(
             self,
             MenuId::ExplorerOverflow,
-            chrome::Trigger::new(chrome::icon_button(
-                "explorer-overflow",
-                IconName::Ellipsis,
-                "Explorer settings",
-            )),
+            chrome::icon_trigger("explorer-overflow", IconName::Ellipsis, "Explorer settings"),
             items,
             cx,
         );
@@ -209,7 +205,17 @@ impl Shell {
             v_flex()
                 .size_full()
                 .gap(px(10.))
-                .child(search_field(self.tab_order.next(), &self.search, cx))
+                .child(
+                    div()
+                        .on_key_down(cx.listener(|shell, event: &KeyDownEvent, window, cx| {
+                            if event.keystroke.key == "escape"
+                                && shell.clear_explorer_search(window, cx)
+                            {
+                                cx.stop_propagation();
+                            }
+                        }))
+                        .child(search_field(self.tab_order.next(), &self.search, cx)),
+                )
                 .child(
                     div()
                         .flex_1()
@@ -235,11 +241,11 @@ impl Shell {
         let overflow = menu::dropdown(
             self,
             MenuId::PropertiesOverflow,
-            chrome::Trigger::new(chrome::icon_button(
+            chrome::icon_trigger(
                 "properties-overflow",
                 IconName::Ellipsis,
                 "Properties settings",
-            )),
+            ),
             items,
             cx,
         );
@@ -297,11 +303,7 @@ impl Shell {
         let overflow = menu::dropdown(
             self,
             MenuId::OutputOverflow,
-            chrome::Trigger::new(chrome::icon_button(
-                "output-overflow",
-                IconName::Ellipsis,
-                "Output settings",
-            )),
+            chrome::icon_trigger("output-overflow", IconName::Ellipsis, "Output settings"),
             items,
             cx,
         );

@@ -76,7 +76,7 @@ fn unknown_roots_follow_the_services_alphabetically() {
 #[test]
 fn alphabetical_ordering_ignores_case() {
     let mut roots = vec![
-        node("Chat", "Chat"),
+        node("CollectionService", "CollectionService"),
         node("CSGDictionaryService", "CSGDictionaryService"),
         node("AvatarSettings", "AvatarSettings"),
     ];
@@ -84,7 +84,36 @@ fn alphabetical_ordering_ignores_case() {
 
     assert_eq!(
         names(&roots),
-        ["AvatarSettings", "Chat", "CSGDictionaryService"]
+        [
+            "AvatarSettings",
+            "CollectionService",
+            "CSGDictionaryService"
+        ]
+    );
+}
+
+#[test]
+fn a_service_ticked_to_show_takes_its_studio_place_not_the_end() {
+    let mut roots = vec![
+        node("AvatarSettings", "AvatarSettings"),
+        node("TestService", "TestService"),
+        node("TextChatService", "TextChatService"),
+        node("Chat", "Chat"),
+        node("SoundService", "SoundService"),
+        node("Workspace", "Workspace"),
+    ];
+    sort_roots(&mut roots);
+
+    assert_eq!(
+        names(&roots),
+        [
+            "Workspace",
+            "SoundService",
+            "Chat",
+            "TextChatService",
+            "TestService",
+            "AvatarSettings"
+        ]
     );
 }
 

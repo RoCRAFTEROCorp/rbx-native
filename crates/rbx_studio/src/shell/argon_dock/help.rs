@@ -23,38 +23,38 @@ impl Shell {
         Popover::new("argon-help")
             .anchor(Anchor::BottomLeft)
             .appearance(false)
-            .trigger(chrome::Trigger::with_open(move |open| {
-                h_flex()
-                    .id("argon-help-button")
-                    .tab_index(tab)
-                    .flex_none()
-                    .size(px(34.))
-                    .items_center()
-                    .justify_center()
-                    .rounded(tokens::radius())
-                    .border_1()
-                    .cursor_pointer()
-                    .focus_visible(|this| this.shadow(tokens::focus_ring(tokens::dock())))
-                    .tooltip(|window, cx| {
-                        super::super::tooltip::text("How to use Argon", window, cx)
-                    })
-                    .map(|this| {
-                        if open {
-                            this.bg(tokens::accent_soft())
-                                .border_color(tokens::accent_line())
-                                .text_color(tokens::check_on())
-                        } else {
-                            this.border_color(tokens::border())
-                                .text_color(tokens::text2())
-                                .hover(|this| {
-                                    tokens::hover_fx(this)
-                                        .bg(tokens::hover())
-                                        .text_color(tokens::text())
-                                })
-                        }
-                    })
-                    .child(Icon::new(IconName::CircleQuestionMark).size(px(15.)))
-            }))
+            .trigger(
+                chrome::Trigger::with_open(move |open| {
+                    h_flex()
+                        .id("argon-help-button")
+                        .tab_index(tab)
+                        .flex_none()
+                        .size(px(34.))
+                        .items_center()
+                        .justify_center()
+                        .rounded(tokens::radius())
+                        .border_1()
+                        .cursor_pointer()
+                        .focus_visible(|this| this.shadow(tokens::focus_ring(tokens::dock())))
+                        .map(|this| {
+                            if open {
+                                this.bg(tokens::accent_soft())
+                                    .border_color(tokens::accent_line())
+                                    .text_color(tokens::check_on())
+                            } else {
+                                this.border_color(tokens::border())
+                                    .text_color(tokens::text2())
+                                    .hover(|this| {
+                                        tokens::hover_fx(this)
+                                            .bg(tokens::hover())
+                                            .text_color(tokens::text())
+                                    })
+                            }
+                        })
+                        .child(Icon::new(IconName::CircleQuestionMark).size(px(15.)))
+                })
+                .tooltip("How to use Argon"),
+            )
             .content(move |_, _, cx| help_popover(geometry, cx))
     }
 }

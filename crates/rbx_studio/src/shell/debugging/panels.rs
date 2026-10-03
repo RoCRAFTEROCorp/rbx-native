@@ -261,12 +261,7 @@ impl Shell {
         menu::dropdown(
             self,
             menu_id,
-            chrome::Trigger::new(chrome::dock_options_button(
-                id,
-                IconName::Ellipsis,
-                16.,
-                "Dock options",
-            )),
+            chrome::dock_options_trigger(id, IconName::Ellipsis, 16., "Dock options"),
             self.move_items(panel),
             cx,
         )

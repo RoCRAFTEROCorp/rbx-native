@@ -163,3 +163,71 @@ fn a_command_keystroke_is_never_type_ahead() {
     assert_eq!(typeahead_char(&key("enter")), None);
     assert_eq!(typeahead_char(&key("c")), Some('c'));
 }
+
+/// The vendored tree's selection follows its item, not its index (see
+/// `vendor/README.md`): opening a row above the selected one used to leave
+/// the selection on whatever row slid into its place.
+#[gpui_kit::test]
+fn the_tree_selection_follows_its_item_across_expansion(cx: &mut gpui_kit::TestAppContext) {
+    use gpui_kit::component::tree::TreeItem;
+    use gpui_kit::AppContext as _;
+
+    let items = vec![
+        TreeItem::new("Workspace", "Workspace").child(TreeItem::new("Camera", "Camera")),
+        TreeItem::new("Players", "Players")
+            .expanded(true)
+            .child(TreeItem::new("Player1", "Player1")),
+    ];
+    let tree = cx.new(|cx| TreeState::new(cx).items(items));
+    let selected = |tree: &TreeState| tree.selected_item().map(|item| item.id.to_string());
+
+    tree.update(cx, |tree, cx| {
+        tree.set_selected_index(Some(1), cx);
+        assert_eq!(selected(tree).as_deref(), Some("Players"));
+        // Workspace's chevron, above the selection: it opens and the
+        // selection moves down with Players rather than landing on Camera.
+        tree.toggle_expanded(0, cx);
+        assert_eq!(tree.selected_index(), Some(2));
+        assert_eq!(selected(tree).as_deref(), Some("Players"));
+        tree.toggle_expanded(0, cx);
+        assert_eq!(selected(tree).as_deref(), Some("Players"));
+        // Collapsing the selection's own parent hides it: no row selected.
+        tree.set_selected_index(Some(2), cx);
+        assert_eq!(selected(tree).as_deref(), Some("Player1"));
+        tree.toggle_expanded(1, cx);
+        assert_eq!(tree.selected_index(), None);
+        // Expanding it again brings the selection back, even with another
+        // row opened and closed above it in between.
+        tree.toggle_expanded(0, cx);
+        tree.toggle_expanded(0, cx);
+        tree.toggle_expanded(1, cx);
+        assert_eq!(selected(tree).as_deref(), Some("Player1"));
+        // An explicit deselect while hidden is not undone by expanding.
+        tree.toggle_expanded(1, cx);
+        tree.set_selected_index(None, cx);
+        tree.toggle_expanded(1, cx);
+        assert_eq!(tree.selected_index(), None);
+    });
+}
+
+/// Shift with Up, Down, Home or End is a range move; Ctrl+Shift, a bare
+/// arrow or a Shift+Left is not.
+#[test]
+fn shift_with_a_vertical_move_extends_a_range() {
+    let shifted = |name: &str, control: bool| Keystroke {
+        modifiers: gpui_kit::Modifiers {
+            shift: true,
+            control,
+            ..Default::default()
+        },
+        key: name.into(),
+        key_char: None,
+    };
+    assert_eq!(range_nav_for(&shifted("up", false)), Some(Nav::Previous));
+    assert_eq!(range_nav_for(&shifted("down", false)), Some(Nav::Next));
+    assert_eq!(range_nav_for(&shifted("home", false)), Some(Nav::First));
+    assert_eq!(range_nav_for(&shifted("end", false)), Some(Nav::Last));
+    assert_eq!(range_nav_for(&shifted("left", false)), None);
+    assert_eq!(range_nav_for(&shifted("down", true)), None);
+    assert_eq!(range_nav_for(&key("down")), None);
+}
