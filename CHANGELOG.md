@@ -2,6 +2,16 @@
 
 ## 2026-10-03
 
+- **A standing audit of how the Properties panel renders every Roblox
+  type.** A new test walks every property the live API dump declares a
+  default for and fails if one ever falls into the panel's plain-text
+  catch-all without being one of the few types that are genuinely just
+  typed text by design — confirming the type-coverage pass is complete
+  (`CFrame`, `BrickColor`, `Ray`, `Vector3int16`, `Faces`, `Axes`,
+  `NumberRange`, `UDim`, `UDim2`, `Rect`, `OptionalCFrame`,
+  `PhysicalProperties` and `Font` already each have their own widget) and
+  keeping it that way as new types arrive through the daily dump sync. —
+  @chteau
 - **Script Templates window.** File › Script Templates… (or the ribbon's
   Script menu › Manage templates…) opens a window for the starter scripts
   the Model and Script menus offer, so adding one no longer means a file

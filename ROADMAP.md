@@ -507,6 +507,21 @@ Roblox's own engine.
   - Rows are separated by hairlines, and property names, attribute names
     and tag chips share one left edge. The filter finds a `CFrame` row by
     its Position and Orientation fields as well as its name.
+- [x] A general pass on how the panel renders each type, checked against
+  the API dump itself rather than against memory of how Roblox types are
+  conventionally shown: every `DataType`/`Primitive`-typed property the
+  live, daily-synced `assets/API-Dump.json` declares a default for (via
+  `ReflectionDatabase::embedded`) is walked by a standing test
+  (`properties::tests::every_dump_property_gets_a_real_editor_or_is_text_by_design`)
+  that fails if one's value ever falls into the plain-text catch-all
+  without being one of the types that genuinely is just typed text by
+  design (a string, a number, a `Content` URI). Confirms the pass this
+  item asked for is in fact complete — `CFrame`, `BrickColor`, `Ray`,
+  `Vector3int16`, `Faces`, `Axes`, `NumberRange`, `UDim`, `UDim2`, `Rect`,
+  `OptionalCFrame`, `PhysicalProperties` and `Font` all have their own
+  widget already (see the bullets above) — and keeps it that way as new
+  Roblox types arrive through the daily sync, rather than being a one-time
+  read of the dump.
 - [x] A `Variant` that may simply be absent (`OptionalCFrame`, the DOM's
   only such type — `Model.WorldPivotData`) edits through a present/absent
   checkbox above the ordinary `CFrame` editor, which is drawn only while
@@ -1798,14 +1813,6 @@ Roblox's own engine.
   yet wired into `rbx_cloud` at all; worth treating as its own follow-up
   rather than assuming the existing client already covers it.
 #### Properties panel — remaining type editors
-- [ ] 📋 **A general pass on how Studio renders each type**, rather than
-  a generic fallback: go through the API dump's actual type/category
-  coverage (`assets/API-Dump.json`, kept current by the daily sync) rather
-  than relying on memory for how each Roblox type is conventionally shown,
-  the same discipline `AGENTS.md` asks for lighting/material claims. The
-  two types this item first named are done — every `CFrame` row expands
-  into `Position` and `Orientation`, and `BrickColor` has Studio's palette
-  picker (see "What's been implemented" → Editor).
 - [ ] 📋 **"Freeze"/"Apply" a `MeshPart`'s rotation** — zero out
   `Orientation` while leaving the object's *visual* placement unchanged,
   the Blender "Apply Transform" equivalent. A real, well-read devforum
