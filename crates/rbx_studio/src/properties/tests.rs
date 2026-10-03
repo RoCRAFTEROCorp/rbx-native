@@ -1235,3 +1235,61 @@ fn a_numeric_rows_components_rejoin_into_the_text_they_were_split_from() {
         assert_eq!(components.join(", "), whole, "{value:?}");
     }
 }
+
+/// Walks every property the live API dump (`assets/API-Dump.json`, via
+/// [`ReflectionDatabase::embedded`]) declares and checks that its default
+/// value, where the dump records one, never lands in `value_edit_kind`'s
+/// catch-all `Text` arm — the "generic fallback" the roadmap's type-coverage
+/// pass asked to go check for — unless it is one of the handful of types
+/// that genuinely are just typed text by design (a plain string or number,
+/// or a `Content` URI field). `Enum` and `BrickColor` pick their widget
+/// through `Properties::edit_kind` instead, which needs a database for enum
+/// member names that `value_edit_kind` alone doesn't have, so they're
+/// skipped here rather than duplicated.
+///
+/// Kept as a standing check rather than a one-off read of the dump: a new
+/// Roblox type landing through the daily API-dump sync with no row of its
+/// own now fails a test instead of quietly shipping as plain text.
+#[test]
+fn every_dump_property_gets_a_real_editor_or_is_text_by_design() {
+    let db = ReflectionDatabase::embedded();
+    let mut checked = 0;
+    for class in db.class_names() {
+        let descriptor = db
+            .class(class)
+            .expect("class_names only names classes the database itself has");
+        for property in &descriptor.properties {
+            if property.is_hidden() || property.is_deprecated() {
+                continue;
+            }
+            let Some(value) = db.default_value(class, &property.name) else {
+                continue;
+            };
+            if matches!(value, Variant::Enum(_) | Variant::BrickColor(_)) {
+                continue;
+            }
+            let Some(text) = edit::edit_text(value) else {
+                continue;
+            };
+            checked += 1;
+            let text_by_design = matches!(
+                value,
+                Variant::String(_)
+                    | Variant::Int32(_)
+                    | Variant::Int64(_)
+                    | Variant::Float32(_)
+                    | Variant::Float64(_)
+                    | Variant::Content(_)
+            );
+            assert!(
+                text_by_design || !matches!(value_edit_kind(value, text), EditKind::Text(_)),
+                "{class}.{} ({value:?}) renders as a plain text row",
+                property.name
+            );
+        }
+    }
+    assert!(
+        checked > 50,
+        "expected to have exercised plenty of real dump properties, only checked {checked}"
+    );
+}
