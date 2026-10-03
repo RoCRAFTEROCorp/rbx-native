@@ -663,7 +663,9 @@ pub(crate) fn dock_tab_add_width() -> Pixels {
 }
 
 /// Each side dock. Wider than the frame's 228 because the label column is
-/// wider, because the label is 14px instead of 9px.
+/// wider, because the label is 14px instead of 9px — and 14px wider again
+/// so a property control can take the reference's full 130 without
+/// costing a name column pixel (see [`value_width`]).
 pub(crate) fn dock_width() -> f32 {
     theme::size("dock_width") * font_scale()
 }
@@ -713,8 +715,8 @@ pub(crate) fn row_label_width() -> Pixels {
 /// A property row's control, when it is a single field, dropdown or toggle:
 /// parked at the row's right edge, every remaining pixel going to the name.
 ///
-/// 116, not the reference's 130: 14px more for the name at the default
-/// dock width, which is what most of `Workspace`'s longer names need to
+/// The reference's 130. The default [`dock_width`] carries the 14px this
+/// takes over the old 116, so most of `Workspace`'s longer names still
 /// read whole. The few longer still (`ClientAnimatorThrottling`) truncate
 /// whatever the control's width and carry their full name in a tooltip
 /// instead (see `shell::rows::property_shell`).

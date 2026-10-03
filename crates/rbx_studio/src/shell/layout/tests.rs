@@ -167,8 +167,8 @@ fn a_reopened_viewport_dock_is_a_showing_tab_beside_output() {
 #[test]
 fn a_file_from_before_the_viewport_dock_seats_it_beside_output() {
     let file = saved(vec![
-        edge(Edge::Left, &[&["Properties"]], 300.),
-        edge(Edge::Right, &[&["Explorer"]], 300.),
+        edge(Edge::Left, &[&["Properties"]], Edge::Left.default_size()),
+        edge(Edge::Right, &[&["Explorer"]], Edge::Right.default_size()),
         edge(Edge::Bottom, &[&["Output"]], Edge::Bottom.default_size()),
     ]);
 
@@ -653,8 +653,12 @@ fn a_closed_panel_stays_closed_across_a_round_trip() {
 #[test]
 fn an_unknown_panel_name_is_dropped_rather_than_refused() {
     let file = saved(vec![
-        edge(Edge::Left, &[&["Properties", "Terrain Editor"]], 300.),
-        edge(Edge::Right, &[&["Explorer"]], 300.),
+        edge(
+            Edge::Left,
+            &[&["Properties", "Terrain Editor"]],
+            Edge::Left.default_size(),
+        ),
+        edge(Edge::Right, &[&["Explorer"]], Edge::Right.default_size()),
         edge(Edge::Bottom, &[&["Output"]], Edge::Bottom.default_size()),
     ]);
 
@@ -666,8 +670,8 @@ fn an_unknown_panel_name_is_dropped_rather_than_refused() {
 #[test]
 fn a_panel_missing_from_the_file_comes_back_on_its_own_edge() {
     let file = saved(vec![
-        edge(Edge::Left, &[], 300.),
-        edge(Edge::Right, &[&["Explorer"]], 300.),
+        edge(Edge::Left, &[], Edge::Left.default_size()),
+        edge(Edge::Right, &[&["Explorer"]], Edge::Right.default_size()),
         edge(Edge::Bottom, &[&["Output"]], Edge::Bottom.default_size()),
     ]);
 
@@ -678,8 +682,12 @@ fn a_panel_missing_from_the_file_comes_back_on_its_own_edge() {
 #[test]
 fn an_empty_dock_in_the_file_is_dropped() {
     let file = saved(vec![
-        edge(Edge::Left, &[&["Properties"], &[]], 300.),
-        edge(Edge::Right, &[&["Explorer"]], 300.),
+        edge(
+            Edge::Left,
+            &[&["Properties"], &[]],
+            Edge::Left.default_size(),
+        ),
+        edge(Edge::Right, &[&["Explorer"]], Edge::Right.default_size()),
         edge(Edge::Bottom, &[&["Output"]], Edge::Bottom.default_size()),
     ]);
 
@@ -692,8 +700,12 @@ fn an_empty_dock_in_the_file_is_dropped() {
 fn a_panel_named_twice_still_lands_in_one_place() {
     let file = SavedLayout {
         edges: vec![
-            edge(Edge::Left, &[&["Explorer", "Explorer"]], 300.),
-            edge(Edge::Right, &[&["Explorer"]], 300.),
+            edge(
+                Edge::Left,
+                &[&["Explorer", "Explorer"]],
+                Edge::Left.default_size(),
+            ),
+            edge(Edge::Right, &[&["Explorer"]], Edge::Right.default_size()),
             edge(Edge::Bottom, &[&["Output"]], Edge::Bottom.default_size()),
         ],
         floating: vec!["Explorer".to_owned()],
@@ -731,7 +743,7 @@ fn an_active_index_past_the_end_walks_back_to_a_real_tab() {
             }],
             size: 300.,
         },
-        edge(Edge::Right, &[&["Explorer"]], 300.),
+        edge(Edge::Right, &[&["Explorer"]], Edge::Right.default_size()),
         edge(Edge::Bottom, &[&["Output"]], Edge::Bottom.default_size()),
     ]);
 

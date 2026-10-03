@@ -1235,12 +1235,11 @@ Roblox's own engine.
   from the Output dock now spanning the full width under both side docks
   and the 3D view no longer letterboxed to the UI Editor's screen by
   default. Follow-ups still open:
-  - [ ] Explorer rows at the reference's 9px chevron slot and 20px indent
-    (ours: 12px and 12px). Everything else in the reference's Explorer
-    row is in.
-  - [ ] Property controls at the reference's full 130px. They sit at 116px
-    so every `Workspace` name still reads whole at the default dock
-    width; the two go together only once the dock is wider by default.
+  - [x] Explorer rows at the reference's 9px chevron slot and 20px indent,
+    the hierarchy guides and connectors moved to match.
+  - [x] Property controls at the reference's full 130px, with the side
+    docks 14px wider by default (314px) so the name column keeps every
+    pixel it had.
 - [x] **Soften the editor's visual theme — calmer and lower-contrast,
   closer to real Studio but gentler.** Today's panels are high-contrast
   flat blocks: near-pure black/white backgrounds, hard 1px borders, sharp

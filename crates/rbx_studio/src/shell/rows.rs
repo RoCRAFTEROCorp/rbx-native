@@ -27,13 +27,16 @@ use super::edit::RowEditor;
 use super::explorer_edit::RowWidgets;
 use super::roving::TabOrder;
 
-/// One indent step per depth level.
-const INDENT: f32 = 12.0;
+/// One indent step per depth level — the reference's 20.
+const INDENT: f32 = 20.0;
 /// The guide line sits half an indent into its own level.
-const GUIDE_OFFSET: f32 = 6.0;
-/// How far the connector reaches from the guide toward the row.
-const CONNECTOR_WIDTH: f32 = 5.0;
-const CHEVRON_WIDTH: f32 = 12.0;
+const GUIDE_OFFSET: f32 = INDENT / 2.0;
+/// How far the connector reaches from the guide toward the row: stops just
+/// short of the child's chevron slot.
+const CONNECTOR_WIDTH: f32 = INDENT / 2.0 - 1.0;
+/// The reference's 9px slot, reserved on every row so icons line up whether
+/// or not the row has children.
+const CHEVRON_WIDTH: f32 = 9.0;
 const CLASS_ICON_SIZE: f32 = 12.0;
 /// Out of 255 — how strongly a tagged row's hover/selected background reads
 /// against the row behind it. Selected is the stronger of the two, matching
@@ -188,7 +191,7 @@ pub(super) fn row(
                         // correctness, and the guides are quiet enough now
                         // that the collision does not read.
                         .when(entry.is_folder(), |this| {
-                            this.child(Icon::new(chevron).xsmall())
+                            this.child(Icon::new(chevron).with_size(px(CHEVRON_WIDTH)))
                         }),
                 )
                 .child(class_icon)
