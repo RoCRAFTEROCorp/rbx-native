@@ -44,7 +44,7 @@ what's done, what's approximated, and what's out of scope on purpose).
 | Platform | State |
 |---|---|
 | Linux (X11) | Primary target. Actively developed and tested on it every day. |
-| Windows | **Supported: the editor runs.** CI also builds it on every change, running `cargo clippy -D warnings`, `cargo build` and `cargo test --workspace` on `windows-latest`. Known gaps are under [Platform: Windows](ROADMAP.md) in the roadmap. Reports of anything that breaks on your machine are welcome. |
+| Windows | **Supported: the editor runs.** CI also builds it on every change, running `cargo clippy -D warnings`, `cargo build` and `cargo test --workspace` on `windows-latest`. Known gaps are noted on the Windows items under [Platform](ROADMAP.md#platform) in the roadmap. Reports of anything that breaks on your machine are welcome. |
 | macOS | Not a supported target. CI builds it and runs the tests on `macos-latest` so the workspace keeps compiling there, but nobody runs the editor on it. |
 | Wayland | Falls back to an uncaptured cursor (no pointer lock) rather than failing outright. |
 
