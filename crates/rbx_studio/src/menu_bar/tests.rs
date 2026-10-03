@@ -82,6 +82,28 @@ fn file_opens_the_auto_saves_folder() {
     assert!(found);
 }
 
+/// The templates window opens from File, last, right under Studio
+/// Settings.
+#[test]
+fn file_ends_with_script_templates_under_studio_settings() {
+    let file = menus(&[])
+        .into_iter()
+        .find(|menu| menu.name == "File")
+        .expect("a File menu");
+    let names: Vec<String> = file
+        .items
+        .iter()
+        .filter_map(|item| match item {
+            OwnedMenuItem::Action { name, .. } => Some(name.to_string()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        names[names.len() - 2..],
+        ["Studio Settings\u{2026}", "Script Templates\u{2026}"]
+    );
+}
+
 /// The user's templates close Model after a separator (a long list must
 /// not push Group/Ungroup off the screen), labelled the way the ribbon's
 /// Script menu labels them, each running the template at its own index.

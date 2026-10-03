@@ -50,6 +50,7 @@ actions!(
         MenuSave,
         MenuOpenAutoSaves,
         MenuStudioSettings,
+        MenuScriptTemplates,
         MenuUndo,
         MenuRedo,
         MenuInsertPart,
@@ -101,6 +102,13 @@ pub(crate) struct MenuInsertTemplate {
 pub(crate) fn build(shell: Entity<Shell>, templates: &[Template], cx: &mut App) -> Entity<MenuBar> {
     actions::install(shell, cx);
     MenuBar::new(menus(templates), cx)
+}
+
+/// Rebuilds the menus after the user's templates changed on disk: Model's
+/// template items carry an index into the list, so the old ones would now
+/// point at the wrong template.
+pub(crate) fn refresh(bar: &Entity<MenuBar>, templates: &[Template], cx: &mut App) {
+    bar.update(cx, |bar, cx| bar.set_menus(menus(templates), cx));
 }
 
 /// The menu structure itself. File and Edit hold this editor's real
@@ -159,6 +167,7 @@ fn menus(templates: &[Template]) -> Vec<OwnedMenu> {
                 MenuItem::action("Open Auto Saves", MenuOpenAutoSaves),
                 MenuItem::separator(),
                 MenuItem::action("Studio Settings…", MenuStudioSettings),
+                MenuItem::action("Script Templates…", MenuScriptTemplates),
             ])
             .owned(),
         Menu::new("Edit")

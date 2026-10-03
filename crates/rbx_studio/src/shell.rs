@@ -56,6 +56,8 @@ mod selection;
 mod settings_window;
 mod style_panel;
 mod sun;
+mod templates_live;
+mod templates_window;
 mod theme_live;
 mod toolbar;
 pub(crate) mod tooltip;
@@ -204,6 +206,8 @@ pub(crate) struct Shell {
     argon_diff: Option<WindowHandle<gpui_kit::component::Root>>,
     /// Studio Settings, while open — see `settings_window`.
     settings_window: Option<WindowHandle<gpui_kit::component::Root>>,
+    /// Script Templates, while open — see `templates_window`.
+    templates_window: Option<WindowHandle<gpui_kit::component::Root>>,
     /// Install from GitHub's progress, kept here so it outlives Settings.
     theme_install: settings_window::ThemeInstall,
     /// The Explorer's type-ahead buffer — see `shell::tree_keys`.
@@ -243,9 +247,11 @@ pub(crate) struct Shell {
     /// This window's own copy/paste clipboard, replaced whole by every
     /// `Ctrl+C` — see `shell::clipboard`.
     clipboard: Vec<clipboard::Clipped>,
-    /// The user's starter scripts, read once at startup — see
-    /// `crate::script_templates`.
+    /// The user's starter scripts, reloaded whenever their folder changes —
+    /// see `crate::script_templates` and `shell::templates_live`.
     script_templates: crate::script_templates::ScriptTemplates,
+    /// The templates folder's fingerprint as of the last load.
+    templates_stamp: u64,
     /// The `BasePart` the cursor was last resolved to be over, if any — see
     /// `shell::drag::hover_in_viewport`. Kept here, alongside `selection`
     /// above, purely to dedupe: the viewport reports cursor motion on every
@@ -618,6 +624,7 @@ impl Shell {
             sequence: None,
             argon_diff: None,
             settings_window: None,
+            templates_window: None,
             theme_install: settings_window::ThemeInstall::Idle,
             tree_focus_handle,
             typeahead: tree_keys::Typeahead::default(),
@@ -635,6 +642,7 @@ impl Shell {
             range_cursor: None,
             clipboard: Vec::new(),
             script_templates: user.script_templates,
+            templates_stamp: 0,
             hovered: Vec::new(),
             covered: HashSet::new(),
             scripts: ScriptEditor::default(),
@@ -817,6 +825,11 @@ impl Shell {
         if std::env::var_os(settings_window::OPEN_VARIABLE).is_some() {
             shell.open_settings(cx);
         }
+        // `RBX_STUDIO_TEMPLATES` (see `shell::templates_window`): the same,
+        // for Script Templates.
+        if std::env::var_os(templates_window::OPEN_VARIABLE).is_some() {
+            shell.open_script_templates(cx);
+        }
 
         // `RBX_STUDIO_STYLE_EDITOR` (see `shell::style_panel`): after the
         // selection blocks above, so the edit it may carry lands on whatever
@@ -860,6 +873,7 @@ impl Shell {
 
         shell.watch_theme(cx);
         shell.watch_recovery(cx);
+        shell.watch_script_templates(cx);
 
         shell
     }
