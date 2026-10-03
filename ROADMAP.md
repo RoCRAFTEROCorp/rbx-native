@@ -421,6 +421,23 @@ Roblox's own engine.
   space, the same ordinary GUI machinery this project already renders
   (see "What's been implemented" → Renderer's GUI containers) — worth not
   conflating the two mechanisms just because both are called "handles."
+- [x] **Selection outline thickness**: the outline (see `rbx_viewer::renderer::selection` and
+  `renderer::outline`) is no longer a one-pixel `LineList` but a
+  screen-space quad per edge, expanded in the vertex shader to a constant
+  on-screen width (~3px selection blue, matching Studio's light-blue
+  selection box; the hover cue rides the same path in amber).
+- [x] **Selection outline shape conformance**: a `Ball`, `Cylinder`,
+  wedge or mesh outlined as its oriented bounding box rather than as its
+  own silhouette. A part now draws through the very mask-and-composite
+  pass `Highlight` does (`renderer::cue`), so it outlines as its own
+  shape — a ball as a circle, a `MeshPart` as its own polygon — while a
+  container, which has no shape of its own to trace, keeps the box
+  around everything beneath it. The hover cue rides the same path in its
+  own amber. Real Studio's own highlight is documented
+  (`parts/models.md`) only as a light-blue outline with no
+  shape-conformance spec published: this is not a claim of parity with
+  it, and the code says so — it is the same answer this renderer already
+  gives for the one outline effect that *is* specified as a silhouette.
 
 ### Editor (`rbx_studio`, binary `rbxstudio`)
 - [x] Explorer: this project's own flat, from-scratch class icon kit
@@ -1464,6 +1481,84 @@ Roblox's own engine.
   the sun and fill lamps by its ratio to the tuned base. The default renders
   pixel-identical to before; `ViewportFrame`s keep the tuned set, since
   they are lit by their own properties.
+- [x] Script debugging in the Edit context, over Luau's own debug hooks,
+  reached through `mlua`'s FFI in `rbx_lua::debugger`. Breakpoints are
+  Luau's native `LOP_BREAK` patches, the per-instruction `debugstep`
+  callback runs only while stepping or on a breakpoint line, and Stop is
+  checked in the `interrupt` callback, so a free-running debug run costs
+  about 1.5× a plain one. Each iteration of a one-line loop is its own
+  pass, told apart by statement coverage. The Script Editor's Debug button
+  (F5) runs the open script against the place on a worker thread, so a
+  paused script blocks only itself. Studio's feature set per
+  `studio/debugging.md`: **standard**, **conditional** (breaks only when
+  its expression is true), **logpoint** (logs to Output without pausing)
+  and **temporary** (removes itself when the run ends) breakpoints, set
+  by clicking the gutter, right-clicking it for the menu, or F9, moved
+  with the lines they are on as the script is edited, and edited in an
+  Edit Breakpoint popup (Condition, Log Message, Continue
+  Execution, Remove Breakpoint on Hit, Enabled). Disabled breakpoints show
+  hollow. Resume (F5), Step Into (F11), Step Over (F10), Step Out
+  (Shift+F11) and Stop (Shift+F5), even for a script that never pauses.
+  A **Watch** dock with Variables (locals and upvalues) and My Watches
+  (expressions re-evaluated at every pause), and a **Call Stack** dock
+  whose rows pick the frame Watch reads.
+  When the run ends, its changes replace the place as one undo step,
+  unless the place was edited while it ran. In that case they are
+  dropped and the Output dock says so.
+- [x] **Scale handles that lock a Ball/Cylinder to a round
+  cross-section**: dragging any Scale handle on a Ball or Cylinder used to
+  grow only the one axis grabbed, same as any other part, which turned a
+  sphere oval or a cylinder's round end into an ellipse. Native Studio's
+  own docs give Scale no shape-specific behavior at all — `BasePart.Size`
+  is three independent numbers regardless of `Shape` — so this isn't a
+  Studio-parity gap so much as a genuinely useful addition modeled on
+  F3X's real, open-source `Resize.lua`.
+  **Ball and Cylinder are both done**: holding `Alt` while dragging a
+  Ball's Scale handle now grows all three axes together (`Size +
+  (d,d,d)`, keeping it a sphere); on a Cylinder, `Alt` locks whichever two
+  axes form its round end together when either is the one grabbed —
+  grabbing the length axis instead is unaffected either way, since
+  nothing else is meant to grow alongside a cylinder's length. Which axis
+  *is* the length wasn't guessed at or taken from F3X's own source: this
+  project's own shape-resolution code (`rbx_viewer::scene::shape::
+  part_type`) already fixes `Enum.PartType.Cylinder` to draw with its
+  length along the part's local X and round in Y/Z, matching Roblox's
+  real engine geometry, so the lock reuses that existing, already-tested
+  fact rather than a second, independent determination of it.
+  `Shift` was the modifier F3X itself uses and the one this bullet
+  originally asked for, but it already means "invert the current snap
+  state" on every other tool in this editor — `Alt` was picked instead
+  because it is provably inert at the exact moment a Scale handle is
+  grabbed (it only means "cycle selection" on a click that falls through
+  to a *pick*, a branch a handle grab never reaches), not because it
+  matches F3X. **Wedge/CornerWedge need nothing**: `Resize.lua` gates its
+  shape-specific branch on `Part:IsA 'Part'` and sends every other class —
+  `WedgePart`, `CornerWedgePart`, `MeshPart` — through the same plain
+  per-axis resize, so there is no case to model, and native Studio's docs
+  give Scale no shape-specific behavior either. Plain `Part`s and
+  `MeshPart`s keep today's per-axis behavior regardless. — see
+  `F3XTeam/RBX-Building-Tools`'s `Tools/Resize.lua`.
+- [x] **A live stud-count readout while a Move/Scale drag is in progress**
+  (e.g. a floating "12" near the handle showing studs moved/grown so
+  far) — genuinely useful, not documented as a specific Studio feature
+  either way. A small label follows the cursor while a drag is held,
+  reading the straight-line distance moved so far for a Move, or the
+  dragged axis's growth (or shrink) in studs for a Scale — both to two
+  decimal places, matching Studio's own numeric-field precision. Reads
+  the same delta `gizmo.rs`'s own drag math already computes for the
+  part itself (see `workspace_view::readout`), so there is nothing new
+  to keep in sync. After a handle drag the label turns into Studio's
+  measurement box: type a length and the selection moves by exactly
+  that, as one undo step. A Rotate-angle readout was a natural follow-on
+  but is out of this bullet's own scope and hasn't been added.
+- [x] **Docks tab into each other again.** A drop on a dock's tab strip
+  joins it as a tab. The two split halves had been laid over the whole
+  dock, strip included. Because they were painted later, they took the
+  drop first, so every drop meant for the strip split the dock instead.
+  They now cover the dock's content only. `Layout::apply` also misplaced
+  two own-dock drops, which are now fixed: splitting a tab off below its
+  own dock landed it above, and a lone tab dropped on its own strip
+  joined the next dock.
 
 ### Platform
 - [x] Linux (X11) — the daily-driven target.
@@ -1471,7 +1566,7 @@ Roblox's own engine.
   `%LOCALAPPDATA%`/`%APPDATA%` when no `XDG_*`/`HOME` is set; the
   rendering/editor stack (`wgpu`, GPUI Kit) is cross-platform by
   construction. Never built on a real Windows machine yet — see
-  [Platform: Windows](#platform-windows) below.
+  the Windows items below.
 - [x] Windows-native texture fallback — when `setup.rbxcdn.com` cannot
   serve an `rbxasset://` file (offline, or absent from its packages),
   `rbx_assets` reads it off a Roblox/Studio install on the same machine:
@@ -1526,36 +1621,30 @@ Roblox's own engine.
   Not there yet: WebGL2 (the renderer needs storage buffers and compute),
   threads (union booleans and decodes run on the page's one thread), and a
   size diet (the wasm is ~10 MB, mostly the embedded API dump).
+- [x] Mouse capture in the free-flight camera — a Win32 backend beside the
+  X11 one in `pointer_lock::server`: `ShowCursor` hides, `SetCursorPos`
+  warps back to the viewport centre after every move. No `ClipCursor`:
+  GPUI already `SetCapture`s on button press, so moves keep arriving
+  between warps. Type-checked for `x86_64-pc-windows-msvc` and built by
+  the Windows CI job, but not yet driven on a real Windows desktop.
+- [x] A job that rebuilds against the current Studio version and
+  compares parsed output to reference dumps, to catch a format drift
+  before a user does — the nightly API-dump sync now runs
+  `rbx_parser_cli`/`rbx_reflection`/`rbx_lua`'s tests with Studio's newest
+  dump embedded before committing it, including a golden comparison of
+  every fixture's `rbxdump` output against `assets/tests/dumps/`. A
+  failure blocks the commit. Ceiling: the fixtures are old saves, so this
+  catches reflection drift (renamed/dropped enums, defaults), not a new
+  binary chunk that only a fresh Studio save would contain.
+- [x] macOS build CI — a `macos-latest` job beside the Windows one:
+  clippy, build and test. macOS is still not a supported target; the job
+  only keeps the workspace from rotting there.
 
 ## What's planned
 
 ### Script authoring — the biggest real gap
-- [x] Script debugging in the Edit context, over Luau's own debug hooks,
-  reached through `mlua`'s FFI in `rbx_lua::debugger`. Breakpoints are
-  Luau's native `LOP_BREAK` patches, the per-instruction `debugstep`
-  callback runs only while stepping or on a breakpoint line, and Stop is
-  checked in the `interrupt` callback, so a free-running debug run costs
-  about 1.5× a plain one. Each iteration of a one-line loop is its own
-  pass, told apart by statement coverage. The Script Editor's Debug button
-  (F5) runs the open script against the place on a worker thread, so a
-  paused script blocks only itself. Studio's feature set per
-  `studio/debugging.md`: **standard**, **conditional** (breaks only when
-  its expression is true), **logpoint** (logs to Output without pausing)
-  and **temporary** (removes itself when the run ends) breakpoints, set
-  by clicking the gutter, right-clicking it for the menu, or F9, moved
-  with the lines they are on as the script is edited, and edited in an
-  Edit Breakpoint popup (Condition, Log Message, Continue
-  Execution, Remove Breakpoint on Hit, Enabled). Disabled breakpoints show
-  hollow. Resume (F5), Step Into (F11), Step Over (F10), Step Out
-  (Shift+F11) and Stop (Shift+F5), even for a script that never pauses.
-  A **Watch** dock with Variables (locals and upvalues) and My Watches
-  (expressions re-evaluated at every pause), and a **Call Stack** dock
-  whose rows pick the frame Watch reads.
-  When the run ends, its changes replace the place as one undo step,
-  unless the place was edited while it ran. In that case they are
-  dropped and the Output dock says so.
 - [ ] 📋 Script debugging inside a Play session — the Edit-context
-  debugger above has no Play mode to run in, so a server or client
+  debugger (see "What's been implemented" → Editor) has no Play mode to run in, so a server or client
   script can only be debugged once the Play workaround below exists.
   Breakpoints would then trigger in that session's scripts, as Studio's
   Client/Server "Trigger At" contexts do.
@@ -1614,52 +1703,6 @@ Roblox's own engine.
   noted, **Building Tools by F3X** — a widely-used third-party Studio
   plugin, not native Studio — since some of what was asked for turns out
   to be F3X's own convention rather than something Studio itself does:
-  - [x] **Scale handles that lock a Ball/Cylinder to a round
-    cross-section**: dragging any Scale handle on a Ball or Cylinder used to
-    grow only the one axis grabbed, same as any other part, which turned a
-    sphere oval or a cylinder's round end into an ellipse. Native Studio's
-    own docs give Scale no shape-specific behavior at all — `BasePart.Size`
-    is three independent numbers regardless of `Shape` — so this isn't a
-    Studio-parity gap so much as a genuinely useful addition modeled on
-    F3X's real, open-source `Resize.lua`.
-    **Ball and Cylinder are both done**: holding `Alt` while dragging a
-    Ball's Scale handle now grows all three axes together (`Size +
-    (d,d,d)`, keeping it a sphere); on a Cylinder, `Alt` locks whichever two
-    axes form its round end together when either is the one grabbed —
-    grabbing the length axis instead is unaffected either way, since
-    nothing else is meant to grow alongside a cylinder's length. Which axis
-    *is* the length wasn't guessed at or taken from F3X's own source: this
-    project's own shape-resolution code (`rbx_viewer::scene::shape::
-    part_type`) already fixes `Enum.PartType.Cylinder` to draw with its
-    length along the part's local X and round in Y/Z, matching Roblox's
-    real engine geometry, so the lock reuses that existing, already-tested
-    fact rather than a second, independent determination of it.
-    `Shift` was the modifier F3X itself uses and the one this bullet
-    originally asked for, but it already means "invert the current snap
-    state" on every other tool in this editor — `Alt` was picked instead
-    because it is provably inert at the exact moment a Scale handle is
-    grabbed (it only means "cycle selection" on a click that falls through
-    to a *pick*, a branch a handle grab never reaches), not because it
-    matches F3X. **Wedge/CornerWedge need nothing**: `Resize.lua` gates its
-    shape-specific branch on `Part:IsA 'Part'` and sends every other class —
-    `WedgePart`, `CornerWedgePart`, `MeshPart` — through the same plain
-    per-axis resize, so there is no case to model, and native Studio's docs
-    give Scale no shape-specific behavior either. Plain `Part`s and
-    `MeshPart`s keep today's per-axis behavior regardless. — see
-    `F3XTeam/RBX-Building-Tools`'s `Tools/Resize.lua`.
-  - [x] **A live stud-count readout while a Move/Scale drag is in progress**
-    (e.g. a floating "12" near the handle showing studs moved/grown so
-    far) — genuinely useful, not documented as a specific Studio feature
-    either way. A small label follows the cursor while a drag is held,
-    reading the straight-line distance moved so far for a Move, or the
-    dragged axis's growth (or shrink) in studs for a Scale — both to two
-    decimal places, matching Studio's own numeric-field precision. Reads
-    the same delta `gizmo.rs`'s own drag math already computes for the
-    part itself (see `workspace_view::readout`), so there is nothing new
-    to keep in sync. After a handle drag the label turns into Studio's
-    measurement box: type a length and the selection moves by exactly
-    that, as one undo step. A Rotate-angle readout was a natural follow-on
-    but is out of this bullet's own scope and hasn't been added.
   - **`Tab` to "summon" the gizmo's handles to the cursor** — this one
     *is* real, current native Studio behavior (2021 "Pivot Points" beta
     update): holding `Tab` moves the active tool's handles to the cursor's
@@ -1679,23 +1722,6 @@ Roblox's own engine.
     (F3X's own `C` rotate-tool binding is documented to conflict with
     Studio's native `C` = Toggle Comment Cursor) — worth checking against
     a real Studio instance before adopting either verbatim.
-  - [x] **Selection outline thickness**: the outline (see `rbx_viewer::renderer::selection` and
-    `renderer::outline`) is no longer a one-pixel `LineList` but a
-    screen-space quad per edge, expanded in the vertex shader to a constant
-    on-screen width (~3px selection blue, matching Studio's light-blue
-    selection box; the hover cue rides the same path in amber).
-  - [x] **Selection outline shape conformance**: a `Ball`, `Cylinder`,
-    wedge or mesh outlined as its oriented bounding box rather than as its
-    own silhouette. A part now draws through the very mask-and-composite
-    pass `Highlight` does (`renderer::cue`), so it outlines as its own
-    shape — a ball as a circle, a `MeshPart` as its own polygon — while a
-    container, which has no shape of its own to trace, keeps the box
-    around everything beneath it. The hover cue rides the same path in its
-    own amber. Real Studio's own highlight is documented
-    (`parts/models.md`) only as a light-blue outline with no
-    shape-conformance spec published: this is not a claim of parity with
-    it, and the code says so — it is the same answer this renderer already
-    gives for the one outline effect that *is* specified as a silhouette.
 - [ ] 📋 **Pivot tools**, matching Studio's real Model-tab **Edit Pivot**/
   **Reset** tools (checked against `studio/pivot-tools.md`). Today's
   transform gizmos (see "What's been implemented" → Editor) move/rotate/
@@ -1879,14 +1905,6 @@ against `Roblox/creator-docs` rather than assumed:
     specifically, not just available for `BasePart.Material`.
 
 ### Editor
-- [x] **Docks tab into each other again.** A drop on a dock's tab strip
-  joins it as a tab. The two split halves had been laid over the whole
-  dock, strip included. Because they were painted later, they took the
-  drop first, so every drop meant for the strip split the dock instead.
-  They now cover the dock's content only. `Layout::apply` also misplaced
-  two own-dock drops, which are now fixed: splitting a tab off below its
-  own dock landed it above, and a lone tab dropped on its own strip
-  joined the next dock.
 - [ ] 📋 **The accessibility work the reference guidance calls Stage 2 and
   Stage 3, minus what already shipped.** Stage 1 is met and asserted in
   tests; these are the rest, each small enough to ride along with other
@@ -2286,33 +2304,11 @@ against `Roblox/creator-docs` rather than assumed:
   Command Bar but not from ordinary plugins, which blocks a whole category
   of plugin (the thread's own motivating case: a VS Code user wants a
   plugin that mirrors external editor breakpoints into Studio's debugger
-  instead of maintaining two separate breakpoint sets). Depends on the
-  Script debugging item under "Script authoring" existing first —
+  instead of maintaining two separate breakpoint sets). Builds on the
+  Edit-context script debugger (see "What's been implemented" → Editor) —
   breakpoint/Watch/Call-Stack state lives in the editor session, never the
   saved place file, so exposing it to a plugin carries the same "no file
   -format risk" property as the two items above.
-
-### Platform: Windows
-- [x] Mouse capture in the free-flight camera — a Win32 backend beside the
-  X11 one in `pointer_lock::server`: `ShowCursor` hides, `SetCursorPos`
-  warps back to the viewport centre after every move. No `ClipCursor`:
-  GPUI already `SetCapture`s on button press, so moves keep arriving
-  between warps. Type-checked for `x86_64-pc-windows-msvc` and built by
-  the Windows CI job, but not yet driven on a real Windows desktop.
-
-### Tooling / CI
-- [x] A job that rebuilds against the current Studio version and
-  compares parsed output to reference dumps, to catch a format drift
-  before a user does — the nightly API-dump sync now runs
-  `rbx_parser_cli`/`rbx_reflection`/`rbx_lua`'s tests with Studio's newest
-  dump embedded before committing it, including a golden comparison of
-  every fixture's `rbxdump` output against `assets/tests/dumps/`. A
-  failure blocks the commit. Ceiling: the fixtures are old saves, so this
-  catches reflection drift (renamed/dropped enums, defaults), not a new
-  binary chunk that only a fresh Studio save would contain.
-- [x] macOS build CI — a `macos-latest` job beside the Windows one:
-  clippy, build and test. macOS is still not a supported target; the job
-  only keeps the workspace from rotting there.
 
 ### From Roblox's own Creator Roadmap (2026 fall update)
 
