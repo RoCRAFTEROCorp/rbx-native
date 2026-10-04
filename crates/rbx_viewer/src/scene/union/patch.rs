@@ -51,6 +51,12 @@ impl Entry {
         &self.asset
     }
 
+    /// Whether the tree is the union's own `ChildData`/`ChildData2` rather
+    /// than an asset: nothing to download, only a plan to carve it from.
+    pub(in crate::scene) fn is_inline(&self) -> bool {
+        self.inline
+    }
+
     /// Whether a fresh [`super::resolve`] would drop this union's *mesh* as
     /// fully transparent — see `filemesh::Entry::is_invisible`. Says nothing
     /// about a union drawn as its pieces: those carry the transparency of the

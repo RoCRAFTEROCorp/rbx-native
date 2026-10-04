@@ -8,6 +8,7 @@ mod cull;
 mod editor;
 mod envmap;
 mod filemesh;
+pub(crate) use filemesh::mesh_tangents;
 mod geometry;
 mod gizmo;
 mod gui;

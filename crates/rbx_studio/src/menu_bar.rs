@@ -24,8 +24,8 @@
 //! already has for Ctrl+S/Z/Y/G/C/V/D (a command must fire no matter what
 //! currently has focus).
 //!
-//! Everything this editor cannot do yet — New, Open…, Save As…, Insert
-//! Object… — stays a visibly disabled item rather than
+//! Everything this editor cannot do yet — New, Open…, Insert Object… —
+//! stays a visibly disabled item rather than
 //! a click that silently does nothing while looking live. The one live View
 //! item is Style Editor: Roblox puts that panel under `Window` ⟩ UI
 //! (`studio/ui-overview.md`), and this editor's menus are File/Edit/Model/View,
@@ -48,6 +48,8 @@ actions!(
     menu_bar,
     [
         MenuSave,
+        MenuSaveToFile,
+        MenuExportGltf,
         MenuSaveToRoblox,
         MenuPublishToRoblox,
         MenuLinkRobloxPlace,
@@ -160,8 +162,12 @@ fn menus(templates: &[Template]) -> Vec<OwnedMenu> {
                 MenuItem::action("New", MenuPlaceholder).disabled(true),
                 MenuItem::action("Open…", MenuPlaceholder).disabled(true),
                 MenuItem::separator(),
-                MenuItem::action("Save", MenuSave),
-                MenuItem::action("Save As…", MenuPlaceholder).disabled(true),
+                // Studio's names: Save to File writes back to the file
+                // being edited (Ctrl+S), Save to File As… asks for a new one
+                // and switches to it (see `shell::save`).
+                MenuItem::action("Save to File", MenuSave),
+                MenuItem::action("Save to File As…", MenuSaveToFile),
+                MenuItem::action("Export as glTF…", MenuExportGltf),
                 MenuItem::separator(),
                 // Uploads, not local saves: see `shell::roblox_publish`. An
                 // unlinked file asks for its place on first use.

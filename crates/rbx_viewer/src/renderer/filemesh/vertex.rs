@@ -102,7 +102,7 @@ impl AppearanceVertex {
 /// specificity is the handedness: mesh `v` grows *downward* (see
 /// `rbx_mesh::Vertex`) while a normal map's green channel points *up* the
 /// image, so the sign returned is the one that flips `dP/dv` back.
-fn tangents(mesh: &rbx_mesh::Mesh) -> Vec<[f32; 4]> {
+pub(crate) fn tangents(mesh: &rbx_mesh::Mesh) -> Vec<[f32; 4]> {
     let count = mesh.vertices.len();
     let mut along_u = vec![Vec3::ZERO; count];
     let mut along_v = vec![Vec3::ZERO; count];

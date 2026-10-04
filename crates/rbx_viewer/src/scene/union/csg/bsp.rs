@@ -5,8 +5,13 @@
 
 use glam::DVec3;
 
-// Distance under which a point counts as lying on a plane; csg.js's own value.
-const EPSILON: f64 = 1e-5;
+// Distance under which a point counts as lying on a plane. csg.js uses 1e-5,
+// but Roblox's own part placements carry 2–4e-5 of float noise: faces meant
+// to meet then classify as distinct, and the boolean keeps a sliver that thin
+// between them — a zero-thickness fin once welded. One weld cell
+// (`repair::WELD_EPSILON`) is the finest distinction anything downstream
+// keeps anyway.
+const EPSILON: f64 = 1e-4;
 
 #[derive(Debug, Clone, Copy)]
 pub(super) struct Plane {

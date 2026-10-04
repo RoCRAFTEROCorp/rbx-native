@@ -1231,6 +1231,62 @@ Roblox's own engine.
   neither format can mix one by its alpha. A part whose `Material` has a
   texture pack takes the pack, with UVs projected per face the way the
   viewport tiles it. An image several parts share is written once.
+- [x] **Whole-place and fuller Explorer export.** File › **Save to File
+  As…** writes the whole place (`.rbxl`, or `.rbxlx` when that is the name
+  picked) under a name of the user's choosing and switches the session to
+  it — title, Ctrl+S's target, Recent list — as Studio's Save As does
+  (DevForum, "Improved Save Experience in Studio!", 2021); File ›
+  **Export as glTF…** writes `Workspace`, the root Studio's own
+  whole-place glTF export has. Both mesh exports now
+  match what the viewport draws where they used to fall short:
+  - **Unions.** Unions Studio writes today carry their original parts
+    inline in `ChildData2` rather than behind an `AssetId`; they are keyed
+    by a digest of that tree and carved with no download (they used to
+    draw as boxes in the viewport too). A nested operation pointing at an
+    asset of its own is fetched and followed. The boolean no longer fails
+    on real unions: Roblox's coordinates carry 2–4e-5 of float noise,
+    past the old 1e-5 coplanarity tolerance, so slivers read as leaks; the
+    tolerance now matches the weld cell, results are snapped and cleaned,
+    parts touching along an edge count as closed, and debris is judged
+    against the union's `InitialSize`; a part stored below the 0.05-stud
+    minimum of the day it was baked is carved at it when that is what
+    `InitialSize` says (marked.rbxl 217 → 467 of 487 carved,
+    FindTheCode 89 → 189 of 189, GUI_TEST 80 of 80, testrust 0 → 11 of
+    11). A union whose boolean still cannot run exports the pieces the
+    viewport draws instead, and one with no geometry anywhere
+    (`TriangleCount` 0) draws and exports as nothing, as in Studio.
+  - **Material packs.** A facet tilted off every axis is baked into an
+    atlas of the part's own with the viewport's three-way blend (the same
+    weights, fast path and cut-off as `renderer/material.wgsl`, the normal
+    map in a tangent frame the export writes out); faces one projection
+    covers still tile the pack's own images. A textured mesh whose
+    `Material` has a pack bakes the two multiplied, as the viewport
+    shades them. A bake is never coarser than the pack's own texels: a
+    surface too large for one 2048 page spills onto more, and every
+    texture carries a trilinear, repeating sampler. Alike parts share one
+    bake.
+  - **Neon, Glass, ForceField.** Neon exports as emission at the
+    viewport's own 6× (`KHR_materials_emissive_strength`, `Ke` in the
+    `.mtl`); Glass as transmission by its `Transparency` with an IOR of
+    1.5 (`KHR_materials_transmission`/`_ior`, `Tr`/`Ni`); a ForceField as
+    a smooth transmissive shell, clear face-on and, through the viewer's
+    own Fresnel, more solid towards its rim, where a sheen in its colour
+    lights it (`KHR_materials_sheen`); a ForceField mesh's image becomes
+    the pattern it shows at the start of its cycle, glowing and solid.
+    Only the `.mtl`, which has no Fresnel, averages the shell over every
+    angle.
+  - **Studio's own glTF export** (beta, File › Export as glTF, DevForum
+    thread 3905928; still a beta behind File › Beta Features, its general
+    release listed for Late 2026 in the
+    [fall 2026 update](https://devforum.roblox.com/t/creator-roadmap-2026-fall-update/4880208))
+    writes one embedded `.gltf`, studs unscaled, Y-up, and keeps the
+    instance tree with each instance's class and `Material` in `extras`.
+    This export now does the same — nodes per part and per container,
+    placed by rotation and translation. It differs on purpose where
+    Studio's output is lossy: colour is linear as the specification asks
+    (Studio writes sRGB bytes over 255), metalness and roughness are
+    written, and the three procedural materials are expressed rather than
+    named only.
 - [x] Drag-and-drop reparenting in the Explorer tree. Dragging a row
   onto another reparents onto it, the way creator-docs describes
   ("simply drag and drop them onto the new parent") — with a ghost under
@@ -1891,22 +1947,13 @@ Roblox's own engine.
   above existing first regardless of which direction it takes.
 
 ### Renderer
-- [ ] 📋 **Whole-place and fuller Explorer export.** Left open by the
-  Explorer row's Save / Export rows (see "What's been implemented" →
-  Editor): the whole place to a local file under a name of its choosing
-  (Studio's File › Save to File / File › Export as glTF, both File-menu
-  items rather than row ones; uploading the place to Roblox is File ›
-  Save/Publish to Roblox, see "What's been implemented"). In the mesh exports a union whose boolean
-  failed, or one baked only as `MeshData` (never decoded here), still
-  exports as its box; a textured mesh whose `Material` also has a pack
-  takes its own image alone (one UV set per part), a material projected
-  across a facet tilted off every axis takes one axis's projection where
-  the viewport blends three, and the procedural materials (Neon, Glass,
-  ForceField) export as their colour.
-  Roblox's own roadmap lists glTF export, pushed from
-  Late 2025 to Late 2026 in its
-  [fall 2026 update](https://devforum.roblox.com/t/creator-roadmap-2026-fall-update/4880208);
-  check what it actually exports once it ships.
+- [ ] 📋 **Export and draw unions baked only as `MeshData`.** A union
+  whose only geometry is a baked `MeshData`/CSGMDL blob — no `ChildData`
+  inline or behind its `AssetId` (asset 305197512, 7 instances in
+  marked.rbxl) — still draws and exports as its box. CSGMDL is not
+  decoded (see CSG below), and Roblox's 3D thumbnail endpoint
+  (`thumbnails.roblox.com/v1/assets-thumbnail-3d`) needs an API key with
+  `thumbnail:read`.
 #### Properties panel — remaining type editors
 - [ ] 📋 **"Freeze"/"Apply" a `MeshPart`'s rotation** — zero out
   `Orientation` while leaving the object's *visual* placement unchanged,

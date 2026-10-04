@@ -50,9 +50,14 @@ impl Replanned {
                     images,
                 }
             }
+            // An inline tree is never downloaded: its own key names nothing
+            // to fetch (see `Scene::resync_union`).
             Replanned::Union(entry) => Assets {
                 meshes: Vec::new(),
-                unions: vec![entry.asset().clone()],
+                unions: (!entry.is_inline())
+                    .then(|| entry.asset().clone())
+                    .into_iter()
+                    .collect(),
                 images: Vec::new(),
             },
         }

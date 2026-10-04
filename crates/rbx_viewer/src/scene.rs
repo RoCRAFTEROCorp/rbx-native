@@ -68,6 +68,8 @@ pub(crate) use resync::{Drawn, PartSync};
 pub(crate) use shape::{resolve as resolve_shape, ShapeKind};
 pub(crate) use trail::{segments as trail_segments, Recorder as TrailRecorder, Trail};
 pub(crate) use union::fit as union_fit;
+// Read by the mesh export, which leaves such a union out too.
+pub(crate) use union::is_empty as union_is_empty;
 pub(crate) use union::{unit_mesh, Evaluations as UnionEvaluations};
 
 use crate::assets::Image;
@@ -611,6 +613,17 @@ impl Scene {
         self.union_plan.assets()
     }
 
+    /// The nested union assets the trees in `assets` (and the inline trees
+    /// `evaluations` has not carved yet) point at and `assets` does not hold
+    /// — the next round to download.
+    pub(crate) fn union_nested_assets(
+        &self,
+        assets: &HashMap<AssetRef, Vec<u8>>,
+        evaluations: &UnionEvaluations,
+    ) -> Vec<AssetRef> {
+        union::missing(&self.union_plan, assets, &self.database, evaluations)
+    }
+
     /// Joins the union plan to whatever actually downloaded: a union whose
     /// boolean geometry computed joins the resolved file meshes (same upload
     /// path as a `MeshPart`), one that did not gets a `Part` per recovered
@@ -689,14 +702,18 @@ fn build_part(
     let size = Vec3::new(size.x, size.y, size.z);
     let geometry = shape::resolve(dom, database, instance, size);
 
-    Some(assemble_part(
+    let mut part = assemble_part(
         properties,
         database,
         materials,
         geometry,
         cframe_matrix(cframe),
         PartId::whole(referent),
-    ))
+    );
+    // A union with no geometry anywhere draws nothing in Studio; a box in
+    // its place would be invented.
+    part.suppressed = union::is_empty(dom, database, referent);
+    Some(part)
 }
 
 /// The debug label `build_part` (via `shape::resolve`) would give `referent`'s

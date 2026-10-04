@@ -17,23 +17,30 @@
 //! is that composed result, in the union's local space so one tree serves
 //! every instance.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 
 use glam::{Mat4, Vec3};
+use rbx_assets::AssetRef;
 use rbx_dom::{Ref, Variant, WeakDom};
 use rbx_reflection::ReflectionDatabase;
+
+use crate::textures::asset_uri;
 
 use super::super::material::Catalog;
 use super::super::shape::{self, Geometry};
 use super::super::{assemble_part, cframe_matrix, Part, PartId};
 
 const NEGATE_OPERATION: &str = "NegateOperation";
-const CHILD_DATA_PROPERTY: &str = "ChildData";
+const ASSET_CLASS: &str = "PartOperationAsset";
+const CHILD_DATA_PROPERTIES: [&str; 2] = ["ChildData", "ChildData2"];
 // `ChildData` is a nested .rbxm, so it is never valid UTF-8 and always decodes
 // to `Variant::Unknown` — but its wire type is still String (0x01): Roblox's
 // BinaryString shares String's wire encoding. See
-// `rbx_binary::chunks::prop::scalar::string_value`.
+// `rbx_binary::chunks::prop::scalar::string_value`. `rbx_xml` reports a
+// non-UTF-8 `SharedString` under the same id.
 const STRING_TYPE_ID: u8 = 0x01;
+/// `ChildData2` read from a binary file: a resolved `SharedString`.
+const SHARED_STRING_TYPE_ID: u8 = 0x1c;
 
 /// One original `BasePart` of a union, in the union's own frame.
 pub(super) struct Leaf {
@@ -141,89 +148,210 @@ impl Node {
     }
 }
 
-/// Decodes one union's downloaded asset bytes into its operation tree, rooted
-/// at an implicit additive node holding the asset's top-level children.
+/// Decodes one union's operation tree, rooted at an implicit additive node
+/// holding its top-level children. `bytes` is either a downloaded
+/// `PartOperationAsset` (whose `ChildData` holds the children) or a union's
+/// own inline `ChildData`/`ChildData2`, which *is* that nested document.
 ///
-/// `None` means the bytes did not parse as the expected
-/// `PartOperationAsset`/`ChildData` chain at all — the caller keeps the box in
+/// `assets` holds the bytes of the union assets operations deeper in the tree
+/// point at by `AssetId` (see [`Parsed::missing`]); an empty entry is one that
+/// could not be fetched, drawn as the box it stands for.
+///
+/// `None` means the bytes did not parse at all — the caller keeps the box in
 /// that case. A tree with no additive leaf (all negated) is still a tree: the
 /// caller hides the box regardless, an empty union being a better guess than
 /// a solid one.
-pub(super) fn parse(bytes: &[u8], database: &ReflectionDatabase) -> Option<Node> {
-    let asset = rbx_binary::deserialize(bytes).ok()?;
-    let root = *asset.root_refs().first()?;
-    let raw = child_data(&asset, root)?;
-    let operations = rbx_binary::deserialize(raw).ok()?;
-    let children = operations
-        .root_refs()
-        .iter()
-        .filter_map(|&child| walk(&operations, child, Mat4::IDENTITY, false, database))
-        .collect();
-    Some(Node::Operation {
-        negate: false,
-        children,
+pub(super) fn parse(
+    bytes: &[u8],
+    database: &ReflectionDatabase,
+    assets: &Assets,
+) -> Option<Parsed> {
+    parse_at_least(bytes, database, assets, 0.0)
+}
+
+/// [`parse`], every part's stored `size` raised to at least `min_size` on
+/// each axis first — the smallest part the engine built when the union was
+/// baked (see `super::legacy`).
+pub(super) fn parse_at_least(
+    bytes: &[u8],
+    database: &ReflectionDatabase,
+    assets: &Assets,
+    min_size: f32,
+) -> Option<Parsed> {
+    let mut context = Context {
+        database,
+        assets,
+        missing: Vec::new(),
+        depth: 0,
+        min_size,
+    };
+    let children = context.document(bytes)?;
+    Some(Parsed {
+        root: Node::Operation {
+            negate: false,
+            children,
+        },
+        missing: context.missing,
     })
 }
 
-/// `ChildData`'s raw bytes, or `None` when the property is absent, empty, or
-/// (surprisingly) valid UTF-8 — the last of which can only mean it holds no
-/// nested document at all.
-fn child_data(dom: &WeakDom, referent: Ref) -> Option<&[u8]> {
-    match dom.get(referent)?.properties().get(CHILD_DATA_PROPERTY) {
-        Some(Variant::Unknown { type_id, raw })
-            if *type_id == STRING_TYPE_ID && !raw.is_empty() =>
-        {
-            Some(raw)
+/// Raw bytes of other union assets, by reference.
+pub(super) type Assets = HashMap<AssetRef, Vec<u8>>;
+
+pub(super) struct Parsed {
+    pub(super) root: Node,
+    /// Assets a nested operation points at that `assets` did not hold: drawn
+    /// as boxes in `root`, which is therefore not final until they arrive.
+    pub(super) missing: Vec<AssetRef>,
+}
+
+/// A guard against an asset that (directly or not) names itself.
+const MAX_DEPTH: usize = 16;
+
+struct Context<'a> {
+    database: &'a ReflectionDatabase,
+    assets: &'a Assets,
+    missing: Vec<AssetRef>,
+    depth: usize,
+    min_size: f32,
+}
+
+impl Context<'_> {
+    /// The roots of the operation document in `bytes`, walked under `parent`.
+    fn document(&mut self, bytes: &[u8]) -> Option<Vec<Node>> {
+        self.document_under(bytes, Mat4::IDENTITY, false)
+    }
+
+    fn document_under(&mut self, bytes: &[u8], parent: Mat4, echo: bool) -> Option<Vec<Node>> {
+        let dom = rbx_binary::deserialize(bytes).ok()?;
+        let asset_root = dom
+            .root_refs()
+            .first()
+            .filter(|&&root| dom.get(root).is_some_and(|i| i.class() == ASSET_CLASS))
+            .copied();
+        match asset_root {
+            Some(root) => {
+                let raw = child_data(dom.get(root)?.properties())?;
+                self.children(raw, parent, echo)
+            }
+            None => Some(self.roots(&dom, parent, echo)),
         }
-        _ => None,
+    }
+
+    fn children(&mut self, raw: &[u8], parent: Mat4, echo: bool) -> Option<Vec<Node>> {
+        let nested = rbx_binary::deserialize(raw).ok()?;
+        Some(self.roots(&nested, parent, echo))
+    }
+
+    fn roots(&mut self, dom: &WeakDom, parent: Mat4, echo: bool) -> Vec<Node> {
+        dom.root_refs()
+            .iter()
+            .filter_map(|&child| self.walk(dom, child, parent, echo))
+            .collect()
+    }
+
+    /// `echo`: whether `referent`'s immediate parent is a `NegateOperation`. A
+    /// `NegateOperation` is restricted by the engine to exactly one child, and
+    /// that child's own `CFrame` is not a further local offset but a verbatim
+    /// copy of the `NegateOperation`'s own rotation with position zeroed out
+    /// (empirically — see the module doc); composing it in as if it were a
+    /// real relative transform silently double-applies that rotation. When
+    /// `echo` is set, `referent`'s own `CFrame` is ignored and `parent` (the
+    /// `NegateOperation`'s already-composed frame) is used as-is.
+    fn walk(&mut self, dom: &WeakDom, referent: Ref, parent: Mat4, echo: bool) -> Option<Node> {
+        let instance = dom.get(referent)?;
+        let properties = instance.properties();
+        let Some(Variant::CFrame(own_cframe)) = properties.get("CFrame") else {
+            return None;
+        };
+        let cframe = if echo {
+            parent
+        } else {
+            parent * cframe_matrix(own_cframe)
+        };
+        let negate = instance.class() == NEGATE_OPERATION;
+
+        // A nested operation's own tree is authored against its
+        // `InitialSize`, exactly like a top-level union's, so a resize since
+        // scales its children the same way `Entry::placement` scales those.
+        let frame = cframe * Mat4::from_scale(resize(properties));
+        if let Some(raw) = child_data(properties) {
+            let children = self.children(raw, frame, negate)?;
+            return Some(Node::Operation { negate, children });
+        }
+        if let Some(children) = self.referenced(properties, frame, negate) {
+            return Some(Node::Operation { negate, children });
+        }
+
+        let Some(&Variant::Vector3(size)) = properties.get("size") else {
+            return None;
+        };
+        let size = Vec3::new(size.x, size.y, size.z).max(Vec3::splat(self.min_size));
+        Some(Node::Leaf(Leaf {
+            negate,
+            geometry: shape::resolve(dom, self.database, instance, size),
+            cframe,
+            properties: properties.clone(),
+        }))
+    }
+
+    /// The children of a nested operation baked into an asset of its own,
+    /// which the operation names by `AssetId` instead of carrying them,
+    /// placed in `frame`. `None` (drawn as its box) while the asset is
+    /// missing or unusable.
+    fn referenced(
+        &mut self,
+        properties: &BTreeMap<String, Variant>,
+        frame: Mat4,
+        negate: bool,
+    ) -> Option<Vec<Node>> {
+        let asset = AssetRef::parse(asset_uri(properties.get("AssetId")?)?).ok()?;
+        if asset == AssetRef::Empty {
+            return None;
+        }
+        let Some(bytes) = self.assets.get(&asset) else {
+            if !self.missing.contains(&asset) {
+                self.missing.push(asset);
+            }
+            return None;
+        };
+        if self.depth >= MAX_DEPTH {
+            return None;
+        }
+        self.depth += 1;
+        let children = self.document_under(bytes, frame, negate);
+        self.depth -= 1;
+        children
     }
 }
 
-/// `echo`: whether `referent`'s immediate parent is a `NegateOperation`. A
-/// `NegateOperation` is restricted by the engine to exactly one child, and
-/// that child's own `CFrame` is not a further local offset but a verbatim
-/// copy of the `NegateOperation`'s own rotation with position zeroed out
-/// (empirically — see the module doc); composing it in as if it were a real
-/// relative transform silently double-applies that rotation. When `echo` is
-/// set, `referent`'s own `CFrame` is ignored and `parent` (the
-/// `NegateOperation`'s already-composed frame) is used as-is.
-fn walk(
-    dom: &WeakDom,
-    referent: Ref,
-    parent: Mat4,
-    echo: bool,
-    database: &ReflectionDatabase,
-) -> Option<Node> {
-    let instance = dom.get(referent)?;
-    let properties = instance.properties();
-    let Some(Variant::CFrame(own_cframe)) = properties.get("CFrame") else {
-        return None;
-    };
-    let cframe = if echo {
-        parent
-    } else {
-        parent * cframe_matrix(own_cframe)
-    };
-    let negate = instance.class() == NEGATE_OPERATION;
-
-    if let Some(raw) = child_data(dom, referent) {
-        let nested = rbx_binary::deserialize(raw).ok()?;
-        let children = nested
-            .root_refs()
-            .iter()
-            .filter_map(|&child| walk(&nested, child, cframe, negate, database))
-            .collect();
-        return Some(Node::Operation { negate, children });
+/// `size / InitialSize`: how far an operation was resized after its tree was
+/// baked. One where either is missing, as in a file that predates the
+/// property.
+fn resize(properties: &BTreeMap<String, Variant>) -> Vec3 {
+    match (properties.get("size"), properties.get("InitialSize")) {
+        (Some(&Variant::Vector3(size)), Some(&Variant::Vector3(initial))) => {
+            Vec3::new(size.x, size.y, size.z)
+                / Vec3::new(initial.x, initial.y, initial.z).max(Vec3::splat(f32::EPSILON))
+        }
+        _ => Vec3::ONE,
     }
+}
 
-    let Some(&Variant::Vector3(size)) = properties.get("size") else {
-        return None;
-    };
-    let size = Vec3::new(size.x, size.y, size.z);
-    Some(Node::Leaf(Leaf {
-        negate,
-        geometry: shape::resolve(dom, database, instance, size),
-        cframe,
-        properties: properties.clone(),
-    }))
+/// A union's own nested operation document: `ChildData` (a `BinaryString`)
+/// or `ChildData2` (the `SharedString` newer files keep it in), whichever is
+/// filled. `None` when neither holds anything, or only valid UTF-8 — which
+/// can only mean no nested document at all.
+pub(super) fn child_data(properties: &BTreeMap<String, Variant>) -> Option<&[u8]> {
+    CHILD_DATA_PROPERTIES
+        .iter()
+        .find_map(|key| match properties.get(*key) {
+            Some(Variant::Unknown { type_id, raw })
+                if (*type_id == STRING_TYPE_ID || *type_id == SHARED_STRING_TYPE_ID)
+                    && !raw.is_empty() =>
+            {
+                Some(raw.as_slice())
+            }
+            _ => None,
+        })
 }

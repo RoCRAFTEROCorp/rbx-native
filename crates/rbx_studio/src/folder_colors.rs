@@ -71,6 +71,13 @@ impl FolderColors {
             .insert(folder_path.to_owned(), color);
     }
 
+    /// Gives `to` the tags `from` has, for a place saved under a new name.
+    pub(crate) fn copy_place(&mut self, from: &Path, to: &Path) {
+        if let Some(tags) = self.0.get(&place_key(from)).cloned() {
+            self.0.insert(place_key(to), tags);
+        }
+    }
+
     /// Drops every entry for `place` whose folder no longer exists (or is no
     /// longer a `Folder`) at its tagged path — see this module's doc comment.
     /// Returns whether anything changed, so a caller only re-saves when it
@@ -276,5 +283,21 @@ mod tests {
             after.is_empty(),
             "a Folder carries no properties by default"
         );
+    }
+
+    /// A place saved under a new name keeps its folder tags there; the old
+    /// file's stay as they were.
+    #[test]
+    fn copying_a_place_carries_its_tags_to_the_new_name() {
+        let mut store = FolderColors::default();
+        let (old, new) = (Path::new("/a/Place.rbxl"), Path::new("/b/Copy.rbxlx"));
+        store.set(old, "Workspace.Props", (1, 2, 3));
+
+        store.copy_place(old, new);
+
+        assert_eq!(store.get(new, "Workspace.Props"), Some((1, 2, 3)));
+        assert_eq!(store.get(old, "Workspace.Props"), Some((1, 2, 3)));
+        store.copy_place(Path::new("/untagged.rbxl"), Path::new("/c.rbxl"));
+        assert_eq!(store.get(Path::new("/c.rbxl"), "Workspace.Props"), None);
     }
 }

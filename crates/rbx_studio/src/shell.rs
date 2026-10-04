@@ -42,6 +42,7 @@ mod roblox_publish;
 mod roving;
 
 pub(crate) use chrome::panel_topbar;
+pub(crate) use export::Export;
 pub(crate) use layout::{edge_from_key, edge_key, Edge, Panel, SavedEdge, SavedGroup, SavedLayout};
 pub(crate) use roving::install as install_key_bindings;
 mod tree_keys;
@@ -120,6 +121,9 @@ pub(crate) struct Shell {
     /// which title is current and which menu is open lives entirely inside it.
     menu_bar: Entity<MenuBar>,
     title: SharedString,
+    /// Set when `title` changes after the window opened (File › Save to
+    /// File As…), so the next render tells the window manager too.
+    retitle: bool,
     viewport: Entity<WorkspaceView>,
     explorer: Rc<Explorer>,
     tree: Entity<TreeState>,
@@ -605,6 +609,7 @@ impl Shell {
         let mut shell = Shell {
             menu_bar,
             title: title.into(),
+            retitle: false,
             viewport,
             explorer: Rc::new(explorer),
             tree,
@@ -1567,6 +1572,9 @@ impl Render for Shell {
         // is already predictable on its own — which is all the APG's
         // entry-point rule actually asks for.
         self.tab_order.restart();
+        if std::mem::take(&mut self.retitle) {
+            window.set_window_title(&self.title);
+        }
         // Before the tree is built, so the box this focuses is in the very
         // frame that hands it the caret — see `Shell::focus_explorer_edit`.
         self.focus_explorer_edit(window, cx);

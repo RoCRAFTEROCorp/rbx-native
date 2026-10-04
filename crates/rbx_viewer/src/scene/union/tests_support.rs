@@ -35,6 +35,12 @@ impl Leaf {
         }
     }
 
+    /// Its box stretched to `size` rather than a cube.
+    pub(in crate::scene) fn stretched(mut self, size: Vec3) -> Self {
+        self.size = size;
+        self
+    }
+
     /// A colour of its own, so a test can tell one recovered piece from
     /// another — a real builder's parts nearly always have one.
     pub(in crate::scene) fn painted(mut self, color: [u8; 3]) -> Self {
@@ -64,15 +70,21 @@ pub(in crate::scene) fn fallback_leaves(pieces: usize) -> Vec<Leaf> {
     leaves
 }
 
-/// The raw bytes of a `PartOperationAsset` holding `leaves`.
-pub(in crate::scene) fn asset_bytes(leaves: &[Leaf]) -> Vec<u8> {
+/// The operation document a union carries inline (`ChildData2`) or inside
+/// its `PartOperationAsset`: `leaves` as its roots.
+pub(in crate::scene) fn inline_bytes(leaves: &[Leaf]) -> Vec<u8> {
     let mut inner = WeakDom::new();
     for (index, leaf) in leaves.iter().enumerate() {
         let referent = Ref::new(index as u32 + 1);
         inner.insert(instance(referent, leaf));
         inner.set_parent(referent, None);
     }
-    let inner_bytes = rbx_binary::serialize(&inner).expect("synthetic inner dom must serialize");
+    rbx_binary::serialize(&inner).expect("synthetic inner dom must serialize")
+}
+
+/// The raw bytes of a `PartOperationAsset` holding `leaves`.
+pub(in crate::scene) fn asset_bytes(leaves: &[Leaf]) -> Vec<u8> {
+    let inner_bytes = inline_bytes(leaves);
 
     let mut outer = WeakDom::new();
     let root = Ref::new(1);
