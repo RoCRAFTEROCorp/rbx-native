@@ -28,7 +28,7 @@ use crate::scene::{
 };
 
 pub use mesh::Meshes;
-pub(crate) use mesh::Surface;
+pub(crate) use mesh::{Pack, Surface};
 pub use surface::{PartSurface, Solid};
 
 // Reversed-Z (see `camera::Camera::projection`) puts the near plane at depth 1

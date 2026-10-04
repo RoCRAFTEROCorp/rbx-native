@@ -159,7 +159,7 @@ fn export_part(
         Some((meshes.get(&asset)?, model))
     };
     let mut uvs = Vec::new();
-    let (positions, normals, indices, model) = match file_mesh.or_else(union) {
+    let (mut positions, mut normals, mut indices, model) = match file_mesh.or_else(union) {
         Some((mesh, model)) => {
             uvs = mesh.vertices.iter().map(|v| v.uv).collect();
             (
@@ -200,6 +200,16 @@ fn export_part(
     };
     let surface = meshes.surface(referent).filter(|_| !uvs.is_empty());
     let image = meshes.texture(referent).filter(|_| !uvs.is_empty());
+    // ponytail: a textured mesh whose `Material` has a pack too is drawn with
+    // both, the image in its own UVs and the pack projected; one UV set per
+    // part holds one of them, so it exports with its image alone.
+    let pack = meshes
+        .material(referent)
+        .filter(|_| surface.is_none() && image.is_none());
+    if let Some(pack) = pack {
+        (positions, normals, indices, uvs) =
+            project(&positions, &normals, &indices, model, pack.studs_per_tile);
+    }
     let mut mesh = ExportMesh {
         name: instance.name().to_owned(),
         positions: transform_points(model, positions),
@@ -216,8 +226,67 @@ fn export_part(
         mesh.maps.color = textures.of(image);
         // The viewport multiplies the image's alpha into the part's.
         mesh.blend |= image.has_alpha();
+    } else if let Some(pack) = pack {
+        // The part's colour times the colour map, as `sample_axis` shades it.
+        let [color, normal, metalness, roughness] = &pack.maps;
+        mesh.maps.color = color.as_ref().and_then(|map| textures.of(map));
+        data_maps(&mut mesh, [normal, metalness, roughness], textures);
     }
     Some(mesh)
+}
+
+/// The mesh with a material pack's UVs laid on the way
+/// `renderer/material.wgsl`'s `sample_axis` projects one: each triangle
+/// along the object axis its normal leans on most, in studs along the part
+/// (`model`'s scale), one tile every `studs_per_tile`.
+///
+/// Unshared, three vertices a triangle, so two faces meeting at an edge can
+/// each have their own projection. The shader blends three projections
+/// across a facet tilted well off every axis; one per triangle is the
+/// nearest a single UV set gets, exact on every box face.
+#[allow(clippy::type_complexity)]
+fn project(
+    positions: &[[f32; 3]],
+    normals: &[[f32; 3]],
+    indices: &[u32],
+    model: Mat4,
+    studs_per_tile: f32,
+) -> (Vec<[f32; 3]>, Vec<[f32; 3]>, Vec<u32>, Vec<[f32; 2]>) {
+    let extent = Vec3::new(
+        model.x_axis.truncate().length(),
+        model.y_axis.truncate().length(),
+        model.z_axis.truncate().length(),
+    );
+    let tile = studs_per_tile.max(0.001);
+    let (mut out_positions, mut out_normals, mut uvs) = (Vec::new(), Vec::new(), Vec::new());
+    for triangle in indices.as_chunks::<3>().0 {
+        let corners = triangle.map(|i| i as usize);
+        let normal: Vec3 = corners.iter().map(|&i| Vec3::from(normals[i])).sum();
+        let (u, v) = face_frame(normal);
+        for i in corners {
+            let studs = Vec3::from(positions[i]) * extent;
+            out_positions.push(positions[i]);
+            out_normals.push(normals[i]);
+            uvs.push([studs.dot(u) / tile, studs.dot(v) / tile]);
+        }
+    }
+    let indices = (0..out_positions.len() as u32).collect();
+    (out_positions, out_normals, indices, uvs)
+}
+
+/// `face_frame(dominant_axis(normal))` from `renderer/material.wgsl` and
+/// `lighting.wgsl`: the object axes a face's texture runs along, image right
+/// then image down. Ties go to Y, then X, as there.
+fn face_frame(normal: Vec3) -> (Vec3, Vec3) {
+    let sign = |c: f32| if c >= 0.0 { 1.0 } else { -1.0 };
+    let a = normal.abs();
+    if a.y >= a.x && a.y >= a.z {
+        (Vec3::X, Vec3::new(0.0, 0.0, sign(normal.y)))
+    } else if a.x >= a.z {
+        (Vec3::new(0.0, 0.0, -sign(normal.x)), Vec3::NEG_Y)
+    } else {
+        (Vec3::new(sign(normal.z), 0.0, 0.0), Vec3::NEG_Y)
+    }
 }
 
 /// Dresses `mesh` in a `SurfaceAppearance` the way `renderer/appearance.wgsl`

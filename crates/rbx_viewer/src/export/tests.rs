@@ -7,7 +7,7 @@ use rbx_dom::{CFrameData, Vector3Data};
 use serde_json::Value;
 
 use super::*;
-use crate::pick::Surface;
+use crate::pick::{Pack, Surface};
 
 const IDENTITY: [f32; 9] = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0];
 
@@ -491,6 +491,74 @@ fn a_transparency_surface_appearance_blends_its_colour_map() {
     assert_eq!(document["materials"][0]["alphaMode"], "BLEND");
 }
 
+/// A 4 x 2 x 2 brick whose material tiles every 2 studs: each face carries
+/// its own projection, one tile per 2 studs along the face as the shader
+/// lays it, and the pack's maps come along with the part's colour as the
+/// factor beneath them.
+#[test]
+fn a_textured_material_is_projected_onto_its_part() {
+    let mut dom = WeakDom::new();
+    let brick = part(&mut dom, "Part", "Wall", None, [0.0, 0.0, 0.0]);
+    dom.set_property(brick, "size", vector3(4.0, 2.0, 2.0))
+        .unwrap();
+    dom.set_property(
+        brick,
+        "Color3uint8",
+        Variant::Color3uint8 { r: 255, g: 0, b: 0 },
+    )
+    .unwrap();
+    let color = image(2, 2, &[200, 50, 50, 255, 90, 40, 40, 255, 90, 40, 40, 255, 200, 50, 50, 255]);
+    let normal = image(1, 1, &[128, 128, 255, 255]);
+    let meshes = Meshes::default().with_materials(HashMap::from([(
+        brick,
+        Arc::new(Pack {
+            maps: [Some(Arc::clone(&color)), Some(normal), None, None],
+            studs_per_tile: 2.0,
+        }),
+    )]));
+
+    let exported = export(&dom, &meshes, &[brick]);
+    let mesh = &exported.meshes[0];
+
+    assert_eq!(mesh.positions.len(), 36);
+    assert_eq!(mesh.uvs.len(), 36);
+    assert_eq!(mesh.indices, (0..36).collect::<Vec<u32>>());
+    let top: Vec<[f32; 2]> = (0..36)
+        .filter(|&i| mesh.normals[i][1] > 0.9)
+        .map(|i| mesh.uvs[i])
+        .collect();
+    assert_eq!(top.len(), 6);
+    for [u, v] in &top {
+        // x spans -2..2 studs, z -1..1: one tile across 2 studs.
+        assert!((u.abs() - 1.0).abs() < 1e-5 && (v.abs() - 0.5).abs() < 1e-5);
+    }
+    // Facing +Z, image right is +X and image down is -Y.
+    let front: Vec<([f32; 3], [f32; 2])> = (0..36)
+        .filter(|&i| mesh.normals[i][2] > 0.9)
+        .map(|i| (mesh.positions[i], mesh.uvs[i]))
+        .collect();
+    for ([x, y, _], [u, v]) in &front {
+        assert!((u - x / 2.0).abs() < 1e-5 && (v + y / 2.0).abs() < 1e-5);
+    }
+
+    assert_eq!(mesh.color, [1.0, 0.0, 0.0, 1.0]);
+    assert_eq!(
+        decode(&exported.textures[mesh.maps.color.unwrap()]).2,
+        color.pixels
+    );
+    assert!(mesh.maps.normal.is_some() && mesh.maps.metallic_roughness.is_none());
+
+    let document: Value = serde_json::from_str(&gltf(&exported)).unwrap();
+    let primitive = &document["meshes"][0]["primitives"][0];
+    assert!(primitive["attributes"]["TEXCOORD_0"].is_u64());
+    let material = &document["materials"][0];
+    assert_eq!(
+        embedded(&document, &material["pbrMetallicRoughness"]["baseColorTexture"]),
+        exported.textures[mesh.maps.color.unwrap()]
+    );
+    assert!(material["normalTexture"].is_object());
+}
+
 /// Without an image, the `.mtl` still carries the part's colour, and the
 /// glTF leaves out the texture arrays the specification forbids empty.
 #[test]
@@ -599,7 +667,7 @@ fn a_real_place_exports_its_textures_and_unions() {
         .filter(|m| m.maps.normal.is_some() || m.maps.metallic_roughness.is_some())
         .count();
     eprintln!(
-        "{} parts, {textured} textured, {surfaced} wearing a SurfaceAppearance, \
+        "{} parts, {textured} textured, {surfaced} with PBR maps, \
          {} distinct images, {carved}/{} legacy unions carved",
         exported.meshes.len(),
         exported.textures.len(),
