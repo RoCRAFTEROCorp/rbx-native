@@ -49,6 +49,7 @@ impl Shell {
                 "rotate" => self.transform_action(Action::Use(Tool::Rotate), cx),
                 "transform" => self.transform_action(Action::Use(Tool::Transform), cx),
                 "sun" => self.transform_action(Action::Use(Tool::Sun), cx),
+                "pivot" => self.transform_action(Action::Use(Tool::Pivot), cx),
                 "local" => self.transform_action(Action::ToggleLocal, cx),
                 "nosnap" => self.transform_action(Action::ToggleSnap(SnapKind::Translate), cx),
                 other => eprintln!("rbxstudio: {TOOL_VARIABLE}: no tool called {other:?}"),

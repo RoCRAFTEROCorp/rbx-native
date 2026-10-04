@@ -282,10 +282,11 @@ impl Shell {
         self.recovery.changed();
         self.properties.dom_changed(changes);
         let mut refresh = refresh_for(changes, &self.covered);
-        // A selected model's own `WorldPivot` is where its handles stand.
+        // A selected model's own properties — its `WorldPivot`, its
+        // `PrimaryPart` — say where its pivot, and so its handles, stand.
         refresh.targets |= changes.iter().any(|change| {
-            matches!(change, Change::Property { referent, name }
-                if name == "WorldPivot" && self.selected_all().contains(referent))
+            matches!(change, Change::Property { referent, .. }
+                if self.selected_all().contains(referent))
         });
         // The instances the log names, not the tree: a drag reflects a
         // change every mouse move, and copying the whole place per move
