@@ -646,8 +646,8 @@ Roblox's own engine.
   `MaterialVariant`/`MaterialService` edit (the material catalog is
   defined from the service), and a material needing a texture-array layer
   past the ones uploaded.
-- [x] **Interactive viewport gizmos — Select/Move/Scale/Rotate, matching
-  Studio's real toolbar and behaviour**, checked against
+- [x] **Interactive viewport gizmos — Select/Move/Scale/Rotate/Transform,
+  matching Studio's real toolbar and behaviour**, checked against
   `Roblox/creator-docs` (`parts/index.md#transform-parts`,
   `parts/models.md#select-models`) rather than assumed:
   - **Select**: clicking an outlined object selects it, resolving to the
@@ -675,6 +675,22 @@ Roblox's own engine.
     part on whatever the cursor passes over — real geometry, not a
     bounding box — falling back to sliding flat across the view only when
     the cursor is over nothing.
+  - **Transform** (`5`) — the ribbon's 5th tool, Move's arrows, Scale's
+    balls and Rotate's rings all drawn and grabbable over the same
+    selection at once. Confirmed against the API dump this project syncs
+    daily (`assets/API-Dump.json`, `Enums` → `RibbonTool`, value `4`) and
+    `creator-docs`' own enum reference (`reference/engine/enums/
+    RibbonTool.yaml`) rather than guessed at — both give
+    `Enum.RibbonTool.Transform` the exact summary "provides combined move,
+    scale, and rotate handles in a single gizmo"; `parts/index.md`'s prose
+    never names it, only using "transform" as the umbrella term for the
+    other three together. A grab tries Move's arrows first, then Rotate's
+    rings, then Scale's balls (innermost reach first), each behaving
+    exactly as it does under its own tool; cursor-dragging the part's body
+    works here too, since Transform draws Move's own arrows over the same
+    part. No shortcut for it is documented anywhere Roblox publishes, so
+    `5` is this editor's own choice, continuing the other three's run of
+    digits.
   - **Snapping**: move/scale snap in studs, rotate snap in degrees, each
     with its own toolbar increment field and enable/disable checkbox;
     holding `Shift` suspends snapping for as long as it is held, the way
@@ -711,13 +727,9 @@ Roblox's own engine.
   - Clicking (and dragging) resolves against the shape actually drawn —
     sphere, capped cylinder, wedge slope, a downloaded mesh's own
     triangles — not the part's bounding box.
-  - **Placement**: the ribbon's Tools group — Select/Move/Scale/Rotate,
-    the local-axis toggle, then the chevron that opens the snap increments
-    and the Align popover.
-  - **Still open**: the 5th "Transform" toolbar button visible in Studio's
-    current toolbar (under "What's planned" → Renderer). A plain click
-    landing on a `Model` now draws its aggregate box and gizmos the whole
-    thing — see Renderer's own bullet above.
+  - **Placement**: the ribbon's Tools group — Select/Move/Scale/Rotate/
+    Transform, the local-axis toggle, then the chevron that opens the snap
+    increments and the Align popover.
 
 - [x] **Group/ungroup operations** — `Ctrl+G` (or Model ⟩ Group) wraps the
   current selection in one new `Model`, parented where the selection
@@ -1724,15 +1736,6 @@ Roblox's own engine.
   above existing first regardless of which direction it takes.
 
 ### Renderer
-- [ ] 📋 **A 5th "Transform" toolbar button** appears in Studio's current
-  toolbar (see the owner-provided screenshot) alongside the now-implemented
-  Select/Move/Scale/Rotate (see "What's been implemented" → Editor), but
-  creator-docs' `parts/index.md` only documents "Transform parts" as the
-  *umbrella name* for Move+Scale+Rotate together, not a distinct 5th
-  interactive tool — could not confirm what it does specifically from the
-  docs alone. Needs confirming against a real Studio instance (the "Studio
-  fallback" Vinegar/Wine workaround elsewhere in this roadmap is one way to
-  do that) before implementing it, rather than guessing.
 - [ ] 📋 **Gizmo papercuts and third-party-tool parity requests**, from
   real use of the Move/Scale/Rotate gizmos above. Checked against
   `Roblox/creator-docs` (`parts.md`'s Transform Parts section) and, where

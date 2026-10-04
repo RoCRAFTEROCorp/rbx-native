@@ -513,6 +513,7 @@ fn the_built_in_themes_keep_three_to_one_for_controls() {
             ("tool_move", "tile"),
             ("tool_scale", "tile"),
             ("tool_rotate", "tile"),
+            ("tool_transform", "tile"),
             ("tool_align", "tile"),
             ("tool_local", "tile"),
             ("tool_sun", "tile"),

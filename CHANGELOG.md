@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-10-04
+
+- **The Transform tool.** The ribbon's 5th Tools button — Move's arrows,
+  Scale's balls and Rotate's rings, all grabbable over the same selection
+  at once — the roadmap could previously only confirm as `creator-docs`'
+  umbrella name for the other three together. Checked against
+  `Enum.RibbonTool.Transform` in the API dump this project syncs daily and
+  Roblox's own enum reference instead: both give it the exact summary
+  "provides combined move, scale, and rotate handles in a single gizmo".
+  `5` picks it, continuing Move/Scale/Rotate's own `2`/`3`/`4`, including
+  on AZERTY keyboards. — @chteau
+
 ## 2026-10-03
 
 - **A standing audit of how the Properties panel renders every Roblox

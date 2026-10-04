@@ -34,12 +34,13 @@ fn every(_: Axis, _: f32) -> bool {
     true
 }
 
-/// Every tool's geometry, for the checks that have to hold for all three.
-fn shapes() -> [Shape; 3] {
+/// Every tool's geometry, for the checks that have to hold for all four.
+fn shapes() -> [Shape; 4] {
     [
         Shape::Move(handles()),
         Shape::Scale(faces()),
         Shape::Rotate(handles()),
+        Shape::Transform(handles(), faces()),
     ]
 }
 
@@ -370,4 +371,66 @@ fn a_held_handle_is_drawn_alone() {
     let rings = mesh(&Shape::Rotate(handles()), None, eye).len();
     let held = Some(End::of((Axis::Y, 1.0)));
     assert_eq!(mesh(&Shape::Rotate(handles()), held, eye).len(), rings);
+}
+
+/// Transform's combined gizmo is exactly Move's arrows, Scale's balls and
+/// Rotate's rings, all drawn at once — not a cut-down version of any of
+/// them, since all three are grabbable handles of their own in this tool.
+#[test]
+fn a_transform_gizmo_draws_every_arm_ball_and_ring() {
+    let eye = Vec3::splat(40.0);
+    let combined = mesh(&Shape::Transform(handles(), faces()), None, eye).len();
+    let separate = mesh(&Shape::Move(handles()), None, eye).len()
+        + mesh(&Shape::Scale(faces()), None, eye).len()
+        + mesh(&Shape::Rotate(handles()), None, eye).len();
+    assert_eq!(combined, separate);
+    assert_eq!(
+        combined, CAPACITY,
+        "this is the shape CAPACITY is sized for"
+    );
+}
+
+/// Depth-test-off painting only works if what's nearer the eye is painted
+/// last, and until Transform that was only ever checked *within* one kind
+/// (`the_arms_are_painted_back_to_front` and its siblings above) — nothing
+/// before mixed two kinds on screen at once. This checks the merge actually
+/// interleaves by eye distance rather than drawing one kind's six (or
+/// `RING_SEGMENTS`) pieces as an unbroken block before the next kind's.
+#[test]
+fn transform_interleaves_every_kind_by_eye_distance_not_by_kind() {
+    // Move's and Rotate's reach (`handles().arm()`, 3 studs) is fixed on
+    // screen regardless of the part's own size, but a Scale ball sits on the
+    // part's actual surface — so a part stretched far enough towards the eye
+    // pokes a ball closer to it than any arm tip or ring can reach, whatever
+    // `handles()`'s own fixed arm length is. A part this long along Z, facing
+    // the eye, is what forces that.
+    let long = Mat4::from_scale_rotation_translation(
+        Vec3::new(2.0, 2.0, 40.0),
+        Quat::IDENTITY,
+        Vec3::new(4.0, 1.0, -2.0),
+    );
+    let eye = Vec3::new(4.0, 1.0, 38.0);
+    let near_faces = Faces::new(long, pose(eye), false);
+    let vertices = mesh(&Shape::Transform(handles(), near_faces), None, eye);
+
+    // The last-painted vertex — on top of everything else — has to be one of
+    // the near ball's, not an arm's or a ring's, which a per-kind-then-
+    // per-kind composition (every arm, then every ring, then every ball, or
+    // any other fixed kind order) would get wrong whenever a ball happens to
+    // stand nearer the eye than the kind painted after it.
+    let ball_depth = near_faces
+        .all()
+        .map(|(axis, sign)| (near_faces.handle(axis, sign) - eye).length())
+        .fold(f32::INFINITY, f32::min);
+    let last = Vec3::from(
+        vertices
+            .last()
+            .expect("a transform gizmo draws something")
+            .position,
+    );
+    let last_depth = (last - eye).length();
+    assert!(
+        (last_depth - ball_depth).abs() < 0.5,
+        "the last-painted vertex is {last_depth} studs out, not near the closest ball at {ball_depth}"
+    );
 }

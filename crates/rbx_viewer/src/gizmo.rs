@@ -107,6 +107,15 @@ pub enum Kind {
     Scale,
     /// A ring around each axis; dragging one turns the part about it.
     Rotate,
+    /// Move's arrows, Scale's balls and Rotate's rings, all at once —
+    /// `Enum.RibbonTool.Transform`: "provides combined move, scale, and
+    /// rotate handles in a single gizmo" (`reference/engine/enums/
+    /// RibbonTool.yaml`, confirmed against the API dump this project syncs
+    /// daily, `assets/API-Dump.json`). `creator-docs`' own prose never names
+    /// a distinct Transform tool — it uses "transform" only as the umbrella
+    /// term for Move+Scale+Rotate together — so the enum and the dump are
+    /// the only primary sources this is built from.
+    Transform,
 }
 
 /// What the viewport draws over the selection, and in which frame of
@@ -443,6 +452,9 @@ pub enum Shape {
     Move(Handles),
     Scale(Faces),
     Rotate(Handles),
+    /// Transform's combined gizmo: Move's and Rotate's shared [`Handles`]
+    /// plus Scale's own [`Faces`], all drawn together.
+    Transform(Handles, Faces),
 }
 
 #[cfg(test)]

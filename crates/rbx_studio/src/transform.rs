@@ -9,7 +9,11 @@
 //!
 //! Shortcuts and behaviour follow `creator-docs`
 //! (`parts/index.md#transform-parts`): `2` for Move, `3` for Scale, `4` for
-//! Rotate, `Ctrl`/`Cmd`+`L` for local orientation.
+//! Rotate, `Ctrl`/`Cmd`+`L` for local orientation. `5` for Transform is this
+//! editor's own extension of that sequence: `creator-docs` documents no
+//! shortcut for it (see [`Tool::Transform`]), so continuing the run of
+//! digits the other three already use is this editor's own choice, not a
+//! confirmed one.
 
 use glam::{Mat3, Mat4, Vec3};
 use gpui_kit::Modifiers;
@@ -28,15 +32,32 @@ pub(crate) enum Tool {
     Move,
     Scale,
     Rotate,
+    /// Studio's own `Enum.RibbonTool.Transform`: Move's, Scale's and
+    /// Rotate's handles all at once, over the same selection. Confirmed
+    /// against the real tool rather than guessed at `creator-docs`' prose
+    /// alone (which only uses "transform" as the umbrella name for the other
+    /// three together, never as a distinct tool of its own): the API dump
+    /// this project syncs daily (`assets/API-Dump.json`, `Enums` →
+    /// `RibbonTool`, value `4`) and `creator-docs`' own enum reference
+    /// (`reference/engine/enums/RibbonTool.yaml`) both give it this exact
+    /// summary: "provides combined move, scale, and rotate handles in a
+    /// single gizmo."
+    Transform,
     /// Point at the scene to place the sun or the moon — see `crate::sun`.
     /// Not a transform: it has no handles and never touches the selection.
     Sun,
 }
 
 impl Tool {
-    /// The four the ribbon's Tools group draws; [`Tool::Sun`] has a group
+    /// The five the ribbon's Tools group draws; [`Tool::Sun`] has a group
     /// of its own.
-    pub(crate) const TRANSFORM: [Tool; 4] = [Tool::Select, Tool::Move, Tool::Scale, Tool::Rotate];
+    pub(crate) const TRANSFORM: [Tool; 5] = [
+        Tool::Select,
+        Tool::Move,
+        Tool::Scale,
+        Tool::Rotate,
+        Tool::Transform,
+    ];
 
     pub(crate) fn label(self) -> &'static str {
         match self {
@@ -44,21 +65,22 @@ impl Tool {
             Tool::Move => "Move",
             Tool::Scale => "Scale",
             Tool::Rotate => "Rotate",
+            Tool::Transform => "Transform",
             Tool::Sun => "Sun",
         }
     }
 
     /// The key that picks this tool, for the toolbar button's own label.
     ///
-    /// The Sun tool has none: the next digit is where Studio's own
-    /// Transform tool would go, and any other key over the 3D view is a
-    /// camera key or an arbitrary pick nobody would guess.
+    /// The Sun tool has none: any key over the 3D view past `5` is a camera
+    /// key or an arbitrary pick nobody would guess.
     pub(crate) fn shortcut(self) -> Option<&'static str> {
         match self {
             Tool::Select => Some("1"),
             Tool::Move => Some("2"),
             Tool::Scale => Some("3"),
             Tool::Rotate => Some("4"),
+            Tool::Transform => Some("5"),
             Tool::Sun => None,
         }
     }
@@ -71,6 +93,7 @@ impl Tool {
             Tool::Move => Some(Kind::Move),
             Tool::Scale => Some(Kind::Scale),
             Tool::Rotate => Some(Kind::Rotate),
+            Tool::Transform => Some(Kind::Transform),
         }
     }
 }
@@ -238,6 +261,7 @@ pub(crate) fn action_for(key: &str, modifiers: Modifiers) -> Option<Action> {
         "2" => Some(Action::Use(Tool::Move)),
         "3" => Some(Action::Use(Tool::Scale)),
         "4" => Some(Action::Use(Tool::Rotate)),
+        "5" => Some(Action::Use(Tool::Transform)),
         _ => None,
     }
 }

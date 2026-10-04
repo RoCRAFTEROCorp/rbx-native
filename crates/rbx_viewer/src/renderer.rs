@@ -522,6 +522,11 @@ impl Renderer {
         );
         Some(match gizmo.kind {
             Kind::Rotate => Shape::Rotate(handles),
+            Kind::Transform => {
+                let scaled = self.selection.scale_box().unwrap_or(model);
+                Shape::Transform(handles, Faces::new(scaled, pose, orthographic))
+            }
+            // `Kind::Scale` never reaches here — it returned above.
             _ => Shape::Move(handles),
         })
     }

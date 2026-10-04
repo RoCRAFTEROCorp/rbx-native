@@ -42,11 +42,15 @@ fn the_tool_digits_pick_their_tools() {
         action_for("4", Modifiers::none()),
         Some(Action::Use(Tool::Rotate))
     );
+    assert_eq!(
+        action_for("5", Modifiers::none()),
+        Some(Action::Use(Tool::Transform))
+    );
 }
 
 #[test]
 fn a_digit_with_no_tool_behind_it_is_left_alone() {
-    assert_eq!(action_for("5", Modifiers::none()), None);
+    assert_eq!(action_for("6", Modifiers::none()), None);
     assert_eq!(action_for("0", Modifiers::none()), None);
 }
 
@@ -181,6 +185,7 @@ fn every_tool_but_select_shows_handles_and_drags() {
         (Tool::Move, Kind::Move),
         (Tool::Scale, Kind::Scale),
         (Tool::Rotate, Kind::Rotate),
+        (Tool::Transform, Kind::Transform),
     ] {
         let transform = Transform {
             tool,
@@ -206,7 +211,7 @@ fn the_local_toggle_reaches_the_renderer_for_every_tool() {
     // The toggle is one flag over all three tools, exactly as creator-docs
     // describes it: "you can move, scale, or rotate parts in either world
     // orientation or local orientation".
-    for tool in [Tool::Move, Tool::Scale, Tool::Rotate] {
+    for tool in [Tool::Move, Tool::Scale, Tool::Rotate, Tool::Transform] {
         let local = Transform {
             tool,
             local: true,
