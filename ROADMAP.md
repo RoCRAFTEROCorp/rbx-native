@@ -1140,8 +1140,12 @@ Roblox's own engine.
   **Export as glTF…** a single self-contained glTF 2.0 file, its buffer
   inline. Both export every part in the selection as the viewport draws
   it — procedural shapes and downloaded `MeshPart`/`SpecialMesh` triangles
-  alike, in world space, in studs — and are greyed when the selection
-  holds no part.
+  alike, in world space, in studs, and a legacy `UnionOperation` as the
+  boolean this project carves from its original parts — and are greyed
+  when the selection holds no part. Each part's colour goes along as its
+  material (a `.mtl` beside the `.obj`), and a mesh drawn with a
+  `TextureID`/`TextureId` image takes it too: a `.png` the `.mtl` maps,
+  or a PNG data URI inside the glTF.
 - [x] Drag-and-drop reparenting in the Explorer tree. Dragging a row
   onto another reparents onto it, the way creator-docs describes
   ("simply drag and drop them onto the new parent") — with a ghost under
@@ -1797,11 +1801,11 @@ Roblox's own engine.
   Editor): the whole place to a local file under a name of its choosing
   (Studio's File › Save to File / File › Export as glTF, both File-menu
   items rather than row ones), and services and the place to Roblox
-  (Save/Publish, see below). The mesh exports also still leave out what
-  Studio's own carry: a `UnionOperation` exports as its box (the carved
-  mesh is not reachable from the editor yet), and neither textures nor
-  material maps travel with an `.obj` or a `.gltf` — only each part's
-  colour, in the glTF. Roblox's own roadmap lists glTF export, pushed from
+  (Save/Publish, see below). The mesh exports also still leave out a
+  `SurfaceAppearance`'s maps and the `Material` textures (only the colour
+  and a mesh's own image travel), and a union whose boolean failed, or one
+  baked only as `MeshData` (never decoded here), exports as its box.
+  Roblox's own roadmap lists glTF export, pushed from
   Late 2025 to Late 2026 in its
   [fall 2026 update](https://devforum.roblox.com/t/creator-roadmap-2026-fall-update/4880208);
   check what it actually exports once it ships.

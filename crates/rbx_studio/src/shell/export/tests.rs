@@ -41,7 +41,9 @@ fn save_to_file_writes_the_subtree_as_a_binary_model() {
         &[model, wheel],
         Path::new("Car.rbxm"),
     )
-    .unwrap();
+    .unwrap()
+    .remove(0)
+    .1;
     let read = rbx_binary::deserialize(&bytes).unwrap();
 
     assert_eq!(
@@ -75,7 +77,9 @@ fn an_rbxmx_name_saves_xml() {
         &[model],
         Path::new("Car.rbxmx"),
     )
-    .unwrap();
+    .unwrap()
+    .remove(0)
+    .1;
 
     let read = rbx_xml::deserialize(std::str::from_utf8(&bytes).unwrap()).unwrap();
     assert!(find_by_name(&read, "Wheel").is_some());

@@ -67,6 +67,7 @@ use resync::Standing;
 pub(crate) use resync::{Drawn, PartSync};
 pub(crate) use shape::{resolve as resolve_shape, ShapeKind};
 pub(crate) use trail::{segments as trail_segments, Recorder as TrailRecorder, Trail};
+pub(crate) use union::fit as union_fit;
 pub(crate) use union::{unit_mesh, Evaluations as UnionEvaluations};
 
 use crate::assets::Image;

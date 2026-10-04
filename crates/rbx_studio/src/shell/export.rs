@@ -49,8 +49,9 @@ pub(super) fn has_geometry(dom: &WeakDom, database: &ReflectionDatabase, selecte
         .any(|&root| pick::parts_of(dom, database, root).next().is_some())
 }
 
-/// The file's bytes. A model goes out in the format its extension names,
-/// binary unless that is `.rbxmx`.
+/// Each file to write and its bytes, `path` first. A model goes out in the
+/// format its extension names, binary unless that is `.rbxmx`; an `.obj`
+/// brings its `.mtl` and any part's texture `.png`s along beside it.
 fn encode(
     kind: Export,
     dom: &WeakDom,
@@ -58,7 +59,7 @@ fn encode(
     meshes: &pick::Meshes,
     roots: &[Ref],
     path: &Path,
-) -> Result<Vec<u8>, String> {
+) -> Result<Vec<(PathBuf, Vec<u8>)>, String> {
     let solids = || {
         let solids = export::meshes_of(dom, database, meshes, roots);
         match solids.is_empty() {
@@ -70,10 +71,20 @@ fn encode(
         Export::Model => {
             let xml = path.extension().is_some_and(|ext| ext == "rbxmx");
             let format = if xml { Format::Xml } else { Format::Binary };
-            format.encode(&clipboard::detached(dom, roots))
+            let bytes = format.encode(&clipboard::detached(dom, roots))?;
+            Ok(vec![(path.to_path_buf(), bytes)])
         }
-        Export::Obj => Ok(export::obj(&solids()?).into_bytes()),
-        Export::Gltf => Ok(export::gltf(&solids()?).into_bytes()),
+        Export::Obj => {
+            let stem = path.file_stem().unwrap_or_default().to_string_lossy();
+            Ok(export::obj_files(&solids()?, &stem)
+                .into_iter()
+                .map(|(name, bytes)| (path.with_file_name(name), bytes))
+                .collect())
+        }
+        Export::Gltf => Ok(vec![(
+            path.to_path_buf(),
+            export::gltf(&solids()?).into_bytes(),
+        )]),
     }
 }
 
@@ -120,7 +131,11 @@ impl Shell {
         self.flush_script_edits(cx);
         let meshes = self.viewport.read(cx).meshes().clone();
         let result = encode(kind, &self.dom, &self.database, &meshes, roots, path)
-            .and_then(|bytes| write_atomic(path, &bytes))
+            .and_then(|files| {
+                files
+                    .iter()
+                    .try_for_each(|(path, bytes)| write_atomic(path, bytes))
+            })
             .map(|()| format!("Exported {}", path.display()));
         self.report_export(result, cx);
     }

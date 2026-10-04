@@ -35,6 +35,30 @@ fn export(dom: &WeakDom, meshes: &Meshes, roots: &[Ref]) -> Vec<ExportMesh> {
     meshes_of(dom, &ReflectionDatabase::embedded(), meshes, roots)
 }
 
+/// One triangle two units across, its UVs spanning the image.
+fn triangle() -> rbx_mesh::Mesh {
+    let vertex = |position: [f32; 3], uv: [f32; 2]| rbx_mesh::Vertex {
+        position,
+        normal: [0.0, 0.0, 1.0],
+        uv,
+        color: [255; 4],
+    };
+    rbx_mesh::Mesh {
+        version: (4, 1),
+        vertices: vec![
+            vertex([-1.0, -1.0, 0.0], [0.0, 1.0]),
+            vertex([1.0, -1.0, 0.0], [1.0, 1.0]),
+            vertex([0.0, 1.0, 0.0], [0.5, 0.0]),
+        ],
+        indices: vec![0, 1, 2],
+        lods: Vec::new(),
+        bounds: rbx_mesh::Aabb {
+            min: [-1.0, -1.0, 0.0],
+            max: [1.0, 1.0, 0.0],
+        },
+    }
+}
+
 fn count(text: &str, prefix: &str) -> usize {
     text.lines().filter(|line| line.starts_with(prefix)).count()
 }
@@ -54,7 +78,7 @@ fn a_unit_cube_is_twelve_triangles_around_its_position() {
         assert!((x - 10.0).abs() <= 0.5 + 1e-5 && y.abs() <= 0.5 + 1e-5 && z.abs() <= 0.5 + 1e-5);
     }
 
-    let text = obj(&exported);
+    let text = obj(&exported, "x");
     assert_eq!(count(&text, "o "), 1);
     assert_eq!(count(&text, "v "), mesh.positions.len());
     assert_eq!(count(&text, "vn "), mesh.normals.len());
@@ -71,7 +95,7 @@ fn obj_face_indices_continue_across_objects() {
     part(&mut dom, "Part", "B", Some(model), [5.0, 0.0, 0.0]);
 
     let exported = export(&dom, &Meshes::default(), &[model]);
-    let text = obj(&exported);
+    let text = obj(&exported, "x");
 
     assert_eq!(count(&text, "o "), 2);
     assert!(text.contains("o Red_Brick\n"));
@@ -117,27 +141,10 @@ fn a_mesh_part_exports_its_own_triangles_scaled_to_its_size() {
         .unwrap();
     dom.set_property(rock, "size", vector3(4.0, 4.0, 4.0))
         .unwrap();
-    let vertex = |position: [f32; 3]| rbx_mesh::Vertex {
-        position,
-        normal: [0.0, 0.0, 1.0],
-        uv: [0.0, 0.0],
-        color: [255; 4],
-    };
-    let mesh = rbx_mesh::Mesh {
-        version: (4, 1),
-        vertices: vec![
-            vertex([-1.0, -1.0, 0.0]),
-            vertex([1.0, -1.0, 0.0]),
-            vertex([0.0, 1.0, 0.0]),
-        ],
-        indices: vec![0, 1, 2],
-        lods: Vec::new(),
-        bounds: rbx_mesh::Aabb {
-            min: [-1.0, -1.0, 0.0],
-            max: [1.0, 1.0, 0.0],
-        },
-    };
-    let meshes = Meshes::new(HashMap::from([(AssetRef::Id(42), Arc::new(mesh))]));
+    let meshes = Meshes::new(
+        HashMap::from([(AssetRef::Id(42), Arc::new(triangle()))]),
+        HashMap::new(),
+    );
 
     let exported = export(&dom, &meshes, &[rock]);
 
@@ -149,9 +156,9 @@ fn a_mesh_part_exports_its_own_triangles_scaled_to_its_size() {
     );
     assert_eq!(exported[0].normals, [[0.0, 0.0, 1.0]; 3]);
 
-    let text = obj(&exported);
+    let text = obj(&exported, "x");
     assert_eq!(count(&text, "v "), 3);
-    assert!(text.contains("f 1//1 2//2 3//3"));
+    assert!(text.contains("f 1/1/1 2/2/2 3/3/3"));
 }
 
 /// Without its download, a `MeshPart` is the box it is drawn as.
@@ -223,4 +230,190 @@ fn gltf_is_a_valid_two_point_oh_document_with_the_vertices_inline() {
     assert!(document["materials"][1 - blended]
         .get("alphaMode")
         .is_none());
+}
+
+/// A `MeshPart` with a `TextureID` image: the `.obj` names a `.mtl` that maps
+/// the `.png` written beside it, and the glTF material carries that PNG.
+#[test]
+fn a_textured_mesh_part_brings_its_image_to_both_formats() {
+    let mut dom = WeakDom::new();
+    let rock = part(&mut dom, "MeshPart", "Mossy Rock", None, [0.0, 0.0, 0.0]);
+    dom.set_property(rock, "MeshId", Variant::String("rbxassetid://42".into()))
+        .unwrap();
+    dom.set_property(rock, "TextureID", Variant::String("rbxassetid://43".into()))
+        .unwrap();
+    let image = Image {
+        width: 2,
+        height: 1,
+        pixels: vec![255, 0, 0, 255, 0, 0, 255, 255],
+    };
+    let meshes = Meshes::new(
+        HashMap::from([(AssetRef::Id(42), Arc::new(triangle()))]),
+        HashMap::from([(rock, Arc::new(image.clone()))]),
+    );
+
+    let exported = export(&dom, &meshes, &[rock]);
+    let png = exported[0].texture.clone().unwrap();
+    let mut decoder = png::Decoder::new(std::io::Cursor::new(&png))
+        .read_info()
+        .unwrap();
+    let mut pixels = vec![0; decoder.output_buffer_size().unwrap()];
+    decoder.next_frame(&mut pixels).unwrap();
+    assert_eq!(pixels, image.pixels);
+    assert_eq!(exported[0].uvs, [[0.0, 1.0], [1.0, 1.0], [0.5, 0.0]]);
+
+    let files = obj_files(&exported, "Mossy Rock");
+    let names: Vec<&str> = files.iter().map(|(name, _)| name.as_str()).collect();
+    assert_eq!(
+        names,
+        ["Mossy Rock.obj", "Mossy_Rock.mtl", "Mossy_Rock_0.png"]
+    );
+    assert_eq!(files[2].1, png);
+    let text = std::str::from_utf8(&files[0].1).unwrap();
+    assert!(text.contains("mtllib Mossy_Rock.mtl\n"));
+    assert!(text.contains("usemtl Mossy_Rock_0\n"));
+    // V flipped to OBJ's bottom-up convention.
+    assert!(text.contains("vt 0 0\nvt 1 0\nvt 0.5 1\n"));
+    assert!(text.contains("f 1/1/1 2/2/2 3/3/3"));
+    let material = std::str::from_utf8(&files[1].1).unwrap();
+    assert!(material.contains("newmtl Mossy_Rock_0\n"));
+    assert!(material.contains("map_Kd Mossy_Rock_0.png\n"));
+
+    let document: Value = serde_json::from_str(&gltf(&exported)).unwrap();
+    let primitive = &document["meshes"][0]["primitives"][0];
+    let uv =
+        &document["accessors"][primitive["attributes"]["TEXCOORD_0"].as_u64().unwrap() as usize];
+    assert_eq!(uv["type"], "VEC2");
+    assert_eq!(uv["count"], 3);
+    let texture = &document["materials"][0]["pbrMetallicRoughness"]["baseColorTexture"]["index"];
+    let source = &document["textures"][texture.as_u64().unwrap() as usize]["source"];
+    let uri = document["images"][source.as_u64().unwrap() as usize]["uri"]
+        .as_str()
+        .unwrap();
+    let encoded = uri.strip_prefix("data:image/png;base64,").unwrap();
+    assert_eq!(
+        base64::engine::general_purpose::STANDARD
+            .decode(encoded)
+            .unwrap(),
+        png
+    );
+}
+
+/// Without an image, the `.mtl` still carries the part's colour, and the
+/// glTF leaves out the texture arrays the specification forbids empty.
+#[test]
+fn an_untextured_part_exports_its_colour_as_its_material() {
+    let mut dom = WeakDom::new();
+    let brick = part(&mut dom, "Part", "Brick", None, [0.0, 0.0, 0.0]);
+    dom.set_property(
+        brick,
+        "Color3uint8",
+        Variant::Color3uint8 { r: 255, g: 0, b: 0 },
+    )
+    .unwrap();
+    let exported = export(&dom, &Meshes::default(), &[brick]);
+
+    let files = obj_files(&exported, "Brick");
+    assert_eq!(files.len(), 2);
+    let material = std::str::from_utf8(&files[1].1).unwrap();
+    assert!(material.contains("newmtl Brick_0\nKd 1 0 0\nd 1\n"));
+    assert!(!material.contains("map_Kd"));
+    assert!(std::str::from_utf8(&files[0].1)
+        .unwrap()
+        .contains("f 1//1 "));
+
+    let document: Value = serde_json::from_str(&gltf(&exported)).unwrap();
+    assert!(document.get("images").is_none() && document.get("textures").is_none());
+    assert!(document["meshes"][0]["primitives"][0]["attributes"]
+        .get("TEXCOORD_0")
+        .is_none());
+}
+
+/// A legacy union exports the boolean `scene::union` carved, keyed by its
+/// `AssetId` and placed the way it is drawn — `CFrame`, then the resize
+/// since `InitialSize` — rather than its box.
+#[test]
+fn a_union_exports_its_computed_boolean() {
+    let mut dom = WeakDom::new();
+    let union = part(&mut dom, "UnionOperation", "Arch", None, [0.0, 3.0, 0.0]);
+    dom.set_property(union, "AssetId", Variant::String("rbxassetid://77".into()))
+        .unwrap();
+    dom.set_property(union, "InitialSize", vector3(2.0, 2.0, 2.0))
+        .unwrap();
+    dom.set_property(union, "size", vector3(4.0, 4.0, 4.0))
+        .unwrap();
+    let meshes = Meshes::new(
+        HashMap::from([(AssetRef::Id(77), Arc::new(triangle()))]),
+        HashMap::new(),
+    );
+
+    let exported = export(&dom, &meshes, &[union]);
+
+    assert_eq!(exported[0].indices, [0, 1, 2]);
+    assert_eq!(
+        exported[0].positions,
+        [[-2.0, 1.0, 0.0], [2.0, 1.0, 0.0], [0.0, 5.0, 0.0]]
+    );
+    // Before its boolean resolves, the box it is drawn as.
+    assert_eq!(
+        export(&dom, &Meshes::default(), &[union])[0].indices.len(),
+        36
+    );
+}
+
+/// A real place through the same streamed meshes and images the editor
+/// exports from: every textured mesh comes out with its PNG, and every union
+/// whose boolean carved with its own triangles rather than a box. Set
+/// `RBX_EXPORT_OUT=<dir>` to keep the `.obj`/`.mtl`/`.png`s and `.gltf` it
+/// wrote, to open in another tool.
+#[test]
+#[ignore = "needs RBX_EXPORT_FIXTURE=<place> and the network or an asset cache"]
+fn a_real_place_exports_its_textures_and_unions() {
+    let path = std::env::var("RBX_EXPORT_FIXTURE").expect("RBX_EXPORT_FIXTURE");
+    let mut viewer = crate::Headless::load(std::path::Path::new(&path), true).unwrap();
+    // Streams in on ticks; quiet for a few seconds means everything landed.
+    let mut quiet = 0;
+    for _ in 0..1200 {
+        viewer.tick(std::time::Duration::from_millis(50));
+        quiet = if viewer.pick_meshes_changed() {
+            0
+        } else {
+            quiet + 1
+        };
+        if quiet > 100 {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    let dom = crate::read_place(std::path::Path::new(&path)).unwrap();
+    let database = ReflectionDatabase::embedded();
+    let exported = meshes_of(&dom, &database, &viewer.pick_meshes(), dom.root_refs());
+
+    let textured = exported.iter().filter(|m| m.texture.is_some()).count();
+    let unions: Vec<_> = dom
+        .root_refs()
+        .iter()
+        .flat_map(|&root| descendants_of(&dom, root))
+        .filter(|&r| dom.get(r).is_some_and(|i| i.class() == "UnionOperation"))
+        .filter_map(|r| union_fit(&dom, &database, r).map(|(asset, _)| (r, asset)))
+        .collect();
+    let carved = unions
+        .iter()
+        .filter(|(_, asset)| viewer.pick_meshes().get(asset).is_some())
+        .count();
+    eprintln!(
+        "{} parts, {textured} textured, {carved}/{} legacy unions carved",
+        exported.len(),
+        unions.len()
+    );
+    assert!(textured > 0);
+    assert!(carved > 0);
+
+    if let Ok(out) = std::env::var("RBX_EXPORT_OUT") {
+        let out = std::path::Path::new(&out);
+        for (name, bytes) in obj_files(&exported, "export") {
+            std::fs::write(out.join(name), bytes).unwrap();
+        }
+        std::fs::write(out.join("export.gltf"), gltf(&exported)).unwrap();
+    }
 }

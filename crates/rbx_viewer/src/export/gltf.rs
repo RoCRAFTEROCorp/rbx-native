@@ -2,7 +2,8 @@
 //! buffer inline as a base64 data URI, so the export is one file to move
 //! around rather than a `.gltf` and a `.bin` that break apart.
 //!
-//! One node, mesh and material per part. Vertices are already in world space
+//! One node, mesh and material per part; a part drawn with an image carries
+//! it, inline as a PNG data URI, as its material's base colour texture. Vertices are already in world space
 //! (see [`super::meshes_of`]), so no node carries a transform.
 
 use base64::Engine as _;
@@ -49,9 +50,16 @@ pub fn gltf(meshes: &[ExportMesh]) -> String {
             .flat_map(|v| v.to_le_bytes())
             .collect();
         let indices: Vec<u8> = mesh.indices.iter().flat_map(|i| i.to_le_bytes()).collect();
+        let uvs: Vec<u8> = mesh
+            .uvs
+            .iter()
+            .flatten()
+            .flat_map(|v| v.to_le_bytes())
+            .collect();
         let (min, max) = bounds(&mesh.positions);
 
         let base = accessors.len();
+        let mut attributes = json!({ "POSITION": base, "NORMAL": base + 1 });
         accessors.push(json!({
             "bufferView": view(&mut buffer, &positions, ARRAY_BUFFER),
             "componentType": FLOAT,
@@ -73,7 +81,16 @@ pub fn gltf(meshes: &[ExportMesh]) -> String {
             "count": mesh.indices.len(),
             "type": "SCALAR",
         }));
-        primitives.push(base);
+        if !mesh.uvs.is_empty() {
+            attributes["TEXCOORD_0"] = json!(accessors.len());
+            accessors.push(json!({
+                "bufferView": view(&mut buffer, &uvs, ARRAY_BUFFER),
+                "componentType": FLOAT,
+                "count": mesh.uvs.len(),
+                "type": "VEC2",
+            }));
+        }
+        primitives.push((attributes, base + 2));
     }
 
     let nodes: Vec<Value> = meshes
@@ -85,21 +102,42 @@ pub fn gltf(meshes: &[ExportMesh]) -> String {
         .iter()
         .zip(&primitives)
         .enumerate()
-        .map(|(index, (mesh, &base))| {
+        .map(|(index, (mesh, (attributes, indices)))| {
             json!({
                 "name": mesh.name,
                 "primitives": [{
-                    "attributes": { "POSITION": base, "NORMAL": base + 1 },
-                    "indices": base + 2,
+                    "attributes": attributes,
+                    "indices": indices,
                     "material": index,
                     "mode": TRIANGLES,
                 }],
             })
         })
         .collect();
-    let materials: Vec<Value> = meshes.iter().map(material).collect();
+    // Texture `n` is image `n`; both in the order the parts carrying one come.
+    let mut images = Vec::new();
+    let materials: Vec<Value> = meshes
+        .iter()
+        .map(|mesh| {
+            let mut material = material(mesh);
+            if let Some(png) = &mesh.texture {
+                material["pbrMetallicRoughness"]["baseColorTexture"] =
+                    json!({ "index": images.len() });
+                images.push(json!({
+                    "uri": format!(
+                        "data:image/png;base64,{}",
+                        base64::engine::general_purpose::STANDARD.encode(png)
+                    ),
+                }));
+            }
+            material
+        })
+        .collect();
+    let textures: Vec<Value> = (0..images.len())
+        .map(|index| json!({ "source": index }))
+        .collect();
 
-    let document = json!({
+    let mut document = json!({
         "asset": { "version": "2.0", "generator": "rbxstudio" },
         "scene": 0,
         "scenes": [{ "nodes": (0..meshes.len()).collect::<Vec<_>>() }],
@@ -116,6 +154,11 @@ pub fn gltf(meshes: &[ExportMesh]) -> String {
             ),
         }],
     });
+    // The specification forbids an empty array where one may be left out.
+    if !images.is_empty() {
+        document["textures"] = json!(textures);
+        document["images"] = json!(images);
+    }
     // `json!` cannot fail to serialize: every key is a string and every
     // number a finite one (a NaN would have become `null`).
     serde_json::to_string_pretty(&document).unwrap_or_default()

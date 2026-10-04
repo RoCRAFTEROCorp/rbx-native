@@ -305,7 +305,10 @@ pub(super) fn corner_tetrahedron() -> rbx_mesh::Mesh {
 }
 
 fn tetrahedron_meshes(asset: AssetRef) -> Meshes {
-    Meshes::new(HashMap::from([(asset, Arc::new(corner_tetrahedron()))]))
+    Meshes::new(
+        HashMap::from([(asset, Arc::new(corner_tetrahedron()))]),
+        HashMap::new(),
+    )
 }
 
 #[test]

@@ -5,9 +5,15 @@
 //! same `scene::shape::resolve` precedence and unit meshes for the procedural
 //! solids, the same fitted `MeshId` triangles for a `MeshPart` or a
 //! `SpecialMesh` FileMesh (see [`crate::pick`], which resolves a click the same
-//! way) — baked into world space, one mesh per part. A file mesh that has not
-//! downloaded exports as the box it is drawn as until it does, and so does a
-//! `UnionOperation`, which picking and this both treat as its box.
+//! way) — baked into world space, one mesh per part. A legacy
+//! `UnionOperation` exports the boolean `scene::union` carved from its
+//! original parts (never Roblox's own baked `MeshData`). A file mesh or union
+//! that has not downloaded, or whose boolean failed, exports as the box it is
+//! drawn as.
+//!
+//! A mesh drawn with an image (`MeshPart.TextureID`, a FileMesh's
+//! `TextureId`) carries that image, PNG-encoded, and its UVs, for the writer
+//! to put beside the triangles.
 //!
 //! Units are studs, unscaled, in Roblox's own right-handed Y-up frame, which
 //! is also glTF's.
@@ -21,14 +27,15 @@ use glam::{Mat4, Vec3};
 use rbx_dom::{Ref, Variant, WeakDom};
 use rbx_reflection::ReflectionDatabase;
 
+use crate::assets::Image;
 use crate::pick::Meshes;
 use crate::scene::{
     cframe_matrix, descendants_of, file_mesh_fit, is_drawable, resolve_shape, srgb_to_linear,
-    unit_mesh, FALLBACK_COLOR,
+    union_fit, unit_mesh, FALLBACK_COLOR,
 };
 
 pub use gltf::gltf;
-pub use obj::obj;
+pub use obj::{mtl, obj, obj_files};
 
 /// One part's surface in world space, ready to write.
 #[derive(Debug, Clone, PartialEq)]
@@ -37,8 +44,14 @@ pub struct ExportMesh {
     pub positions: Vec<[f32; 3]>,
     pub normals: Vec<[f32; 3]>,
     pub indices: Vec<u32>,
-    /// Linear RGB, and `1 - Transparency` as alpha.
+    /// Linear RGB, and `1 - Transparency` as alpha. Multiplies `texture`,
+    /// as the viewport does.
     pub color: [f32; 4],
+    /// One per position, top-left origin as Roblox and glTF have it; empty
+    /// for a procedural solid, which has no image to map.
+    pub uvs: Vec<[f32; 2]>,
+    /// The image the mesh is drawn with, as a PNG file's bytes.
+    pub texture: Option<Vec<u8>>,
 }
 
 /// Every drawable part in `roots`' subtrees, each once even where one root
@@ -68,15 +81,25 @@ fn export_part(
 ) -> Option<ExportMesh> {
     let instance = dom.get(referent)?;
     let properties = instance.properties();
-    let (positions, normals, indices, model) = match file_mesh_fit(dom, database, referent)
-        .and_then(|(asset, fit)| Some((meshes.get(&asset)?.clone(), fit)))
-    {
-        Some((mesh, fit)) => (
-            mesh.vertices.iter().map(|v| v.position).collect(),
-            mesh.vertices.iter().map(|v| v.normal).collect(),
-            mesh.lod0().to_vec(),
-            fit.transform(&mesh),
-        ),
+    let file_mesh = file_mesh_fit(dom, database, referent).and_then(|(asset, fit)| {
+        let mesh = meshes.get(&asset)?;
+        Some((mesh, fit.transform(mesh)))
+    });
+    let union = || {
+        let (asset, model) = union_fit(dom, database, referent)?;
+        Some((meshes.get(&asset)?, model))
+    };
+    let mut uvs = Vec::new();
+    let (positions, normals, indices, model) = match file_mesh.or_else(union) {
+        Some((mesh, model)) => {
+            uvs = mesh.vertices.iter().map(|v| v.uv).collect();
+            (
+                mesh.vertices.iter().map(|v| v.position).collect(),
+                mesh.vertices.iter().map(|v| v.normal).collect(),
+                mesh.lod0().to_vec(),
+                model,
+            )
+        }
         None => {
             let (Variant::CFrame(cframe), Variant::Vector3(size)) =
                 (properties.get("CFrame")?, properties.get("size")?)
@@ -112,7 +135,25 @@ fn export_part(
         normals: transform_normals(model, normals),
         indices,
         color: [color[0], color[1], color[2], alpha],
+        texture: meshes
+            .texture(referent)
+            .filter(|_| !uvs.is_empty())
+            .and_then(|image| png(image)),
+        uvs,
     })
+}
+
+// ponytail: encodes once per part, so a texture shared by many parts is
+// encoded (and written) once each; dedupe by image if exports get large.
+fn png(image: &Image) -> Option<Vec<u8>> {
+    let mut bytes = Vec::new();
+    let mut encoder = png::Encoder::new(&mut bytes, image.width, image.height);
+    encoder.set_color(png::ColorType::Rgba);
+    encoder.set_depth(png::BitDepth::Eight);
+    let mut writer = encoder.write_header().ok()?;
+    writer.write_image_data(&image.pixels).ok()?;
+    writer.finish().ok()?;
+    Some(bytes)
 }
 
 fn transform_points(model: Mat4, points: Vec<[f32; 3]>) -> Vec<[f32; 3]> {

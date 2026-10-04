@@ -7,7 +7,11 @@ use std::sync::Arc;
 
 use glam::{Mat4, Vec3};
 use rbx_assets::AssetRef;
+use rbx_dom::Ref;
 use rbx_mesh::Mesh;
+
+use crate::assets::Image;
+use crate::scene::Resolved;
 
 use super::shape::Local;
 use super::Ray;
@@ -21,16 +25,52 @@ use super::Ray;
 /// a copy of it. Empty by default, which is also the right answer for a place
 /// whose meshes have not downloaded: a file-mesh part then picks as the
 /// fallback box it is drawn as.
+///
+/// Also carries the decoded image each textured mesh instance is drawn with,
+/// by the part it stands for, which nothing picks against but an export
+/// writes out beside the triangles (see `crate::export`).
 #[derive(Clone, Default)]
-pub struct Meshes(Arc<HashMap<AssetRef, Arc<Mesh>>>);
+pub struct Meshes {
+    meshes: Arc<HashMap<AssetRef, Arc<Mesh>>>,
+    textures: Arc<HashMap<Ref, Arc<Image>>>,
+}
 
 impl Meshes {
-    pub(crate) fn new(meshes: HashMap<AssetRef, Arc<Mesh>>) -> Self {
-        Meshes(Arc::new(meshes))
+    pub(crate) fn new(
+        meshes: HashMap<AssetRef, Arc<Mesh>>,
+        textures: HashMap<Ref, Arc<Image>>,
+    ) -> Self {
+        Meshes {
+            meshes: Arc::new(meshes),
+            textures: Arc::new(textures),
+        }
+    }
+
+    /// What the scene resolved, textures as the renderer binds them: the
+    /// `TextureID`/`TextureId` that downloaded, and none under a
+    /// `SurfaceAppearance`.
+    pub(crate) fn of(resolved: &Resolved) -> Self {
+        let mut textures = HashMap::new();
+        for instance in &resolved.instances {
+            let image = instance
+                .texture
+                .as_ref()
+                .and_then(|t| resolved.images.get(t));
+            if let Some(image) = image {
+                textures
+                    .entry(instance.referent)
+                    .or_insert_with(|| Arc::clone(image));
+            }
+        }
+        Meshes::new(resolved.meshes.clone(), textures)
     }
 
     pub(crate) fn get(&self, asset: &AssetRef) -> Option<&Arc<Mesh>> {
-        self.0.get(asset)
+        self.meshes.get(asset)
+    }
+
+    pub(crate) fn texture(&self, referent: Ref) -> Option<&Arc<Image>> {
+        self.textures.get(&referent)
     }
 }
 
