@@ -477,6 +477,30 @@ Roblox's own engine.
     Cursor). Left out as native defaults on purpose rather than as an
     open item.
 
+- [x] **Pivot tools**, matching Studio's real Model-tab **Edit Pivot**/
+  **Reset** tools (checked against `studio/pivot-tools.md`). A sixth tool,
+  **Edit Pivot**, in its own Model-tab group beside **Snap** and **Reset**:
+  its arrows, rings and free-drag ball stand on the selected part's or
+  model's pivot, in the pivot's own axes, and move or turn the pivot alone
+  — a part's `PivotOffset`, a model's `PrimaryPart`'s `PivotOffset` or its
+  `WorldPivot` (`rbx_lua::pivot::set_pivot`), one undo step per drag. With
+  Snap on, the selection's corners, edge middles, face middles and centre
+  are drawn as magenta points and a free drag lands on the nearest one,
+  drawn larger while it holds it. **Reset** puts the pivot back on the
+  centre of the bounding box (squared to the pivot's own axes for a model).
+  Move's and Rotate's handles stand on a lone selection's pivot, so a turn
+  goes round it, and a viewport drag carries a dragged model's
+  `WorldPivot` with its parts. Assigning a `Class.Model.PrimaryPart` moves
+  the pivot to that part's own pivot, and deleting the part — from the
+  Explorer or with Luau's `Destroy` — leaves the pivot where it was rather
+  than snapping back (`rbx_lua::pivot::keep_pivots`). Also: the Properties
+  panel's `Origin` row reads a part's or model's pivot the way `GetPivot`
+  does and moves the instance the way `PivotTo` does (see Editor), and
+  Luau — the Command Bar and scripts — has `PVInstance:GetPivot()` and
+  `PVInstance:PivotTo()` through the same pivot (`rbx_lua::pivot`), with
+  `BasePart.PivotOffset` readable and writable like any property. What is
+  still open is "What's planned" → Renderer's Pivot tools follow-ups.
+
 ### Editor (`rbx_studio`, binary `rbxstudio`)
 - [x] Explorer: this project's own flat, from-scratch class icon kit
   (`assets/icons/default/dark`, 329 classes onto 142 of its 152 tiles —
@@ -1767,24 +1791,18 @@ Roblox's own engine.
   above existing first regardless of which direction it takes.
 
 ### Renderer
-- [ ] 📋 **Pivot tools**, matching Studio's real Model-tab **Edit Pivot**/
-  **Reset** tools (checked against `studio/pivot-tools.md`). Today's
-  transform gizmos (see "What's been implemented" → Editor) move/rotate/
-  scale a part or model around its existing pivot; nothing lets you *move
-  the pivot itself*. Real Studio's Edit
-  Pivot tool repositions/reorients a part's or model's pivot independently
-  of its geometry (rotation and scaling then happen around the new pivot),
-  with **Snap**-to-hotspot behaviour (corners/edges/centers highlighted in
-  magenta while dragging) and a one-click **Reset** back to the bounding
-  box's center. Assigning a `Class.Model.PrimaryPart` moves the pivot to
-  that part's own pivot and — deliberately, per the docs, to avoid a
-  sudden jump — does **not** snap back if the `PrimaryPart` is later
-  deleted. Landed so far: the Properties panel's `Origin` row reads a
-  part's or model's pivot the way `GetPivot` does and moves the instance
-  the way `PivotTo` does (see "What's been implemented" → Editor), and
-  Luau — the Command Bar and scripts — has `PVInstance:GetPivot()` and
-  `PVInstance:PivotTo()` through the same pivot (`rbx_lua::pivot`), with
-  `BasePart.PivotOffset` readable and writable like any property.
+- [ ] 📋 **Pivot tools follow-ups**, the parts of Studio's pivot behaviour
+  (`studio/pivot-tools.md`) the Edit Pivot tool and Reset above did not
+  bring: unassigning/clearing a `Class.Model.PrimaryPart` should reset the
+  pivot to the **center** of the model's bounding box (it falls back on
+  whatever `WorldPivot` is stored); the selection box, and so the snap
+  hotspots on it, should turn with a model's pivot as `Model:GetBoundingBox`
+  does (they stay world-aligned for a model); Scale's handles do not scale
+  *about* the pivot (a lone part's pivot rides along as an offset, and a
+  dragged model's `WorldPivot` follows its first part rigidly rather than
+  scaling with the group); Studio's per-part hotspots on a model (only the
+  model's box has them); and the Snap checkbox is not persisted.
+
 - [ ] 📋 **Explorer export**, the half of Explorer DOM editing that did not
   land with the row affordances above or the search (see "What's been
   implemented" → Editor).

@@ -2,6 +2,16 @@
 
 ## 2026-10-04
 
+- **Edit Pivot and Reset, on the Model tab.** Studio's pivot tools
+  (`studio/pivot-tools.md`): a sixth tool whose arrows, rings and
+  free-drag ball move and turn a part's or model's pivot without moving
+  the geometry, snapping onto the selection's corners, edge middles, face
+  middles and centre — drawn as magenta points — while Snap is on, and a
+  Reset that puts the pivot back on the bounding box's centre. Move's and
+  Rotate's handles now stand on a lone selection's pivot, so a turn goes
+  round it; dragging a model carries its `WorldPivot` along; and deleting
+  a model's `PrimaryPart` leaves its pivot where it was instead of jumping
+  back, as the docs ask. — @chteau
 - **The Transform tool.** The ribbon's 5th Tools button — Move's arrows,
   Scale's balls and Rotate's rings, all grabbable over the same selection
   at once — the roadmap could previously only confirm as `creator-docs`'
