@@ -27,12 +27,13 @@
 //! gizmo's origin, which is what still lets a summoned Move gizmo carry the
 //! selection freely when the part itself is nowhere near the cursor.
 
-use glam::Vec3;
+use glam::{Mat4, Vec3};
 use gpui_kit::{Context, Window};
 use rbx_viewer::gizmo::{self, Gizmo};
-use rbx_viewer::pick::{self, Ray};
+use rbx_viewer::pick::{self, Ray, Solid};
 
 use crate::dragger::surface::{SurfaceFrame, TargetKind};
+use crate::dragger::target;
 use crate::dragger::{handle_scale, pixel_size, Dot};
 use crate::transform::Tool;
 
@@ -296,28 +297,102 @@ impl WorkspaceView {
 /// and corners to snap to; a point on a ball's or a cylinder's curve has
 /// none.
 ///
-/// The frame is cornered on the face corner nearest the hit, with `x` and
-/// `z` along its two edges from there (see [`SurfaceFrame`]); either may
-/// point out of the face, which the sign of the hit's own coordinate gives
-/// away, so the far edge is at that sign times the face's size.
+/// The candidates are the face's real outline, out of the part it is on
+/// (`frame.part`): a box's or a wedge's face is the polygon of the solid's
+/// corners lying in the face's plane — a wedge's side a triangle, not the
+/// rectangle round it the frame's `size` measures — a cylinder's cap is its
+/// rim, and a mesh face only the edge its frame was probed from, the one
+/// edge of it known for sure. A frame with no part is its own rectangle.
 pub(super) fn onto_edges(frame: &SurfaceFrame, hit: Vec3, reach: f32) -> Option<Vec3> {
     if frame.kind != TargetKind::Polygon {
         return None;
     }
-    let mut local = frame.local(hit);
-    let mut snapped = false;
-    for (value, size) in [(&mut local.x, frame.size.x), (&mut local.z, frame.size.y)] {
-        let far = size.copysign(*value);
-        if value.abs() <= reach {
-            *value = 0.0;
-        } else if (*value - far).abs() <= reach {
-            *value = far;
-        } else {
-            continue;
+    let local = frame.local(hit);
+    let (sx, sz) = (1f32.copysign(local.x), 1f32.copysign(local.z));
+    let Some((solid, model)) = frame.part else {
+        // Cornered on the face corner nearest the hit, with `x` and `z` along
+        // its two edges; either may point out of the face, which the sign of
+        // the hit's own coordinate gives away.
+        let (across, along) = (frame.x * sx * frame.size.x, frame.z * sz * frame.size.y);
+        let at = frame.corner;
+        return onto_outline(
+            &[at, at + across, at + across + along, at + along],
+            true,
+            hit,
+            reach,
+        );
+    };
+    match solid {
+        Solid::Ball => None,
+        Solid::Cylinder => onto_rim(model, hit, reach),
+        Solid::Mesh => {
+            let edge = [frame.corner, frame.corner + frame.z * sz * frame.size.y];
+            onto_outline(&edge, false, hit, reach)
         }
-        snapped = true;
+        Solid::Box | Solid::Wedge | Solid::CornerWedge => {
+            onto_outline(&face_outline(frame, solid, model, hit)?, true, hit, reach)
+        }
     }
-    snapped.then(|| frame.world(local))
+}
+
+/// The corners of `solid`'s face through `hit` (the plane of `frame`), in
+/// order round it.
+fn face_outline(frame: &SurfaceFrame, solid: Solid, model: Mat4, hit: Vec3) -> Option<Vec<Vec3>> {
+    let size = (model.x_axis + model.y_axis + model.z_axis)
+        .truncate()
+        .length();
+    let tolerance = 1e-4 * size.max(1.0);
+    let mut face: Vec<Vec3> = target::corners(solid)?
+        .iter()
+        .map(|&corner| model.transform_point3(corner))
+        .filter(|&corner| (corner - hit).dot(frame.y).abs() <= tolerance)
+        .collect();
+    if face.len() < 3 {
+        return None;
+    }
+    let centre = face.iter().sum::<Vec3>() / face.len() as f32;
+    let angle = |corner: &Vec3| {
+        let offset = *corner - centre;
+        offset.dot(frame.z).atan2(offset.dot(frame.x))
+    };
+    face.sort_by(|a, b| angle(a).total_cmp(&angle(b)));
+    Some(face)
+}
+
+/// `hit` on a cylinder's cap moved onto its rim, when within `reach` of it.
+fn onto_rim(model: Mat4, hit: Vec3, reach: f32) -> Option<Vec3> {
+    let (rotation, centre, size) = target::placement(model)?;
+    let axis = rotation.x_axis;
+    let cap = centre + axis * axis.dot(hit - centre);
+    let radial = hit - cap;
+    let radius = 0.5 * size.y.min(size.z);
+    let out = radial.try_normalize()?;
+    ((radial.length() - radius).abs() <= reach).then(|| cap + out * radius)
+}
+
+/// `hit` moved onto the nearest corner of `outline` within `reach`, else onto
+/// the nearest point of its sides within `reach` — the last corner joined
+/// back to the first when `closed`.
+fn onto_outline(outline: &[Vec3], closed: bool, hit: Vec3, reach: f32) -> Option<Vec3> {
+    let nearest = |points: &mut dyn Iterator<Item = Vec3>| {
+        points
+            .filter(|point| point.distance(hit) <= reach)
+            .min_by(|a, b| a.distance(hit).total_cmp(&b.distance(hit)))
+    };
+    let closing = closed.then(|| [outline[outline.len() - 1], outline[0]]);
+    nearest(&mut outline.iter().copied()).or_else(|| {
+        nearest(
+            &mut outline
+                .windows(2)
+                .map(|pair| [pair[0], pair[1]])
+                .chain(closing)
+                .map(|[a, b]| {
+                    let side = b - a;
+                    let t = (hit - a).dot(side) / side.length_squared().max(f32::MIN_POSITIVE);
+                    a + side * t.clamp(0.0, 1.0)
+                }),
+        )
+    })
 }
 
 #[cfg(test)]
