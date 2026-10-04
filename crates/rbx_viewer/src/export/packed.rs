@@ -60,11 +60,20 @@ pub(super) fn dress(
 
     let mut out = Vec::new();
     if !tiled.is_empty() {
-        let (positions, normals, uvs) = project(&tiled, extent, pack.studs_per_tile);
+        let Projected {
+            positions,
+            normals,
+            tangents,
+            uvs,
+        } = project(&tiled, extent, pack.studs_per_tile);
         let mut mesh = ExportMesh {
             indices: (0..positions.len() as u32).collect(),
             positions: transform_points(geometry.model, positions),
             normals: transform_normals(geometry.model, normals),
+            tangents: tangents
+                .iter()
+                .map(|t| placement.transform_vector3(t.truncate()).extend(t.w).to_array())
+                .collect(),
             uvs,
             ..template.clone()
         };
@@ -166,26 +175,43 @@ fn bake_maps(
     })
 }
 
+/// [`project`]'s triangles, in the unit frame the caller's model matrix
+/// places, with tangents in the part's own frame.
+struct Projected {
+    positions: Vec<[f32; 3]>,
+    normals: Vec<[f32; 3]>,
+    tangents: Vec<glam::Vec4>,
+    uvs: Vec<[f32; 2]>,
+}
+
 /// The pack's UVs laid on the way `sample_axis` projects it along the one
 /// axis each of these triangles faces: in studs along the part, one tile
 /// every `studs_per_tile`. Unshared, three vertices a triangle, so two faces
-/// meeting at an edge each keep their own projection.
-#[allow(clippy::type_complexity)]
-fn project(
-    triangles: &[[Corner; 3]],
-    extent: Vec3,
-    studs_per_tile: f32,
-) -> (Vec<[f32; 3]>, Vec<[f32; 3]>, Vec<[f32; 2]>) {
+/// meeting at an edge each keep their own projection. Each carries the
+/// tangent the shader's own `tangent_normal` builds — image right, the
+/// bitangent up the image — so a viewer reads the normal map in that frame
+/// rather than guessing one from the UVs.
+fn project(triangles: &[[Corner; 3]], extent: Vec3, studs_per_tile: f32) -> Projected {
     let tile = studs_per_tile.max(0.001);
-    let (mut positions, mut normals, mut uvs) = (Vec::new(), Vec::new(), Vec::new());
+    let mut out = Projected {
+        positions: Vec::new(),
+        normals: Vec::new(),
+        tangents: Vec::new(),
+        uvs: Vec::new(),
+    };
     for triangle in triangles {
-        let (u, v) = bake::face_frame(bake::dominant_axis(triangle[0].unit_normal));
+        let axis = bake::dominant_axis(triangle[0].unit_normal);
+        let (u, v) = bake::face_frame(axis);
+        let handedness = if axis.cross(u).dot(-v) >= 0.0 { 1.0 } else { -1.0 };
         for corner in triangle {
             // Back in the unit frame, for the caller's model matrix.
-            positions.push((corner.studs / extent.max(Vec3::splat(f32::EPSILON))).to_array());
-            normals.push(corner.unit_normal.to_array());
-            uvs.push([corner.studs.dot(u) / tile, corner.studs.dot(v) / tile]);
+            out.positions
+                .push((corner.studs / extent.max(Vec3::splat(f32::EPSILON))).to_array());
+            out.normals.push(corner.unit_normal.to_array());
+            out.tangents.push(u.extend(handedness));
+            out.uvs
+                .push([corner.studs.dot(u) / tile, corner.studs.dot(v) / tile]);
         }
     }
-    (positions, normals, uvs)
+    out
 }

@@ -73,7 +73,7 @@ fn a_wedges_slope_bakes_and_its_upright_faces_tile() {
 
     assert_eq!(exported.meshes.len(), 2, "tiled faces, then the baked slope");
     let (tiled, baked) = (&exported.meshes[0], &exported.meshes[1]);
-    assert!(tiled.tangents.is_empty());
+    assert_eq!(tiled.tangents.len(), tiled.positions.len());
     assert_eq!(baked.tangents.len(), baked.positions.len());
     assert_eq!(baked.indices.len(), 6, "the slope's two triangles");
     assert_ne!(tiled.maps.color, baked.maps.color, "the slope reads its own bake");
@@ -105,7 +105,7 @@ fn alike_parts_share_one_bake() {
 
     let exported = export(&dom, &meshes, model);
 
-    let baked: Vec<_> = exported.meshes.iter().filter(|m| !m.tangents.is_empty()).collect();
+    let baked: Vec<_> = exported.meshes.iter().filter(|m| m.indices.len() == 6).collect();
     assert_eq!(baked.len(), 2);
     assert_eq!(baked[0].maps, baked[1].maps);
     // The pack's colour map, and one baked colour map.
