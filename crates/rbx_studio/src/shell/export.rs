@@ -4,6 +4,13 @@
 //! Selection…** as a Wavefront `.obj`, and **Export as glTF…** as `.gltf`.
 //! The meshes are what the viewport draws (see `rbx_viewer::export`).
 //!
+//! The File menu's own two do the same for the whole place: **Save to
+//! File…** writes all of it (`.rbxl`, or `.rbxlx` when that is the name
+//! picked) under a name of the user's choosing — a copy, leaving Ctrl+S on
+//! the file the place was opened from — and **Export as glTF…** writes
+//! `Workspace`, the part of a place that is drawn, as Studio's own File ›
+//! Export as glTF does (its export of a place has `Workspace` as its root).
+//!
 //! `RBX_STUDIO_EXPORT_DIR=<dir>` skips the save dialog and writes
 //! `<dir>/<name>.<extension>` — a debugging aid for driving an export
 //! headlessly, where no file chooser portal may answer.
@@ -25,8 +32,10 @@ const EXPORT_DIR_VARIABLE: &str = "RBX_STUDIO_EXPORT_DIR";
 const SOURCE: &str = "Export";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum Export {
+pub(crate) enum Export {
     Model,
+    /// The whole place, from the File menu.
+    Place,
     Obj,
     Gltf,
 }
@@ -35,10 +44,19 @@ impl Export {
     fn extension(self) -> &'static str {
         match self {
             Export::Model => "rbxm",
+            Export::Place => "rbxl",
             Export::Obj => "obj",
             Export::Gltf => "gltf",
         }
     }
+}
+
+/// The instance a whole-place mesh export starts from.
+pub(super) fn workspace(dom: &WeakDom) -> Option<Ref> {
+    dom.root_refs()
+        .iter()
+        .copied()
+        .find(|&root| dom.get(root).is_some_and(|i| i.class() == "Workspace"))
 }
 
 /// Whether the mesh exports have anything to write: some part in, or
@@ -67,13 +85,16 @@ fn encode(
             false => Ok(solids),
         }
     };
+    let xml = path
+        .extension()
+        .is_some_and(|ext| ext == "rbxmx" || ext == "rbxlx");
+    let format = if xml { Format::Xml } else { Format::Binary };
     match kind {
         Export::Model => {
-            let xml = path.extension().is_some_and(|ext| ext == "rbxmx");
-            let format = if xml { Format::Xml } else { Format::Binary };
             let bytes = format.encode(&clipboard::detached(dom, roots))?;
             Ok(vec![(path.to_path_buf(), bytes)])
         }
+        Export::Place => Ok(vec![(path.to_path_buf(), format.encode(dom)?)]),
         Export::Obj => {
             let stem = path.file_stem().unwrap_or_default().to_string_lossy();
             Ok(export::obj_files(&solids()?, &stem)
@@ -99,7 +120,36 @@ impl Shell {
         else {
             return;
         };
-        let suggested = format!("{name}.{}", kind.extension());
+        self.ask_and_export(kind, roots, &name, cx);
+    }
+
+    /// File › Save to File… (`Export::Place`) and File › Export as glTF…
+    /// (`Export::Gltf`): the whole place, suggested under the opened file's
+    /// own name. `pub(crate)`: `menu_bar`'s entry point.
+    pub(crate) fn export_place(&mut self, kind: Export, cx: &mut Context<Self>) {
+        let roots = match kind {
+            Export::Gltf => match workspace(&self.dom) {
+                Some(workspace) => vec![workspace],
+                None => {
+                    self.report_export(Err("nothing to export: the place has no Workspace".into()), cx);
+                    return;
+                }
+            },
+            _ => self.dom.root_refs().to_vec(),
+        };
+        let name = self
+            .path
+            .file_stem()
+            .map_or_else(|| "Place".to_owned(), |stem| stem.to_string_lossy().into_owned());
+        self.ask_and_export(kind, roots, &name, cx);
+    }
+
+    fn ask_and_export(&mut self, kind: Export, roots: Vec<Ref>, name: &str, cx: &mut Context<Self>) {
+        let extension = match (kind, self.format) {
+            (Export::Place, Format::Xml) => "rbxlx",
+            _ => kind.extension(),
+        };
+        let suggested = format!("{name}.{extension}");
         if let Ok(directory) = std::env::var(EXPORT_DIR_VARIABLE) {
             self.export_to(kind, &roots, &Path::new(&directory).join(suggested), cx);
             return;

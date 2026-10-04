@@ -9,7 +9,7 @@
 use gpui_kit::{App, Entity};
 use rbx_cloud::PublishMode;
 
-use crate::shell::{Panel, Shell};
+use crate::shell::{Export, Panel, Shell};
 
 use super::*;
 
@@ -26,6 +26,18 @@ pub(super) fn install(shell: Entity<Shell>, cx: &mut App) {
         let shell = shell.clone();
         move |_: &MenuSave, cx| {
             shell.update(cx, |shell, cx| shell.save(cx));
+        }
+    });
+    cx.on_action({
+        let shell = shell.clone();
+        move |_: &MenuSaveToFile, cx| {
+            shell.update(cx, |shell, cx| shell.export_place(Export::Place, cx));
+        }
+    });
+    cx.on_action({
+        let shell = shell.clone();
+        move |_: &MenuExportGltf, cx| {
+            shell.update(cx, |shell, cx| shell.export_place(Export::Gltf, cx));
         }
     });
     cx.on_action({
