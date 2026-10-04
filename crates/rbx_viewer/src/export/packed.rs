@@ -91,16 +91,11 @@ pub(super) fn dress(
     }
     if !blended.is_empty() && textures.measuring {
         let key = bake_key(&blended, pack, image);
-        if !textures.planned.contains_key(&key) {
-            textures.planned.insert(
-                key,
-                Planned {
-                    triangles: blended,
-                    pack: pack.clone(),
-                    image: image.cloned(),
-                },
-            );
-        }
+        textures.planned.entry(key).or_insert_with(|| Planned {
+            triangles: blended,
+            pack: pack.clone(),
+            image: image.cloned(),
+        });
     } else if !blended.is_empty() {
         let key = bake_key(&blended, pack, image);
         let pages = match textures.bakes.get(&key) {
