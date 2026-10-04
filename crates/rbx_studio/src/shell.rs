@@ -535,6 +535,7 @@ impl Shell {
         let mut transform = Transform::default();
         transform.translate.increment = controls.move_increment;
         transform.rotate.increment = controls.rotate_increment;
+        transform.pivot_snap = controls.pivot_snap;
         let viewport = cx.new(|cx| {
             let opened = Opened {
                 viewer,
@@ -1506,6 +1507,7 @@ impl Shell {
                 camera: self.camera_feel,
                 move_increment: self.transform.translate.increment,
                 rotate_increment: self.transform.rotate.increment,
+                pivot_snap: self.transform.pivot_snap,
             },
             argon_address: self.argon_saved_address.clone(),
             argon: self.argon_settings.clone(),

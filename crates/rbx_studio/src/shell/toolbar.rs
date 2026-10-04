@@ -79,7 +79,7 @@ impl Shell {
         let transform = self.transform;
         self.viewport
             .update(cx, |viewport, _| viewport.set_transform(transform));
-        if matches!(action, Action::SetIncrement(..)) {
+        if matches!(action, Action::SetIncrement(..) | Action::TogglePivotSnap) {
             self.save_settings();
         }
         cx.notify();
