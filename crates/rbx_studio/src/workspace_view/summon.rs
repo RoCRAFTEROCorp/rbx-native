@@ -30,7 +30,7 @@
 use glam::{Mat4, Vec3};
 use gpui_kit::{Context, Window};
 use rbx_viewer::gizmo::{self, Gizmo};
-use rbx_viewer::pick::{self, Ray, Solid};
+use rbx_viewer::pick::{self, FlatFace, Ray, Solid};
 
 use crate::dragger::surface::{SurfaceFrame, TargetKind};
 use crate::dragger::target;
@@ -218,12 +218,33 @@ impl WorkspaceView {
                 return Some((hit, None));
             }
             let height = self.viewport.get().size.1 as f32;
-            let pixel = pixel_size(hit, pose, self.orthographic, height.max(1.0));
-            let snapped = onto_edges(&frame, hit, EDGE_SNAP * scale * pixel);
+            let reach =
+                |at| EDGE_SNAP * scale * pixel_size(at, pose, self.orthographic, height.max(1.0));
+            if let Some((face, hit)) = self.mesh_face(&frame, scale) {
+                let snapped = onto_sides(&face.corners, &face.sides, hit, reach(hit));
+                return Some((snapped.unwrap_or(hit), snapped));
+            }
+            let snapped = onto_edges(&frame, hit, reach(hit));
             return Some((snapped.unwrap_or(hit), snapped));
         }
         let ray = self.cursor_ray(self.cursor?, scale)?;
         pick::ray_hits_plane(ray, self.targets.centre()?, -ray.direction).map(|point| (point, None))
+    }
+
+    /// The flat face of the mesh under the cursor (see
+    /// `PartSurface::flat_face`), and where the cursor meets it — not the
+    /// hover's own point, which sits on the grid when Studio's probes found
+    /// no edge of the face. Outlined here, on the press, rather than at every
+    /// hover: walking a mesh's triangles is more than a hover needs. `None`
+    /// off a mesh, or on one not downloaded.
+    fn mesh_face(&self, frame: &SurfaceFrame, scale: f32) -> Option<(FlatFace, Vec3)> {
+        if !matches!(frame.part, Some((Solid::Mesh, _))) {
+            return None;
+        }
+        let part = self.hover_part.as_ref()?;
+        let ray = self.cursor_ray(self.cursor?, scale)?;
+        let (distance, _) = part.raycast(ray)?;
+        Some((part.flat_face(ray)?, ray.at(distance)))
     }
 
     /// The free-drag ball at the gizmo's origin, if `ray` is on it: Move's
@@ -320,8 +341,10 @@ impl WorkspaceView {
 /// (`frame.part`): a box's or a wedge's face is the polygon of the solid's
 /// corners lying in the face's plane — a wedge's side a triangle, not the
 /// rectangle round it the frame's `size` measures — a cylinder's cap is its
-/// rim, and a mesh face only the edge its frame was probed from, the one
-/// edge of it known for sure. A frame with no part is its own rectangle.
+/// rim, and a mesh face only the edge its frame was probed from — the one
+/// edge of it known for sure until the mesh has downloaded, after which
+/// [`WorkspaceView::summon_point`] outlines the face from its triangles
+/// instead. A frame with no part is its own rectangle.
 pub(super) fn onto_edges(frame: &SurfaceFrame, hit: Vec3, reach: f32) -> Option<Vec3> {
     if frame.kind != TargetKind::Polygon {
         return None;
@@ -393,24 +416,34 @@ fn onto_rim(model: Mat4, hit: Vec3, reach: f32) -> Option<Vec3> {
 /// the nearest point of its sides within `reach` — the last corner joined
 /// back to the first when `closed`.
 fn onto_outline(outline: &[Vec3], closed: bool, hit: Vec3, reach: f32) -> Option<Vec3> {
+    let closing = closed.then(|| [outline[outline.len() - 1], outline[0]]);
+    let sides: Vec<[Vec3; 2]> = outline
+        .windows(2)
+        .map(|pair| [pair[0], pair[1]])
+        .chain(closing)
+        .collect();
+    onto_sides(outline, &sides, hit, reach)
+}
+
+/// `hit` moved onto the nearest of `corners` within `reach`, else onto the
+/// nearest point of `sides` within `reach`.
+pub(super) fn onto_sides(
+    corners: &[Vec3],
+    sides: &[[Vec3; 2]],
+    hit: Vec3,
+    reach: f32,
+) -> Option<Vec3> {
     let nearest = |points: &mut dyn Iterator<Item = Vec3>| {
         points
             .filter(|point| point.distance(hit) <= reach)
             .min_by(|a, b| a.distance(hit).total_cmp(&b.distance(hit)))
     };
-    let closing = closed.then(|| [outline[outline.len() - 1], outline[0]]);
-    nearest(&mut outline.iter().copied()).or_else(|| {
-        nearest(
-            &mut outline
-                .windows(2)
-                .map(|pair| [pair[0], pair[1]])
-                .chain(closing)
-                .map(|[a, b]| {
-                    let side = b - a;
-                    let t = (hit - a).dot(side) / side.length_squared().max(f32::MIN_POSITIVE);
-                    a + side * t.clamp(0.0, 1.0)
-                }),
-        )
+    nearest(&mut corners.iter().copied()).or_else(|| {
+        nearest(&mut sides.iter().map(|&[a, b]| {
+            let side = b - a;
+            let t = (hit - a).dot(side) / side.length_squared().max(f32::MIN_POSITIVE);
+            a + side * t.clamp(0.0, 1.0)
+        }))
     })
 }
 

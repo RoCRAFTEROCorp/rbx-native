@@ -37,7 +37,7 @@ use glam::{Mat3, Mat4, Vec3};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 use rbx_dom::{Ref, WeakDom};
-use rbx_viewer::pick::{Meshes, Ray, Selected};
+use rbx_viewer::pick::{Meshes, PartSurface, Ray, Selected};
 use rbx_viewer::{CameraInput, Headless, Pose, QualityLevel};
 
 use crate::camera::PlaceCamera;
@@ -208,6 +208,9 @@ pub(crate) struct WorkspaceView {
     /// cursor leaving the panel (`render`'s `on_hover`) — or a throttled
     /// move would otherwise un-clear it a moment later.
     hover_pending: Option<(Point<Pixels>, Modifiers)>,
+    /// The part under the cursor as of the last hover `Shell` resolved, which
+    /// a summon outlines a mesh face from (see `summon::onto_edges`).
+    hover_part: Option<PartSurface>,
     /// The cursor's latest position and modifiers while a drag is held, not
     /// yet applied to the part — applied by `advance` at most once per
     /// frame, and by the release (see `gizmo::WorkspaceView::end_drag`).
@@ -418,6 +421,7 @@ impl WorkspaceView {
             lock: PointerLock::new(),
             looking: false,
             hover_pending: None,
+            hover_part: None,
             drag_pending: None,
             drag_stepped_at: None,
             hover_resolved_at: None,

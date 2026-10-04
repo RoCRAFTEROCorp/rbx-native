@@ -15,7 +15,7 @@ use std::time::Instant;
 use glam::{Mat3, Vec3};
 use gpui_kit::*;
 use rbx_viewer::gizmo::Axis;
-use rbx_viewer::pick::Ray;
+use rbx_viewer::pick::{PartSurface, Ray};
 use rbx_viewer::Segment;
 
 use super::WorkspaceView;
@@ -91,13 +91,17 @@ impl WorkspaceView {
     }
 
     /// `Shell`'s answer to a hover: the face under the cursor, framed on its
-    /// corner nearest the cursor, and where the cursor meets it — `None`
-    /// over nothing selectable.
-    pub(crate) fn set_hover_target(&mut self, target: Option<(SurfaceFrame, Vec3)>) {
+    /// corner nearest the cursor, where the cursor meets it, and the part
+    /// it is on — `None` over nothing selectable.
+    pub(crate) fn set_hover_target(&mut self, target: Option<(SurfaceFrame, Vec3, PartSurface)>) {
         if self.drag.is_some() {
             return;
         }
-        self.guides.hover = target;
+        let (hover, part) = target
+            .map(|(frame, hit, part)| ((frame, hit), part))
+            .unzip();
+        self.guides.hover = hover;
+        self.hover_part = part;
         self.show_guides(self.hover_guides(false));
     }
 

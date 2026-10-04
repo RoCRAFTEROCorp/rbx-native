@@ -1,8 +1,8 @@
 use glam::{Mat4, Vec2, Vec3};
 use rbx_viewer::gizmo;
-use rbx_viewer::pick::{Ray, Solid};
+use rbx_viewer::pick::{FlatFace, Ray, Solid};
 
-use super::onto_edges;
+use super::{onto_edges, onto_sides};
 use crate::dragger::surface::{SurfaceFrame, TargetKind};
 
 /// The top face of a 4×6 block, cornered at its `(0, 1, 0)` corner, running
@@ -150,6 +150,44 @@ fn a_balls_pole_has_nothing_to_snap_to() {
         Vec3::X,
     );
     assert_eq!(onto_edges(&frame, Vec3::new(0.0, 2.0, 0.0), 0.5), None);
+}
+
+/// The outline `PartSurface::flat_face` gives the 4 × 4 top of a mesh at
+/// y = 1 drawn as two triangles: its four corners and sides, no diagonal.
+fn mesh_top() -> FlatFace {
+    let corners = [(-2.0, -2.0), (2.0, -2.0), (2.0, 2.0), (-2.0, 2.0)]
+        .map(|(x, z)| Vec3::new(x, 1.0, z))
+        .to_vec();
+    let sides = (0..4).map(|i| [corners[i], corners[(i + 1) % 4]]).collect();
+    FlatFace { corners, sides }
+}
+
+#[test]
+fn a_mesh_face_snaps_onto_its_whole_outline_not_its_diagonal() {
+    let face = mesh_top();
+    let snap = |x, z| onto_sides(&face.corners, &face.sides, Vec3::new(x, 1.0, z), 0.5);
+    assert_eq!(snap(-1.8, 1.8), Some(Vec3::new(-2.0, 1.0, 2.0)));
+    assert_eq!(snap(-1.7, 0.0), Some(Vec3::new(-2.0, 1.0, 0.0)));
+    // On the diagonal between the two triangles, nothing to snap to.
+    assert_eq!(snap(0.1, -0.1), None);
+}
+
+#[test]
+fn a_mesh_not_downloaded_snaps_onto_its_probed_edge_only() {
+    let frame = SurfaceFrame {
+        corner: Vec3::new(2.0, 1.0, -2.0),
+        x: -Vec3::X,
+        y: Vec3::Y,
+        z: Vec3::Z,
+        size: Vec2::new(0.0, 4.0),
+        kind: TargetKind::Polygon,
+        part: Some((Solid::Mesh, Mat4::IDENTITY)),
+    };
+    assert_eq!(onto_edges(&frame, Vec3::new(-1.8, 1.0, 1.8), 0.5), None);
+    assert_eq!(
+        onto_edges(&frame, Vec3::new(1.7, 1.0, 0.0), 0.5),
+        Some(Vec3::new(2.0, 1.0, 0.0))
+    );
 }
 
 /// What `measure_from_handle` relies on: a ray moved by the offset between
