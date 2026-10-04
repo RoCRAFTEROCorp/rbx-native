@@ -1,5 +1,5 @@
 use glam::{Mat3, Mat4, Quat, Vec3};
-use rbx_viewer::gizmo::{basis, Faces};
+use rbx_viewer::gizmo::{basis, Faces, Hotspots};
 use rbx_viewer::pick::Ray;
 use rbx_viewer::Pose;
 
@@ -32,8 +32,15 @@ fn no_grid() -> Landing<'static> {
     }
 }
 
-/// A 4-stud cube at the origin, seen from [`EYE`].
-fn cube() -> Faces {
+/// A 4-stud cube at the origin, seen from [`EYE`], as a lone part's
+/// hotspots.
+fn cube() -> Hotspots {
+    let model = Mat4::from_scale_rotation_translation(Vec3::splat(4.0), Quat::IDENTITY, Vec3::ZERO);
+    Hotspots::new(faces(model), [])
+}
+
+/// `model`'s box seen from [`EYE`].
+fn faces(model: Mat4) -> Faces {
     let pose = Pose {
         position: EYE,
         yaw: 0.0,
@@ -41,7 +48,6 @@ fn cube() -> Faces {
         fov_degrees: 70.0,
         ortho_scale: 25.0,
     };
-    let model = Mat4::from_scale_rotation_translation(Vec3::splat(4.0), Quat::IDENTITY, Vec3::ZERO);
     Faces::new(model, pose, false)
 }
 
@@ -118,4 +124,21 @@ fn a_free_drag_away_from_every_hotspot_goes_where_the_cursor_is() {
     let (moved, snapped) = stepped(pivot(), change, Some(&cube()), between);
     assert_eq!(snapped, None);
     assert_eq!(moved.w_axis.truncate(), Vec3::new(1.0, 0.0, 0.0));
+}
+
+/// A model of two 2-stud cubes side by side: a free drag near the middle
+/// of the left one's front face lands there, a hotspot of that part's own
+/// rather than of the model's box.
+#[test]
+fn a_free_drag_with_snap_lands_on_a_parts_own_hotspot() {
+    let cube_at = |x: f32| Mat4::from_translation(Vec3::X * x) * Mat4::from_scale(Vec3::splat(2.0));
+    let (left, right) = (cube_at(-3.0), cube_at(3.0));
+    let model = rbx_viewer::gizmo::box_along([left, right], Mat3::IDENTITY).unwrap();
+    let hotspots = Hotspots::new(faces(model), [faces(left), faces(right)]);
+
+    let near = toward(Vec3::new(-2.97, 0.03, 1.0));
+    let change = Change::Position(Vec3::new(-2.97, 0.03, 1.0));
+    let (moved, snapped) = stepped(pivot(), change, Some(&hotspots), near);
+    assert_eq!(snapped, Some(Vec3::new(-3.0, 0.0, 1.0)));
+    assert_eq!(moved.w_axis.truncate(), Vec3::new(-3.0, 0.0, 1.0));
 }

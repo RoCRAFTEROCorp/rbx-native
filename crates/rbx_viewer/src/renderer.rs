@@ -44,7 +44,7 @@ use glam::Mat3;
 
 use crate::camera::{Camera, Frustum, Viewpoint};
 use crate::fonts::Library;
-use crate::gizmo::{arm_length, basis, handle_axes, Faces, Gizmo, Handles, Kind, Shape};
+use crate::gizmo::{arm_length, basis, handle_axes, Faces, Gizmo, Handles, Hotspots, Kind, Shape};
 use crate::lighting::{Lighting, LocalLight};
 use crate::load::Answered;
 use crate::pick::Selected;
@@ -540,8 +540,12 @@ impl Renderer {
                 // Squared to the pivot, so the hotspots turn with it.
                 let axes = Mat3::from_mat4(gizmo.pivot?);
                 let scaled = self.selection.box_along(axes).unwrap_or(model);
-                let faces = Faces::new(scaled, pose, orthographic);
-                Shape::Pivot(handles, gizmo.hotspots.then_some((faces, gizmo.snapped)))
+                let parts = self
+                    .selection
+                    .models()
+                    .map(|part| Faces::new(part, pose, orthographic));
+                let hotspots = Hotspots::new(Faces::new(scaled, pose, orthographic), parts);
+                Shape::Pivot(handles, gizmo.hotspots.then_some((hotspots, gizmo.snapped)))
             }
             Kind::Transform => {
                 let scaled = self.selection.scale_box().unwrap_or(model);

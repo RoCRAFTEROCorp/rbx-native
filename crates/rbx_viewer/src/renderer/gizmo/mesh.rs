@@ -17,8 +17,8 @@ use bytemuck::{Pod, Zeroable};
 use glam::Vec3;
 
 use crate::gizmo::{
-    Axis, End, Faces, Handles, Shape, HEAD_RADIUS, HEAD_START, HOTSPOTS, ORIGIN_RADIUS,
-    RING_RADIUS, RING_THICKNESS, SHAFT_RADIUS, SHAFT_START,
+    Axis, End, Faces, Handles, Hotspots, Shape, HEAD_RADIUS, HEAD_START, HOTSPOTS, HOTSPOT_PARTS,
+    ORIGIN_RADIUS, PART_HOTSPOTS, RING_RADIUS, RING_THICKNESS, SHAFT_RADIUS, SHAFT_START,
 };
 
 /// How many segments go round a shaft or an arrowhead. Eight already reads as
@@ -62,9 +62,12 @@ const RING_VERTICES: usize = Axis::ALL.len() * RING_SEGMENTS * VERTICES_PER_SLIC
 pub(super) const TRANSFORM_VERTICES: usize =
     ARROW_VERTICES + BALL_VERTICES + RING_VERTICES + VERTICES_PER_BALL;
 /// Edit Pivot draws Transform's arms, rings and free-drag ball without its
-/// Scale balls, and a dot per snap hotspot instead.
-pub(super) const PIVOT_VERTICES: usize =
-    ARROW_VERTICES + RING_VERTICES + VERTICES_PER_BALL + HOTSPOTS * VERTICES_PER_BALL;
+/// Scale balls, and a dot per snap hotspot instead — the box's, and up to
+/// `HOTSPOT_PARTS` parts' own.
+pub(super) const PIVOT_VERTICES: usize = ARROW_VERTICES
+    + RING_VERTICES
+    + VERTICES_PER_BALL
+    + (HOTSPOTS + HOTSPOT_PARTS * PART_HOTSPOTS) * VERTICES_PER_BALL;
 pub(super) const CAPACITY: usize = if TRANSFORM_VERTICES > PIVOT_VERTICES {
     TRANSFORM_VERTICES
 } else {
@@ -117,8 +120,8 @@ pub(super) fn mesh(shape: &Shape, held: Option<End>, eye: Vec3) -> Vec<Vertex> {
         Shape::Pivot(handles, hotspots) => {
             let mut vertices = rings(handles, eye);
             vertices.extend(arms(handles, eye, arrow, shown, held.is_none()));
-            if let Some((faces, snapped)) = hotspots {
-                dots(&mut vertices, faces, *snapped);
+            if let Some((hotspots, snapped)) = hotspots {
+                dots(&mut vertices, hotspots, *snapped);
             }
             vertices
         }
@@ -126,16 +129,16 @@ pub(super) fn mesh(shape: &Shape, held: Option<End>, eye: Vec3) -> Vec<Vertex> {
 }
 
 /// Edit Pivot's hotspots, painted last: dots far smaller than any handle,
-/// which only ever sit on the selection's own box, so being drawn over the
+/// which only ever sit on the selection's boxes, so being drawn over the
 /// arms and rings costs nothing and keeps every one of them visible.
-fn dots(vertices: &mut Vec<Vertex>, faces: &Faces, snapped: Option<Vec3>) {
-    for point in faces.hotspots() {
+fn dots(vertices: &mut Vec<Vertex>, hotspots: &Hotspots, snapped: Option<Vec3>) {
+    for point in hotspots.points() {
         let on = snapped.is_some_and(|snapped| (snapped - point).length() < 1e-4);
         let scale = if on { SNAPPED_SCALE } else { 1.0 };
         ball(
             vertices,
             point,
-            faces.hotspot_radius(point) * scale,
+            hotspots.radius(point) * scale,
             HOTSPOT_COLOR,
         );
     }

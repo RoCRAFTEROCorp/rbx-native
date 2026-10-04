@@ -21,7 +21,7 @@ use super::{arm_length, basis, Axis};
 
 mod hotspots;
 
-pub use hotspots::HOTSPOTS;
+pub use hotspots::{Hotspots, HOTSPOTS, HOTSPOT_PARTS, PART_HOTSPOTS};
 
 /// A ball's radius as a fraction of a dragger arm (see [`super::arm_length`]),
 /// which is what keeps it a constant size on screen however far out on a large

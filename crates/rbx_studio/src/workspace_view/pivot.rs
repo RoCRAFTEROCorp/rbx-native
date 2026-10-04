@@ -13,7 +13,7 @@
 
 use glam::{Mat3, Mat4, Vec3};
 use gpui_kit::Modifiers;
-use rbx_viewer::gizmo::{self, Faces, Handles};
+use rbx_viewer::gizmo::{self, Faces, Handles, Hotspots};
 use rbx_viewer::pick::Ray;
 
 use super::gizmo::{advance, Change, Drag, Landing};
@@ -53,8 +53,8 @@ impl WorkspaceView {
         self.drag = Some(drag);
         let hotspots =
             matches!(drag, Drag::Plane { .. }) && self.transform.pivot_snap && !modifiers.shift;
-        let faces = self.hotspot_faces().filter(|_| hotspots);
-        let (moved, snapped) = stepped(pivot, change, faces.as_ref(), ray);
+        let spots = self.hotspots().filter(|_| hotspots);
+        let (moved, snapped) = stepped(pivot, change, spots.as_ref(), ray);
         self.snapped = snapped;
         if moved == pivot {
             self.refresh_gizmo();
@@ -66,14 +66,14 @@ impl WorkspaceView {
         cx.emit(ViewportAction::Pivot { to: moved, first });
     }
 
-    /// The box the hotspots stand on: the selection's, squared to its pivot
-    /// as the renderer draws it (see `transform::Targets::pivot_box`).
-    fn hotspot_faces(&self) -> Option<Faces> {
-        Some(Faces::new(
-            self.targets.pivot_box()?,
-            self.view?,
-            self.orthographic,
-        ))
+    /// The hotspots, as the renderer draws them: the selection's box,
+    /// squared to its pivot (see `transform::Targets::pivot_box`), and each
+    /// part's own.
+    fn hotspots(&self) -> Option<Hotspots> {
+        let view = self.view?;
+        let faces = |model| Faces::new(model, view, self.orthographic);
+        let parts = self.targets.iter().map(|target| faces(target.model));
+        Some(Hotspots::new(faces(self.targets.pivot_box()?), parts))
     }
 }
 
@@ -108,14 +108,19 @@ fn grab(handles: &Handles, pivot: Mat4, ray: Ray) -> Option<Drag> {
 }
 
 /// The pivot as `change` leaves it, and the hotspot it snapped onto: a
-/// free drag (`Change::Position` with `faces` given) lands on the hotspot
+/// free drag (`Change::Position` with `hotspots` given) lands on the one
 /// nearest the cursor's `ray` when one is in reach. A move keeps the
 /// pivot's turn, a turn keeps where it stands.
-fn stepped(pivot: Mat4, change: Change, faces: Option<&Faces>, ray: Ray) -> (Mat4, Option<Vec3>) {
+fn stepped(
+    pivot: Mat4,
+    change: Change,
+    hotspots: Option<&Hotspots>,
+    ray: Ray,
+) -> (Mat4, Option<Vec3>) {
     let mut moved = pivot;
     match change {
         Change::Position(position) => {
-            let snapped = faces.and_then(|faces| faces.nearest_hotspot(ray));
+            let snapped = hotspots.and_then(|hotspots| hotspots.nearest(ray));
             moved.w_axis = snapped.unwrap_or(position).extend(1.0);
             return (moved, snapped);
         }

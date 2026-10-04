@@ -23,7 +23,7 @@ use crate::Pose;
 mod faces;
 mod origin;
 
-pub use faces::{Faces, HOTSPOTS};
+pub use faces::{Faces, Hotspots, HOTSPOTS, HOTSPOT_PARTS, PART_HOTSPOTS};
 pub(crate) use origin::ORIGIN_RADIUS;
 
 /// The arm length of one dragger as a fraction of the viewport's half-height,
@@ -494,7 +494,7 @@ pub fn turned(linear: Mat3, position: Vec3, pivot: Vec3, turn: Mat3) -> (Mat3, V
 /// entirely, so there is no one type both halves of the editor can pass around
 /// — this is it, and it is what keeps the renderer and the hit-test from being
 /// handed different geometry for the same tool.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Shape {
     Move(Handles),
     Scale(Faces),
@@ -503,9 +503,8 @@ pub enum Shape {
     /// plus Scale's own [`Faces`], all drawn together.
     Transform(Handles, Faces),
     /// Edit Pivot's: the arrows, rings and free-drag ball on the pivot, and
-    /// the box whose hotspots are drawn, with the one snapped onto, when
-    /// snapping is on.
-    Pivot(Handles, Option<(Faces, Option<Vec3>)>),
+    /// the hotspots drawn, with the one snapped onto, when snapping is on.
+    Pivot(Handles, Option<(Hotspots, Option<Vec3>)>),
 }
 
 #[cfg(test)]
