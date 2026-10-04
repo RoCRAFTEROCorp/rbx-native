@@ -17,8 +17,8 @@ use bytemuck::{Pod, Zeroable};
 use glam::Vec3;
 
 use crate::gizmo::{
-    Axis, End, Faces, Handles, Shape, HEAD_RADIUS, HEAD_START, ORIGIN_RADIUS, RING_RADIUS,
-    RING_THICKNESS, SHAFT_RADIUS, SHAFT_START,
+    Axis, End, Faces, Handles, Shape, HEAD_RADIUS, HEAD_START, HOTSPOTS, ORIGIN_RADIUS,
+    RING_RADIUS, RING_THICKNESS, SHAFT_RADIUS, SHAFT_START,
 };
 
 /// How many segments go round a shaft or an arrowhead. Eight already reads as
@@ -59,13 +59,28 @@ const RING_VERTICES: usize = Axis::ALL.len() * RING_SEGMENTS * VERTICES_PER_SLIC
 /// changes without the renderer being rebuilt. Transform draws all three at
 /// once, so it alone decides this — the other tools each need less.
 /// The one extra ball is the free-drag handle at the Move gizmo's origin.
-pub(super) const CAPACITY: usize =
+pub(super) const TRANSFORM_VERTICES: usize =
     ARROW_VERTICES + BALL_VERTICES + RING_VERTICES + VERTICES_PER_BALL;
+/// Edit Pivot draws Transform's arms, rings and free-drag ball without its
+/// Scale balls, and a dot per snap hotspot instead.
+pub(super) const PIVOT_VERTICES: usize =
+    ARROW_VERTICES + RING_VERTICES + VERTICES_PER_BALL + HOTSPOTS * VERTICES_PER_BALL;
+pub(super) const CAPACITY: usize = if TRANSFORM_VERTICES > PIVOT_VERTICES {
+    TRANSFORM_VERTICES
+} else {
+    PIVOT_VERTICES
+};
 
 /// The free-drag ball's colour: a light neutral grey, already linearized
 /// (from sRGB `0.92`), so it reads as no axis's own. A colour of this
 /// editor's choosing — the ball is its own addition, not Studio's.
 const ORIGIN_COLOR: [f32; 3] = [0.83, 0.83, 0.83];
+
+/// Edit Pivot's snap hotspots: "small magenta points" (`creator-docs`,
+/// `studio/pivot-tools.md`). Pure magenta is the same in sRGB and linear.
+const HOTSPOT_COLOR: [f32; 3] = [1.0, 0.0, 1.0];
+/// How much larger the hotspot the pivot has snapped onto is drawn.
+const SNAPPED_SCALE: f32 = 2.2;
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
@@ -99,6 +114,30 @@ pub(super) fn mesh(shape: &Shape, held: Option<End>, eye: Vec3) -> Vec<Vertex> {
         Shape::Scale(faces) => balls(faces, eye, shown),
         Shape::Rotate(handles) => rings(handles, eye),
         Shape::Transform(handles, faces) => transform(handles, faces, eye, shown, held.is_none()),
+        Shape::Pivot(handles, hotspots) => {
+            let mut vertices = rings(handles, eye);
+            vertices.extend(arms(handles, eye, arrow, shown, held.is_none()));
+            if let Some((faces, snapped)) = hotspots {
+                dots(&mut vertices, faces, *snapped);
+            }
+            vertices
+        }
+    }
+}
+
+/// Edit Pivot's hotspots, painted last: dots far smaller than any handle,
+/// which only ever sit on the selection's own box, so being drawn over the
+/// arms and rings costs nothing and keeps every one of them visible.
+fn dots(vertices: &mut Vec<Vertex>, faces: &Faces, snapped: Option<Vec3>) {
+    for point in faces.hotspots() {
+        let on = snapped.is_some_and(|snapped| (snapped - point).length() < 1e-4);
+        let scale = if on { SNAPPED_SCALE } else { 1.0 };
+        ball(
+            vertices,
+            point,
+            faces.hotspot_radius(point) * scale,
+            HOTSPOT_COLOR,
+        );
     }
 }
 

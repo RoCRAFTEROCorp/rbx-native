@@ -23,7 +23,7 @@ use crate::Pose;
 mod faces;
 mod origin;
 
-pub use faces::Faces;
+pub use faces::{Faces, HOTSPOTS};
 pub(crate) use origin::ORIGIN_RADIUS;
 
 /// The arm length of one dragger as a fraction of the viewport's half-height,
@@ -118,6 +118,12 @@ pub enum Kind {
     /// term for Move+Scale+Rotate together — so the enum and the dump are
     /// the only primary sources this is built from.
     Transform,
+    /// Studio's Edit Pivot (`studio/pivot-tools.md`): Move's arrows and
+    /// Rotate's rings standing on the selection's pivot and turned with it,
+    /// plus the free-drag ball at their origin — and, with snapping on, the
+    /// magenta hotspots the pivot snaps onto. Dragging any of them moves the
+    /// pivot alone, never the geometry.
+    Pivot,
 }
 
 /// What the viewport draws over the selection, and in which frame of
@@ -137,6 +143,17 @@ pub struct Gizmo {
     /// see [`Faces::summoned`] for Scale's own reading of it), or `None` to
     /// draw them at the selection's own pivot.
     pub summon: Option<Vec3>,
+    /// The selection's pivot, rigid (no `Size` in its columns), when it is
+    /// one part or one model: Move's and Rotate's handles stand on it
+    /// rather than on the selection's centre, so a turn goes round it
+    /// (`studio/pivot-tools.md`: "Once set, rotation and scaling occur
+    /// around the pivot point"), and Edit Pivot's handles take its axes.
+    pub pivot: Option<Mat4>,
+    /// Whether Edit Pivot's snap hotspots are drawn (see [`Faces::hotspots`]).
+    pub hotspots: bool,
+    /// The hotspot a pivot drag has snapped onto, drawn larger than the
+    /// rest.
+    pub snapped: Option<Vec3>,
 }
 
 /// One Move arrow or Scale ball: the axis it stands on, and which end of it
@@ -461,6 +478,10 @@ pub enum Shape {
     /// Transform's combined gizmo: Move's and Rotate's shared [`Handles`]
     /// plus Scale's own [`Faces`], all drawn together.
     Transform(Handles, Faces),
+    /// Edit Pivot's: the arrows, rings and free-drag ball on the pivot, and
+    /// the box whose hotspots are drawn, with the one snapped onto, when
+    /// snapping is on.
+    Pivot(Handles, Option<(Faces, Option<Vec3>)>),
 }
 
 #[cfg(test)]

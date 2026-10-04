@@ -189,8 +189,7 @@ mod tests {
         view.set_gizmo(Some(Gizmo {
             kind: Kind::Rotate,
             local: true,
-            held: None,
-            summon: None,
+            ..Gizmo::default()
         }));
 
         // A tool switched away and back, and the local toggle flipped: what a
@@ -199,8 +198,7 @@ mod tests {
         view.set_gizmo(Some(Gizmo {
             kind: Kind::Move,
             local: false,
-            held: None,
-            summon: None,
+            ..Gizmo::default()
         }));
 
         assert!(view.orthographic);
@@ -211,8 +209,7 @@ mod tests {
             Some(Gizmo {
                 kind: Kind::Move,
                 local: false,
-                held: None,
-                summon: None,
+                ..Gizmo::default()
             })
         );
     }

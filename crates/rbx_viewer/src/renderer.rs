@@ -518,16 +518,28 @@ impl Renderer {
         // to take.
         // Summoned with `Tab`, Move's and Rotate's handles stand at the
         // cursor instead — Rotate's then turning about that point.
+        // A lone part's or model's own pivot stands in for the centre (see
+        // `Gizmo::pivot`).
+        let pivot = gizmo.pivot.map(|pivot| pivot.w_axis.truncate());
         let origin = gizmo
             .summon
+            .or(pivot)
             .unwrap_or_else(|| self.selection.centre().unwrap_or(anchor));
-        let handles = Handles::new(
-            origin,
-            basis(gizmo.local.then_some(rotation)),
-            arm_length(origin, pose, orthographic),
-        );
+        // Edit Pivot's handles are the pivot's own frame, whatever the
+        // world/local toggle says: turning them is what turns the pivot.
+        let axes = match (gizmo.kind, gizmo.pivot) {
+            (Kind::Pivot, Some(pivot)) => Some(Mat3::from_mat4(pivot)),
+            (Kind::Pivot, None) => return None,
+            _ => gizmo.local.then_some(rotation),
+        };
+        let handles = Handles::new(origin, basis(axes), arm_length(origin, pose, orthographic));
         Some(match gizmo.kind {
             Kind::Rotate => Shape::Rotate(handles),
+            Kind::Pivot => {
+                let scaled = self.selection.scale_box().unwrap_or(model);
+                let faces = Faces::new(scaled, pose, orthographic);
+                Shape::Pivot(handles, gizmo.hotspots.then_some((faces, gizmo.snapped)))
+            }
             Kind::Transform => {
                 let scaled = self.selection.scale_box().unwrap_or(model);
                 let faces = Faces::new(scaled, pose, orthographic).summoned(gizmo.summon);
