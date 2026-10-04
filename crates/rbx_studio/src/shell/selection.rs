@@ -1,5 +1,6 @@
 //! The editor's selection: zero or more instances, in DOM terms.
 
+use glam::Mat3;
 use gpui_kit::component::tree::TreeItem;
 use gpui_kit::Context;
 use rbx_dom::{Ref, WeakDom};
@@ -10,7 +11,7 @@ use rbx_viewer::pick::{self, Selected};
 pub(super) use rbx_viewer::pick::from_click;
 
 use crate::explorer;
-use crate::transform::Targets;
+use crate::transform::{self, Targets};
 
 use super::Shell;
 
@@ -24,12 +25,26 @@ use super::Shell;
 /// one box that spans both rather than by two drawn over each other — and so
 /// the box the user sees and the handles the cursor can reach are built from
 /// the same parts.
+///
+/// A container's box is squared to its pivot (`Selected::along`), read here
+/// because only this side has `rbx_lua::pivot` to read it with.
 pub(super) fn outlined(
     dom: &WeakDom,
     database: &ReflectionDatabase,
     referents: &[Ref],
 ) -> Vec<Selected> {
     pick::selection(dom, database, referents)
+        .into_iter()
+        .map(|entry| {
+            let pivot = (!entry.is_part())
+                .then(|| rbx_lua::pivot::pivot(dom, database, entry.referent()))
+                .flatten();
+            match pivot {
+                Some(frame) => entry.along(Mat3::from_mat4(transform::rigid(&frame))),
+                None => entry,
+            }
+        })
+        .collect()
 }
 
 /// Both halves of what the 3D view shows for a selection, read together: the
@@ -443,6 +458,31 @@ mod tests {
         assert_eq!(outline.len(), 1, "one box, not one per selected referent");
         assert_eq!(outline[0].referent(), model);
         assert_eq!(outline[0].parts().len(), targets.iter().count());
+    }
+
+    /// `studio/pivot-tools.md`: "When you rotate the pivot of a model, the
+    /// bounding box of the model also rotates" — so the box the viewport
+    /// outlines it with is squared to its pivot; a lone part's is its own.
+    #[test]
+    fn a_model_is_outlined_along_its_pivot_and_a_part_along_itself() {
+        let mut dom = WeakDom::new();
+        let workspace = dom.new_instance("Workspace", "Workspace", None);
+        let model = dom.new_instance("Model", "House", Some(workspace));
+        let wall = placed_part(&mut dom, model, 0.0);
+        placed_part(&mut dom, model, 8.0);
+        let database = ReflectionDatabase::embedded();
+        assert_eq!(
+            outlined(&dom, &database, &[model])[0].axes(),
+            Mat3::IDENTITY
+        );
+
+        let turn = Mat3::from_rotation_y(30f32.to_radians());
+        let pivot = transform::cframe(glam::Mat4::from_mat3(turn));
+        dom.set_property(model, "WorldPivot", Variant::CFrame(pivot))
+            .unwrap();
+        let entry = &outlined(&dom, &database, &[model])[0];
+        assert!(entry.axes().abs_diff_eq(turn, 1e-6), "{:?}", entry.axes());
+        assert_eq!(outlined(&dom, &database, &[wall])[0].axes(), Mat3::IDENTITY);
     }
 
     /// A unit cube `x` studs along, which is what `Targets::read` needs to

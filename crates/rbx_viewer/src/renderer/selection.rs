@@ -1,7 +1,8 @@
 //! The Explorer's selection, drawn as a thin outline around what it covers:
 //! a selected part's own oriented bounding box, or — for a `Model`, a
-//! `Folder`, or any other container with no placement of its own — one
-//! world-axis-aligned box around every part beneath it.
+//! `Folder`, or any other container with no placement of its own — one box
+//! around every part beneath it, squared to its pivot (see
+//! `outline::box_of`).
 //!
 //! [`Scene::all_placements`] is keyed by `BasePart` referent and never has an
 //! entry for a container, so the parts each selected instance stands for are

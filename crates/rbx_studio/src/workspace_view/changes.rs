@@ -17,7 +17,19 @@ impl WorkspaceView {
     pub(crate) fn set_selection(&mut self, selected: &[Selected]) {
         // Studio's measurement box belongs to the selection it measured.
         self.close_measure();
+        self.outlined = selected.to_vec();
         self.pump.select(selected.to_vec());
+    }
+
+    /// The same selection outlined again after an edit — a selected model's
+    /// pivot turned, so its box turns with it (see `Shell::reflect_changes`).
+    /// Sent only when it differs from what was, and the measurement box,
+    /// which belongs to the selection rather than to its box, stays open.
+    pub(crate) fn reoutline(&mut self, selected: Vec<Selected>) {
+        if selected != self.outlined {
+            self.outlined = selected.clone();
+            self.pump.select(selected);
+        }
     }
 
     /// Forwards the instances a hover covers (empty to clear it), forcing one

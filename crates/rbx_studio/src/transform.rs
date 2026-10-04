@@ -22,7 +22,7 @@ use rbx_viewer::Gizmo;
 mod frame;
 mod targets;
 
-pub(crate) use frame::cframe;
+pub(crate) use frame::{cframe, rigid};
 pub(crate) use targets::{Target, Targets};
 
 /// A transform tool the viewport can carry out.

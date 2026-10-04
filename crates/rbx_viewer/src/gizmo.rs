@@ -386,15 +386,20 @@ pub fn scale_box(models: impl IntoIterator<Item = Mat4>) -> Option<Mat4> {
 pub fn box_along(models: impl IntoIterator<Item = Mat4>, axes: Mat3) -> Option<Mat4> {
     let models: Vec<Mat4> = models.into_iter().collect();
     match models.as_slice() {
-        [] => None,
         [only] => Some(*only),
-        many => {
-            let turn = Mat4::from_mat3(axes);
-            let into = turn.transpose();
-            let (min, max) = bounds_of(many.iter().map(|model| into * *model))?;
-            Some(turn * Mat4::from_translation((min + max) * 0.5) * Mat4::from_scale(max - min))
-        }
+        many => bounds_along(many.iter().copied(), axes),
     }
+}
+
+/// The box round every one of `models` squared to `axes`, even for just one
+/// — `Model:GetBoundingBox`, which the selection outline of a model is
+/// ("matches the selection box rendered in Studio when the model is
+/// selected"). `None` for none.
+pub fn bounds_along(models: impl IntoIterator<Item = Mat4>, axes: Mat3) -> Option<Mat4> {
+    let turn = Mat4::from_mat3(axes);
+    let into = turn.transpose();
+    let (min, max) = bounds_of(models.into_iter().map(|model| into * model))?;
+    Some(turn * Mat4::from_translation((min + max) * 0.5) * Mat4::from_scale(max - min))
 }
 
 pub fn bounds_of(models: impl IntoIterator<Item = Mat4>) -> Option<(Vec3, Vec3)> {

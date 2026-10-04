@@ -293,6 +293,9 @@ pub(crate) struct WorkspaceView {
     /// The transform toolbar's state, pushed down from `Shell` (see
     /// [`WorkspaceView::set_transform`]).
     transform: Transform,
+    /// What the outline was last sent as, so [`WorkspaceView::reoutline`]
+    /// only sends one that changed.
+    outlined: Vec<Selected>,
     /// Where every selected part stands, so a click can be hit-tested against
     /// the draggers here rather than on the render thread, and a drag can
     /// move the whole selection together (see `transform::Targets`).
@@ -372,6 +375,7 @@ impl WorkspaceView {
             viewer.open_at(camera.eye, camera.look_at, camera.fov_degrees);
         }
         viewer.set_selection(&selected);
+        let outlined = selected;
         viewer.set_orthographic(orthographic);
         // Applied here rather than after the view exists, so a saved
         // preference is already in force on the first frame instead of
@@ -425,6 +429,7 @@ impl WorkspaceView {
         });
 
         WorkspaceView {
+            outlined,
             pump: Pump::spawn(viewer, dom, interval, quality),
             focus,
             cursor: None,
