@@ -581,7 +581,11 @@ fn dragging_a_model_carries_the_parts_of_a_model_nested_inside_it() {
     let deep = unit_cube_at(&mut dom, Some(inner), 9.0);
 
     let mut targets = Targets::read(&dom, &database(), &[outer]);
-    assert_eq!(targets.iter().count(), 2, "the nested model's part is a target too");
+    assert_eq!(
+        targets.iter().count(),
+        2,
+        "the nested model's part is a target too"
+    );
 
     let moves = targets.translate(Vec3::new(0.0, 5.0, 0.0));
     let buried = moves
