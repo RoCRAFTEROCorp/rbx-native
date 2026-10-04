@@ -392,7 +392,8 @@ Roblox's own engine.
   model's pivot (the `PrimaryPart`'s, or the `WorldPivot`), which matches
   world alignment only while that pivot is unrotated. The pivot itself is
   read now (the Properties panel's `Origin` row), but this box does not
-  turn with it yet (see "What's planned" → Renderer's Pivot tools).
+  turn with it yet (see "What's planned" → Renderer's Pivot tools
+  follow-ups).
   The box is drawn through whatever stands in front of it, as Studio's is;
   the Viewport dock can ask for it to be depth-tested
   against the scene instead (`Hide Selection Box Behind Parts`, off by
@@ -794,7 +795,8 @@ Roblox's own engine.
   arbitrarily; ungrouping something that isn't a `Model`, or an empty one,
   is a clean no-op. Each is one undo step regardless of how many instances
   it moves. Out of scope, matching real Studio's own separate Pivot tools
-  (see "What's planned" → Renderer): the new `Model` gets no computed
+  (see "What's been implemented" → Renderer's Pivot tools): the new
+  `Model` gets no computed
   `PrimaryPart` or pivot, just Roblox's own empty-pivot default.
 
 - [x] **Light guides** — select a `SpotLight`, `PointLight` or
@@ -1801,7 +1803,14 @@ Roblox's own engine.
   *about* the pivot (a lone part's pivot rides along as an offset, and a
   dragged model's `WorldPivot` follows its first part rigidly rather than
   scaling with the group); Studio's per-part hotspots on a model (only the
-  model's box has them); and the Snap checkbox is not persisted.
+  model's box has them); and the Snap checkbox is not persisted. Scaling
+  a multi-part model shows its pivot jump on release: the live view scales
+  the pivot one way and the DOM-side carry (`rbx_lua::pivot::follow`,
+  rigid only) another, so re-reading the DOM on drag-end moves it (Reset
+  puts it right). With Local space on, Move's and Rotate's handles stand on
+  a model's pivot but take the anchor part's orientation rather than the
+  pivot's own, as Studio does
+  (`rbx_studio::workspace_view::gizmo`).
 
 - [ ] 📋 **Explorer export**, the half of Explorer DOM editing that did not
   land with the row affordances above or the search (see "What's been
