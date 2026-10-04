@@ -7,6 +7,8 @@ use std::collections::BTreeSet;
 use rbx_cloud::{ApiKey, Client, CloudError, PublishMode};
 use rbx_dom::WeakDom;
 
+use crate::command_bar::Feedback;
+
 use super::{Failure, Target, MOCK_VARIABLE};
 
 /// Classes Roblox's place-publishing API leaves as they were
@@ -119,4 +121,32 @@ pub(super) fn describe(err: &CloudError) -> String {
         _ => return err.to_string(),
     };
     format!("{reason} ({err})")
+}
+
+/// The ing-form and past tense each mode's messages use.
+pub(super) fn verb(mode: PublishMode) -> (&'static str, &'static str) {
+    match mode {
+        PublishMode::Saved => ("Saving to Roblox", "Saved to Roblox"),
+        PublishMode::Published => ("Publishing to Roblox", "Published to Roblox"),
+    }
+}
+
+pub(super) fn outcome(
+    target: Target,
+    mode: PublishMode,
+    result: &Result<u64, Failure>,
+) -> Feedback {
+    match result {
+        Ok(version) => Feedback::Output(format!(
+            "{} as version {version} of place {}",
+            verb(mode).1,
+            target.place_id
+        )),
+        Err(failure) => Feedback::Error(format!(
+            "{} failed for place {}: {}",
+            verb(mode).0,
+            target.place_id,
+            failure.message
+        )),
+    }
 }

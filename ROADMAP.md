@@ -1729,6 +1729,26 @@ Roblox's own engine.
   `SurfaceAppearance` or `BaseWrap` instances — edits to those only go live
   when published from Roblox Studio. A successful upload of a place holding
   any of them adds a warning row to the Output dock saying so.
+- [x] **Place version history (browse and restore).** File › Version
+  History… lists the linked place's saved and published versions, newest
+  first, fifty at a time with Load more, through
+  `GET /place-version-history-api/v1/{placeId}/history` and
+  `.../contributors` (`rbx_cloud::Client::place_versions`/
+  `place_contributors`, scope `universe.place:read`): each row shows the
+  version number, the UTC date, who saved it (names resolved in one
+  `users.roblox.com/v1/users` batch), its name and notes when it has them,
+  and whether it was published; one pill per contributor filters the list
+  to their versions. **Open** downloads that version through the keyed
+  asset-delivery route with `/version/{n}` and opens it, unlinked, in a new
+  editor — Studio's Open Local Copy. **Restore** uploads that version's
+  file as a new version of the place, which is what Roblox's own restore
+  does (`creator-docs`, `projects/version-history.md`; Open Cloud has no
+  revert call): Restore only saves it, as Roblox's does, and Restore and
+  publish also makes it live. A restore is asked first, in the same
+  confirmation dialog as every upload; both actions land as rows in the
+  Output dock. An unlinked file
+  links its place from the window through the same game picker, and the
+  window follows a relink or an upload from the File menu.
 
 ### Platform
 - [x] Linux (X11) — the daily-driven target.
@@ -1859,12 +1879,6 @@ Roblox's own engine.
   (`studio/pivot-tools.md`) the Edit Pivot tool and its follow-up passes
   did not bring: Scale's handles still stand on the world-aligned box and
   scale about it rather than about the pivot.
-- [ ] 📋 **Place version history (browse and restore).** Browsing and
-  restoring an older saved/published version of a place, not just writing
-  a new one (File › Save/Publish to Roblox, above, already does that). A
-  separate Open Cloud surface from the publish endpoint —
-  `GET /place-version-history-api/v1/{placeId}/history` and
-  `.../contributors` — and not yet wired into `rbx_cloud` at all.
 - [ ] 📋 **Whole-place and fuller Explorer export.** Left open by the
   Explorer row's Save / Export rows (see "What's been implemented" →
   Editor): the whole place to a local file under a name of its choosing

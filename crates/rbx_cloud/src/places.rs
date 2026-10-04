@@ -189,7 +189,10 @@ mod tests {
             .collect();
         assert_eq!(
             names,
-            [(1, "Roblox".to_string()), (925308243, "Cheeteau".to_string())]
+            [
+                (1, "Roblox".to_string()),
+                (925308243, "Cheeteau".to_string())
+            ]
         );
     }
 

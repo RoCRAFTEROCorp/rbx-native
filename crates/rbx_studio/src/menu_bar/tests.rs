@@ -2,7 +2,7 @@ use gpui_kit::{Action, OwnedMenuItem};
 
 use super::{
     menus, MenuInsertTemplate, MenuLinkRobloxPlace, MenuOpenAutoSaves, MenuPlaceholder,
-    MenuPublishToRoblox, MenuSaveToRoblox,
+    MenuPublishToRoblox, MenuSaveToRoblox, MenuVersionHistory,
 };
 use crate::script_templates::Template;
 
@@ -105,6 +105,7 @@ fn file_saves_and_publishes_to_roblox_as_two_live_commands() {
     assert!(live("Save to Roblox", &MenuSaveToRoblox));
     assert!(live("Publish to Roblox", &MenuPublishToRoblox));
     assert!(live("Link to Roblox Place\u{2026}", &MenuLinkRobloxPlace));
+    assert!(live("Version History\u{2026}", &MenuVersionHistory));
 }
 
 /// The templates window opens from File, last, right under Studio

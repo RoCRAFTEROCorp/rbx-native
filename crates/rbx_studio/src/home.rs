@@ -312,7 +312,7 @@ pub(crate) fn new_place_path(template: Template) -> Option<PathBuf> {
 
 /// Where the local copies of places opened from Roblox live: the config
 /// directory, not the cache — this is the user's work until published.
-fn places_dir() -> Option<PathBuf> {
+pub(crate) fn places_dir() -> Option<PathBuf> {
     default_config_dir().map(|dir| dir.join("places"))
 }
 

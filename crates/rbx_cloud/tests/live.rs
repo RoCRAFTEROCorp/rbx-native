@@ -90,7 +90,10 @@ fn version_history_pages_and_downloads_an_old_version() {
         .place_versions(TEST_PLACE_ID, None, None)
         .expect("history should list");
     assert!(!first.versions.is_empty());
-    assert!(first.versions.windows(2).all(|w| w[0].version > w[1].version));
+    assert!(first
+        .versions
+        .windows(2)
+        .all(|w| w[0].version > w[1].version));
     if let Some(cursor) = &first.next_cursor {
         let second = client
             .place_versions(TEST_PLACE_ID, Some(cursor), None)
