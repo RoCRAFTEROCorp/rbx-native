@@ -92,6 +92,7 @@ impl Entry {
     pub(super) fn carved_color(&self, evaluated: &Evaluated) -> [f32; 3] {
         self.color
             .or_else(|| csg::largest_additive_color(&evaluated.tree))
+            .or(evaluated.baked_color)
             .unwrap_or(super::super::FALLBACK_COLOR)
             .map(|channel| super::super::srgb_to_linear(f32::from(channel) / 255.0))
     }

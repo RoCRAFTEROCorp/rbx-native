@@ -385,7 +385,11 @@ fn carving(children: Vec<tree::Node>, carved: bool) -> Evaluated {
                 .to_mesh(),
         )
     });
-    Evaluated { tree, mesh }
+    Evaluated {
+        tree,
+        mesh,
+        baked_color: None,
+    }
 }
 
 /// The union fixture `replan` reads, `UsePartColor` on and painted red.

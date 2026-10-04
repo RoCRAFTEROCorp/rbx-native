@@ -397,9 +397,21 @@ Roblox's own engine.
   against the scene instead (`Hide Selection Box Behind Parts`, off by
   default and persisted the same way `Orthographic` is).
 - [x] Legacy union/negate parts reconstruct the real constituent
-  geometry via a from-scratch CSG boolean. The one piece not covered is
-  `MeshData`/CSGMDL, which has its own bullet below and is deliberately
-  not attempted.
+  geometry via a from-scratch CSG boolean. Where no tree survives, the
+  union's own baked `MeshData` is drawn instead (next bullet).
+- [x] **Export and draw unions baked only as `MeshData`.** A union whose
+  only geometry is a baked `MeshData`/CSGMDL blob — no `ChildData` inline
+  or behind its `AssetId` (asset 305197512, 7 instances in marked.rbxl) —
+  now draws and exports as that mesh instead of its box
+  (`scene::union::baked`). The blob is the document XORed with a 31-byte
+  repeating key; version 2 is vertex and index arrays in the union's own
+  studs at its `InitialSize`. Nothing in Roblox's docs describes it, so
+  the module doc says what was read off real blobs and what is left
+  unread. It is read only where no tree exists, so every union with one
+  still carves through the boolean above. A union carrying `MeshData`
+  inline with no tree and no `AssetId` is drawn the same way. Every union
+  in the test places now resolves: in marked.rbxl, 467 carve, the 7
+  decode and 13 are empty.
 - [x] **Give each of a failed-CSG union's recovered fallback pieces its
   own identity.** Every piece now carries a `scene::PartId` of its own —
   the union's referent plus its position in the operation tree's additive
@@ -1947,13 +1959,6 @@ Roblox's own engine.
   above existing first regardless of which direction it takes.
 
 ### Renderer
-- [ ] 📋 **Export and draw unions baked only as `MeshData`.** A union
-  whose only geometry is a baked `MeshData`/CSGMDL blob — no `ChildData`
-  inline or behind its `AssetId` (asset 305197512, 7 instances in
-  marked.rbxl) — still draws and exports as its box. CSGMDL is not
-  decoded (see CSG below), and Roblox's 3D thumbnail endpoint
-  (`thumbnails.roblox.com/v1/assets-thumbnail-3d`) needs an API key with
-  `thumbnail:read`.
 #### Properties panel — remaining type editors
 - [ ] 📋 **"Freeze"/"Apply" a `MeshPart`'s rotation** — zero out
   `Orientation` while leaving the object's *visual* placement unchanged,
@@ -2039,10 +2044,12 @@ against `Roblox/creator-docs` rather than assumed:
   [Explicitly impossible](#explicitly-impossible-without-robloxs-engine)).
 
 #### CSG
-- [ ] 📋 `MeshData`/CSGMDL (Roblox's own baked union result format) — see
-  [Explicitly impossible](#explicitly-impossible-without-robloxs-engine),
-  deliberately not attempted; the from-scratch boolean above is the
-  intended long-term answer, not a stopgap.
+- [ ] 📋 `MeshData`/CSGMDL version 5 (Roblox's own baked union result
+  format, as Studio writes it now) — compressed past the XOR that version
+  2 uses, so not decoded. Only a union with no operation tree would need
+  it, and every version-5 union seen carries one; version 2 is read (see
+  "Export and draw unions baked only as `MeshData`"). The from-scratch
+  boolean above stays the answer wherever a tree exists.
 
 #### Terrain
 - [ ] 📋 Voxel terrain storage (`Terrain.SmoothGrid`) — no work started.
@@ -2691,10 +2698,11 @@ and no amount of reverse engineering changes that:
   Roblox's own UI engine (`GuiBase2d`/`LayerCollector`); reproducing it
   means reimplementing that whole subsystem, which is out of scope. A
   headless, DataModel-only plugin subset is reachable instead (see above).
-- **Bit-exact CSG results** (`MeshData`/CSGMDL, `PhysicalConfigData`) — an
-  undocumented, version-unstable format the community's own reference
-  researchers haven't fully decoded either; not worth chasing when a real
-  from-scratch boolean already exists as the actual answer.
+- **Bit-exact CSG results** (`PhysicalConfigData`, and carving a tree
+  exactly as Roblox's own boolean does) — undocumented and
+  version-unstable; not worth chasing when a real from-scratch boolean
+  already exists. Roblox's baked `MeshData` itself is read where a union
+  has no tree (version 2 only, see "What's been implemented").
 - **Physics simulation and anti-cheat** — proprietary physics engine, no
   real server authority possible from rbx-native. That covers Roblox's new
   Server Authority model too: client prediction, rollback and resimulation

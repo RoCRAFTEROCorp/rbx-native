@@ -6,9 +6,9 @@
 //! solids, the same fitted `MeshId` triangles for a `MeshPart` or a
 //! `SpecialMesh` FileMesh (see [`crate::pick`], which resolves a click the same
 //! way) — baked into world space. A `UnionOperation` exports the boolean
-//! `scene::union` carved from its original parts (never Roblox's own baked
-//! `MeshData`); where that boolean could not be run, the additive pieces the
-//! viewport draws instead. A file mesh that has not downloaded exports as
+//! `scene::union` carved from its original parts, or Roblox's own baked
+//! `MeshData` where no parts survive; where that boolean could not be run,
+//! the additive pieces the viewport draws instead. A file mesh that has not downloaded exports as
 //! the box it is drawn as.
 //!
 //! Each part is shaded as the viewport shades it (see [`part`]): its image or

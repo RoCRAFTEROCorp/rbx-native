@@ -1,0 +1,311 @@
+//! `MeshData` blobs built here in the layout the module doc describes — no
+//! Roblox blob is committed (see `agents/AGENTS.md`); the one real check is
+//! the ignored fixture test at the bottom.
+
+use std::collections::HashMap;
+
+use rbx_dom::{Instance, Ref, Variant, WeakDom};
+
+use super::super::tests::{database, dom_with, operation};
+use super::super::{fit, plan, resolve, Catalog, Evaluations};
+use super::*;
+
+/// A stride bigger than the 28 bytes read, as real blobs have (84).
+const STRIDE: u32 = 40;
+
+struct Corner {
+    position: [f32; 3],
+    normal: [f32; 3],
+    color: [u8; 4],
+}
+
+fn corner(position: [f32; 3], normal: [f32; 3], color: [u8; 3]) -> Corner {
+    Corner {
+        position,
+        normal,
+        color: [color[0], color[1], color[2], 255],
+    }
+}
+
+/// The plain version-`version` document holding `corners` and `indices`.
+fn document(version: u32, stride: u32, corners: &[Corner], indices: &[u32]) -> Vec<u8> {
+    let mut out = MAGIC.to_vec();
+    out.extend(version.to_le_bytes());
+    out.extend(b"0123456789abcdef");
+    out.extend([7u8; 16]);
+    out.extend((corners.len() as u32).to_le_bytes());
+    out.extend(stride.to_le_bytes());
+    for corner in corners {
+        let start = out.len();
+        for value in corner.position.iter().chain(&corner.normal) {
+            out.extend(value.to_le_bytes());
+        }
+        out.extend(corner.color);
+        out.resize(start + stride as usize, 0);
+    }
+    out.extend((indices.len() as u32).to_le_bytes());
+    for index in indices {
+        out.extend(index.to_le_bytes());
+    }
+    out
+}
+
+fn scrambled(plain: &[u8]) -> Vec<u8> {
+    plain
+        .iter()
+        .zip(KEY.iter().cycle())
+        .map(|(byte, key)| byte ^ key)
+        .collect()
+}
+
+/// Two triangles facing +Z: a big red one and a small blue one.
+fn two_triangles() -> Vec<u8> {
+    let up = [0.0, 0.0, 1.0];
+    let red = [200, 10, 10];
+    let blue = [10, 10, 200];
+    let corners = [
+        corner([-2.0, -2.0, 0.5], up, red),
+        corner([2.0, -2.0, 0.5], up, red),
+        corner([0.0, 2.0, 0.5], up, red),
+        corner([0.0, 0.0, 0.5], up, blue),
+        corner([0.1, 0.0, 0.5], up, blue),
+        corner([0.0, 0.1, 0.5], up, blue),
+    ];
+    document(2, STRIDE, &corners, &[0, 1, 2, 3, 4, 5])
+}
+
+#[test]
+fn a_scrambled_blob_decodes_like_its_plain_form() {
+    let plain = two_triangles();
+    let from_plain = decode(&plain).expect("plain decodes");
+    let from_scrambled = decode(&scrambled(&plain)).expect("scrambled decodes");
+
+    assert_eq!(from_plain.mesh.vertices, from_scrambled.mesh.vertices);
+    assert_eq!(from_plain.mesh.indices, from_scrambled.mesh.indices);
+}
+
+#[test]
+fn positions_normals_and_bounds_come_through_as_stored() {
+    let baked = decode(&scrambled(&two_triangles())).expect("decodes");
+    let mesh = &baked.mesh;
+
+    assert_eq!(mesh.vertices.len(), 6);
+    assert_eq!(mesh.indices, [0, 1, 2, 3, 4, 5]);
+    assert_eq!(mesh.vertices[1].position, [2.0, -2.0, 0.5]);
+    assert_eq!(mesh.vertices[1].normal, [0.0, 0.0, 1.0]);
+    assert_eq!(mesh.bounds.min, [-2.0, -2.0, 0.5]);
+    assert_eq!(mesh.bounds.max, [2.0, 2.0, 0.5]);
+}
+
+#[test]
+fn the_colour_covering_most_area_paints_it_and_the_vertices_go_white() {
+    let baked = decode(&two_triangles()).expect("decodes");
+
+    assert_eq!(
+        baked.color,
+        Some([200, 10, 10]),
+        "the big red triangle wins"
+    );
+    assert!(baked.mesh.vertices.iter().all(|v| v.color == [255; 4]));
+}
+
+#[test]
+fn texture_coordinates_are_box_projected_like_a_carved_union() {
+    let baked = decode(&two_triangles()).expect("decodes");
+    let tile = rbx_materials::DEFAULT_STUDS_PER_TILE;
+
+    // Facing +Z, so projected along X and Y.
+    assert_eq!(baked.mesh.vertices[1].uv, [2.0 / tile, -2.0 / tile]);
+}
+
+#[test]
+fn bytes_that_are_not_csgmdl_either_way_are_refused() {
+    assert_eq!(decode(b"definitely not a mesh").err(), Some(Error::NotCsg));
+    assert_eq!(decode(&[]).err(), Some(Error::NotCsg));
+}
+
+#[test]
+fn another_version_is_named_rather_than_misread() {
+    let blob = scrambled(&document(5, STRIDE, &[], &[]));
+
+    assert_eq!(decode(&blob).err(), Some(Error::Version(5)));
+}
+
+#[test]
+fn every_truncation_is_an_error_never_a_panic() {
+    let plain = two_triangles();
+    for len in 0..plain.len() {
+        assert!(decode(&plain[..len]).is_err(), "cut at {len}");
+        assert!(decode(&scrambled(&plain[..len])).is_err(), "cut at {len}");
+    }
+}
+
+#[test]
+fn counts_too_large_for_the_blob_are_truncation() {
+    let mut plain = two_triangles();
+    plain[HEADER..HEADER + 4].copy_from_slice(&u32::MAX.to_le_bytes());
+
+    assert_eq!(decode(&plain).err(), Some(Error::Truncated));
+}
+
+#[test]
+fn a_vertex_too_small_to_read_is_refused() {
+    let blob = document(2, 12, &[], &[]);
+
+    assert_eq!(decode(&blob).err(), Some(Error::Stride(12)));
+}
+
+#[test]
+fn an_index_past_the_last_vertex_is_refused() {
+    let up = [0.0, 0.0, 1.0];
+    let corners = [corner([0.0; 3], up, [0; 3]), corner([1.0; 3], up, [0; 3])];
+    let blob = document(2, STRIDE, &corners, &[0, 1, 2]);
+
+    assert_eq!(decode(&blob).err(), Some(Error::Index));
+}
+
+#[test]
+fn indices_that_are_not_whole_triangles_are_refused() {
+    let up = [0.0, 0.0, 1.0];
+    let corners = [corner([0.0; 3], up, [0; 3]), corner([1.0; 3], up, [0; 3])];
+    let blob = document(2, STRIDE, &corners, &[0, 1]);
+
+    assert_eq!(decode(&blob).err(), Some(Error::Index));
+}
+
+/// A `PartOperationAsset` holding only a baked mesh, as asset 305197512 does.
+fn mesh_only_asset(blob: Vec<u8>) -> Vec<u8> {
+    let mut dom = WeakDom::new();
+    let root = Ref::new(1);
+    let mut asset = Instance::new(root, "PartOperationAsset", "Union");
+    let properties = asset.properties_mut();
+    properties.insert(
+        "ChildData".into(),
+        Variant::Unknown {
+            type_id: 0x01,
+            raw: Vec::new(),
+        },
+    );
+    properties.insert(
+        "MeshData".into(),
+        Variant::Unknown {
+            type_id: 0x01,
+            raw: blob,
+        },
+    );
+    dom.insert(asset);
+    dom.set_parent(root, None);
+    rbx_binary::serialize(&dom).expect("synthetic asset must serialize")
+}
+
+#[test]
+fn a_union_whose_asset_holds_only_a_baked_mesh_draws_that_mesh() {
+    let asset_id = "rbxassetid://305197512";
+    let referent = Ref::new(1);
+    let dom = dom_with(operation(referent, "UnionOperation", Some(asset_id)));
+    let database = database();
+    let mut materials = Catalog::new(&dom, &database);
+    let plan = plan(&dom, &database, &mut materials);
+    let (key, _) = fit(&dom, &database, referent).expect("planned by its AssetId");
+
+    let assets = HashMap::from([(key.clone(), mesh_only_asset(scrambled(&two_triangles())))]);
+    let resolution = resolve(
+        &plan,
+        assets,
+        &database,
+        &mut materials,
+        &mut Evaluations::default(),
+    );
+
+    let mesh = resolution
+        .meshes
+        .get(&key)
+        .expect("the baked mesh is drawn");
+    assert_eq!(mesh.indices.len(), 6);
+    assert!(resolution.hidden.contains(&referent), "the box is gone");
+    assert_eq!(resolution.instances.len(), 1);
+}
+
+#[test]
+fn a_union_carrying_only_a_baked_mesh_inline_draws_it_with_nothing_to_fetch() {
+    let referent = Ref::new(1);
+    let mut instance = operation(referent, "UnionOperation", None);
+    instance.properties_mut().insert(
+        "MeshData2".into(),
+        Variant::Unknown {
+            type_id: 0x1c,
+            raw: scrambled(&two_triangles()),
+        },
+    );
+    let dom = dom_with(instance);
+    let database = database();
+    let mut materials = Catalog::new(&dom, &database);
+    let plan = plan(&dom, &database, &mut materials);
+
+    assert!(plan.assets().is_empty(), "nothing to download");
+    let resolution = resolve(
+        &plan,
+        HashMap::new(),
+        &database,
+        &mut materials,
+        &mut Evaluations::default(),
+    );
+    let (key, _) = fit(&dom, &database, referent).expect("keyed by its inline mesh");
+    assert!(resolution.meshes.contains_key(&key));
+    assert!(resolution.hidden.contains(&referent));
+}
+
+#[test]
+fn a_baked_union_without_its_own_colour_takes_the_bakes() {
+    let asset_id = "rbxassetid://305197512";
+    let referent = Ref::new(1);
+    let dom = dom_with(operation(referent, "UnionOperation", Some(asset_id)));
+    let database = database();
+    let mut materials = Catalog::new(&dom, &database);
+    let plan = plan(&dom, &database, &mut materials);
+    let (key, _) = fit(&dom, &database, referent).expect("planned");
+
+    let assets = HashMap::from([(key, mesh_only_asset(two_triangles()))]);
+    let resolution = resolve(
+        &plan,
+        assets,
+        &database,
+        &mut materials,
+        &mut Evaluations::default(),
+    );
+
+    let red = [200.0, 10.0, 10.0].map(|c: f32| super::super::super::srgb_to_linear(c / 255.0));
+    assert_eq!(resolution.instances[0].color, red);
+}
+
+/// `RBX_CSGMDL_FIXTURE=<a PartOperationAsset .rbxm holding only MeshData>`,
+/// such as asset 305197512 from the asset cache.
+#[test]
+#[ignore = "needs RBX_CSGMDL_FIXTURE (a mesh-only PartOperationAsset)"]
+fn a_real_mesh_only_asset_decodes_to_a_closed_mesh_filling_its_bake() {
+    let path = std::env::var("RBX_CSGMDL_FIXTURE").expect("RBX_CSGMDL_FIXTURE");
+    let bytes = std::fs::read(path).expect("fixture must be readable");
+    let baked = of_bytes(&bytes).expect("a real blob decodes");
+    let mesh = &baked.mesh;
+
+    assert!(mesh.triangle_count() > 12, "more than a box");
+    // Asset 305197512 was baked at an `InitialSize` of 1: its mesh fills
+    // the unit box, in the union's own studs.
+    for axis in 0..3 {
+        assert!((mesh.bounds.max[axis] - mesh.bounds.min[axis] - 1.0).abs() < 1e-3);
+    }
+    // Closed: every edge is shared by exactly two triangles, once each way.
+    let mut edges: HashMap<([u32; 3], [u32; 3]), i32> = HashMap::new();
+    let key = |i: u32| {
+        mesh.vertices[i as usize]
+            .position
+            .map(|c| (c * 1e4).round() as i32 as u32)
+    };
+    for triangle in mesh.indices.as_chunks::<3>().0 {
+        for (a, b) in [(0, 1), (1, 2), (2, 0)] {
+            let (a, b) = (key(triangle[a]), key(triangle[b]));
+            *edges.entry((a.min(b), a.max(b))).or_default() += if a < b { 1 } else { -1 };
+        }
+    }
+    assert!(edges.values().all(|&n| n == 0), "every edge is matched");
+}
