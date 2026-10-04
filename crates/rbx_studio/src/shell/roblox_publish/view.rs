@@ -72,7 +72,7 @@ impl Shell {
             Dialog::Failed {
                 mode,
                 target,
-                message,
+                failure,
             } => {
                 let (mode, target) = (*mode, *target);
                 let body = ui::mono(11.5, 17.)
@@ -85,16 +85,23 @@ impl Shell {
                     .border_color(ui::red_line())
                     .bg(ui::red_soft())
                     .text_color(tokens::text())
-                    .child(message.clone())
+                    .child(failure.message.clone())
                     .into_any_element();
                 ui::dialog(
                     520.,
                     ui::dialog_glyph("circle-alert", ui::red(), ui::red_soft()),
                     format!("{} failed", verb(mode).0),
-                    format!(
-                        "Place {} was not changed on Roblox. Your local file is untouched.",
-                        target.place_id
-                    ),
+                    if failure.unchanged {
+                        format!(
+                            "Place {} was not changed on Roblox. Your local file is untouched.",
+                            target.place_id
+                        )
+                    } else {
+                        format!(
+                            "The upload to place {} may or may not have been applied \u{2014} check its versions on the Creator Dashboard before trying again. Your local file is untouched.",
+                            target.place_id
+                        )
+                    },
                     Some(body),
                     vec![
                         ui::button(

@@ -56,8 +56,27 @@ pub(super) enum Dialog {
     Failed {
         mode: PublishMode,
         target: Target,
-        message: String,
+        failure: Failure,
     },
+}
+
+/// A failed upload. `unchanged` is whether the place is known to be as it
+/// was: true only when the upload never left or Roblox answered with a
+/// refusal. A dropped connection, a timeout or an unreadable answer may
+/// come after Roblox took the file, so those say so instead.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct Failure {
+    pub(super) message: String,
+    pub(super) unchanged: bool,
+}
+
+impl Failure {
+    fn before_sending(message: String) -> Self {
+        Failure {
+            message,
+            unchanged: true,
+        }
+    }
 }
 
 pub(super) struct RobloxPublish {
@@ -202,7 +221,9 @@ impl Shell {
         self.flush_script_edits(cx);
         let bytes = match self.format.encode(&self.dom) {
             Ok(bytes) => bytes,
-            Err(message) => return self.finish_upload(target, mode, Err(message), cx),
+            Err(message) => {
+                return self.finish_upload(target, mode, Err(Failure::before_sending(message)), cx)
+            }
         };
         self.roblox.busy = true;
         self.command_bar.set_feedback(Feedback::Output(format!(
@@ -226,18 +247,18 @@ impl Shell {
         &mut self,
         target: Target,
         mode: PublishMode,
-        result: Result<u64, String>,
+        result: Result<u64, Failure>,
         cx: &mut Context<Self>,
     ) {
         self.roblox.busy = false;
         let feedback = outcome(target, mode, &result);
         self.output.push(SOURCE, feedback.clone());
         self.command_bar.set_feedback(feedback);
-        if let Err(message) = result {
+        if let Err(failure) = result {
             self.roblox.dialog = Some(Dialog::Failed {
                 mode,
                 target,
-                message,
+                failure,
             });
         }
         cx.notify();
@@ -287,17 +308,18 @@ fn verb(mode: PublishMode) -> (&'static str, &'static str) {
     }
 }
 
-fn outcome(target: Target, mode: PublishMode, result: &Result<u64, String>) -> Feedback {
+fn outcome(target: Target, mode: PublishMode, result: &Result<u64, Failure>) -> Feedback {
     match result {
         Ok(version) => Feedback::Output(format!(
             "{} as version {version} of place {}",
             verb(mode).1,
             target.place_id
         )),
-        Err(message) => Feedback::Error(format!(
-            "{} failed for place {}: {message}",
+        Err(failure) => Feedback::Error(format!(
+            "{} failed for place {}: {}",
             verb(mode).0,
-            target.place_id
+            target.place_id,
+            failure.message
         )),
     }
 }
@@ -366,12 +388,12 @@ fn resolve_target(place_id: u64) -> Result<Target, String> {
 }
 
 /// Blocking: one upload, through the stored key.
-fn upload(target: Target, bytes: &[u8], mode: PublishMode) -> Result<u64, String> {
+fn upload(target: Target, bytes: &[u8], mode: PublishMode) -> Result<u64, Failure> {
     if let Some(which) = mock() {
         return upload_with(target, bytes, mode, |_, _, _, _| mocked(&which));
     }
     let Some(key) = ApiKey::from_env_or_config() else {
-        return Err(describe(&CloudError::NoApiKey));
+        return Err(Failure::before_sending(describe(&CloudError::NoApiKey)));
     };
     let client = Client::new(Some(key));
     upload_with(target, bytes, mode, |universe, place, bytes, mode| {
@@ -385,8 +407,22 @@ fn upload_with(
     bytes: &[u8],
     mode: PublishMode,
     publish: impl FnOnce(u64, u64, &[u8], PublishMode) -> Result<u64, CloudError>,
-) -> Result<u64, String> {
-    publish(target.universe_id, target.place_id, bytes, mode).map_err(|err| describe(&err))
+) -> Result<u64, Failure> {
+    publish(target.universe_id, target.place_id, bytes, mode).map_err(|err| Failure {
+        message: describe(&err),
+        unchanged: refused(&err),
+    })
+}
+
+/// Whether `err` means Roblox definitely didn't take the upload: no key to
+/// send it with, or a 4xx answer. A 5xx is left out with the network
+/// errors — a gateway timing out may sit in front of a publish that landed.
+fn refused(err: &CloudError) -> bool {
+    match err {
+        CloudError::NoApiKey | CloudError::RateLimited { .. } => true,
+        CloudError::Http { status, .. } => (400..500).contains(status),
+        _ => false,
+    }
 }
 
 /// Roblox's own reasons for each status the endpoint documents

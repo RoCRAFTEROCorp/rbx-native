@@ -3,7 +3,8 @@ use std::path::{Path, PathBuf};
 use rbx_cloud::{CloudError, PublishMode};
 
 use super::{
-    describe, linked_target, lookup_finished, mocked, outcome, upload_with, Dialog, Target,
+    describe, linked_target, lookup_finished, mocked, outcome, refused, upload_with, Dialog,
+    Failure, Target,
 };
 use crate::command_bar::Feedback;
 use crate::home::RecentPlace;
@@ -71,16 +72,20 @@ fn a_refused_upload_says_why_in_roblox_terms_and_keeps_the_raw_error() {
             url: "https://apis.roblox.com/x".to_string(),
         })
     });
-    let message = result.unwrap_err();
+    let failure = result.unwrap_err();
+    assert!(failure.unchanged, "a 4xx is a definite refusal");
+    let message = failure.message;
     assert!(message.starts_with("Publishing isn\u{2019}t allowed on this place."));
     assert!(message.contains("HTTP 403"));
 
     let network = upload_with(TARGET, b"", PublishMode::Saved, |_, _, _, _| {
         Err(CloudError::Transport("connection refused".to_string()))
     });
-    assert_eq!(
-        network.unwrap_err(),
-        "network error: connection refused".to_string()
+    let network = network.unwrap_err();
+    assert_eq!(network.message, "network error: connection refused");
+    assert!(
+        !network.unchanged,
+        "a dropped connection may follow an upload that landed"
     );
     assert!(describe(&CloudError::NoApiKey).contains("No Open Cloud API key"));
 }
@@ -96,7 +101,7 @@ fn success_is_output_and_failure_is_an_error_row() {
         Feedback::Output("Saved to Roblox as version 3 of place 17675488706".to_string())
     );
     assert!(matches!(
-        outcome(TARGET, PublishMode::Saved, &Err("nope".to_string())),
+        outcome(TARGET, PublishMode::Saved, &Err(Failure::before_sending("nope".to_string()))),
         Feedback::Error(message) if message == "Saving to Roblox failed for place 17675488706: nope"
     ));
 }
@@ -182,4 +187,19 @@ fn a_failed_lookup_shows_its_reason_and_lets_the_user_confirm_again() {
         &dialog,
         Some(Dialog::Link { error: Some(e), resolving: None, .. }) if e == "No place with ID 9."
     ));
+}
+
+#[test]
+fn only_a_refusal_claims_the_place_was_not_changed() {
+    let http = |status| CloudError::Http {
+        status,
+        url: String::new(),
+    };
+    assert!(refused(&http(401)));
+    assert!(refused(&CloudError::RateLimited { retry_after: None }));
+    assert!(refused(&CloudError::NoApiKey));
+    assert!(!refused(&http(504)));
+    assert!(!refused(&CloudError::Transport("timed out".to_string())));
+    let unreadable = serde_json::from_str::<u64>("<html>").unwrap_err();
+    assert!(!refused(&CloudError::Json(unreadable)));
 }
