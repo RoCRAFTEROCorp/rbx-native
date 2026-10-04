@@ -4,10 +4,11 @@
 //! Selection…** as a Wavefront `.obj`, and **Export as glTF…** as `.gltf`.
 //! The meshes are what the viewport draws (see `rbx_viewer::export`).
 //!
-//! The File menu's own two do the same for the whole place: **Save to
-//! File…** writes all of it (`.rbxl`, or `.rbxlx` when that is the name
-//! picked) under a name of the user's choosing — a copy, leaving Ctrl+S on
-//! the file the place was opened from — and **Export as glTF…** writes
+//! The File menu's own two do the same for the whole place: **Save to File
+//! As…** writes all of it (`.rbxl`, or `.rbxlx` when that is the name
+//! picked) under a name of the user's choosing and makes that the file
+//! being edited, as Studio does (see `Shell::save_as`), and **Export as
+//! glTF…** writes
 //! `Workspace`, the part of a place that is drawn, as Studio's own File ›
 //! Export as glTF does (its export of a place has `Workspace` as its root).
 //!
@@ -123,7 +124,7 @@ impl Shell {
         self.ask_and_export(kind, roots, &name, cx);
     }
 
-    /// File › Save to File… (`Export::Place`) and File › Export as glTF…
+    /// File › Save to File As… (`Export::Place`) and File › Export as glTF…
     /// (`Export::Gltf`): the whole place, suggested under the opened file's
     /// own name. `pub(crate)`: `menu_bar`'s entry point.
     pub(crate) fn export_place(&mut self, kind: Export, cx: &mut Context<Self>) {
@@ -185,6 +186,10 @@ impl Shell {
     }
 
     fn export_to(&mut self, kind: Export, roots: &[Ref], path: &Path, cx: &mut Context<Self>) {
+        if kind == Export::Place {
+            self.save_as(path, cx);
+            return;
+        }
         // An open script's text reaches the DOM on a debounce; a model file
         // has to hold what is on screen, as a save does.
         self.flush_script_edits(cx);

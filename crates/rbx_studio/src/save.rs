@@ -48,6 +48,15 @@ impl Format {
         }
     }
 
+    /// The format a file of this name is written in: XML for `.rbxlx` and
+    /// `.rbxmx`, binary otherwise.
+    pub(crate) fn of_path(path: &Path) -> Self {
+        match path.extension().and_then(|ext| ext.to_str()) {
+            Some("rbxlx" | "rbxmx") => Format::Xml,
+            _ => Format::Binary,
+        }
+    }
+
     pub(crate) fn encode(self, dom: &WeakDom) -> Result<Vec<u8>, String> {
         match self {
             // The class default for whatever an instance does not hold:
@@ -390,5 +399,15 @@ mod tests {
             ..Modifiers::none()
         };
         assert_eq!(action_for("a", modifiers), None);
+    }
+
+    /// Save to File As… writes, and Ctrl+S then keeps writing, the format
+    /// the new file's name asks for.
+    #[test]
+    fn a_files_extension_picks_its_format() {
+        assert_eq!(Format::of_path(Path::new("x.rbxl")), Format::Binary);
+        assert_eq!(Format::of_path(Path::new("x.rbxlx")), Format::Xml);
+        assert_eq!(Format::of_path(Path::new("x.rbxmx")), Format::Xml);
+        assert_eq!(Format::of_path(Path::new("x")), Format::Binary);
     }
 }

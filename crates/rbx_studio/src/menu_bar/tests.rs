@@ -107,8 +107,8 @@ fn file_saves_and_publishes_to_roblox_as_two_live_commands() {
     assert!(live("Link to Roblox Place\u{2026}", &MenuLinkRobloxPlace));
     // The whole place to a local file of the user's naming, and as glTF:
     // live, and neither one Ctrl+S's own Save.
-    assert!(live("Save", &MenuSave));
-    assert!(live("Save to File\u{2026}", &MenuSaveToFile));
+    assert!(live("Save to File", &MenuSave));
+    assert!(live("Save to File As\u{2026}", &MenuSaveToFile));
     assert!(live("Export as glTF\u{2026}", &MenuExportGltf));
 }
 

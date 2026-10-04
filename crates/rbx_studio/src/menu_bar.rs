@@ -161,10 +161,11 @@ fn menus(templates: &[Template]) -> Vec<OwnedMenu> {
                 MenuItem::action("New", MenuPlaceholder).disabled(true),
                 MenuItem::action("Open…", MenuPlaceholder).disabled(true),
                 MenuItem::separator(),
-                MenuItem::action("Save", MenuSave),
-                // The whole place under a name of the user's choosing, and
-                // as glTF: see `shell::export`.
-                MenuItem::action("Save to File…", MenuSaveToFile),
+                // Studio's names: Save to File writes back to the file
+                // being edited (Ctrl+S), Save to File As… asks for a new one
+                // and switches to it (see `shell::save`).
+                MenuItem::action("Save to File", MenuSave),
+                MenuItem::action("Save to File As…", MenuSaveToFile),
                 MenuItem::action("Export as glTF…", MenuExportGltf),
                 MenuItem::separator(),
                 // Uploads, not local saves: see `shell::roblox_publish`. An

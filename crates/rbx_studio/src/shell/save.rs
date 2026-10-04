@@ -87,6 +87,46 @@ impl Shell {
         }
     }
 
+    /// File › Save to File As…: the place written to `path`, which then
+    /// becomes the file this session is — as Studio does it: "Save As
+    /// switches your current context in Studio. For example, if you save
+    /// Place A to file as Place B, your current context in Studio switches
+    /// to Place B. Ctrl+S afterward will save back to the file location for
+    /// Place B." (DevForum, "Improved Save Experience in Studio!", 2021).
+    /// The title, Ctrl+S's target and format, the Recent list and the
+    /// folder tags follow; the new file is not linked to a Roblox place
+    /// until it is linked itself.
+    pub(super) fn save_as(&mut self, path: &std::path::Path, cx: &mut Context<Self>) {
+        let opened = std::mem::replace(&mut self.format, save::Format::of_path(path));
+        if !self.write_to(path, cx) {
+            self.format = opened;
+            return;
+        }
+        let previous = std::mem::replace(&mut self.path, path.to_path_buf());
+        self.folder_colors.copy_place(&previous, path);
+        let _ = self.folder_colors.save();
+        self.title = path
+            .file_name()
+            .map_or_else(
+                || path.display().to_string(),
+                |name| name.to_string_lossy().into_owned(),
+            )
+            .into();
+        self.retitle = true;
+        if let Err(err) = crate::home::remember(crate::home::RecentPlace {
+            path: std::fs::canonicalize(path).unwrap_or(path.to_path_buf()),
+            universe_id: None,
+            place_id: None,
+            name: None,
+            opened: None,
+        }) {
+            self.output
+                .push_warning(&format!("Could not update the Recent list: {err}"));
+        }
+        self.saved();
+        cx.notify();
+    }
+
     /// `RBX_STUDIO_SAVE_AS=<path>`: documented in `save`'s module doc
     /// comment. Applied once, after `Shell::apply_debug_explorer_action`
     /// already ran (see `Shell::new`), so a script can prove Ctrl+S
