@@ -1615,9 +1615,15 @@ Roblox's own engine.
   upload the open place through `rbx_cloud::Client::publish_place` as a new
   version of its linked place; re-running either is simply the next
   version. A file opened from Home already carries its universe/place ids;
-  any other file asks once for a place ID or link (File › Link to Roblox
-  Place… changes it), resolves the universe from it, and remembers the pair
-  in its Recent entry. Success and failure are rows in the Output dock, and
+  any other file picks its game once from a window listing Home's own My
+  Games (the same listing, cache and owner dropdown, the user's and their
+  groups' experiences), which links it to the experience's starting place —
+  Roblox's listings carry no other place — while Home's add-by-place-ID-or-
+  link row links any other place, listed or not (File › Link to Roblox
+  Place… changes it). Every upload is confirmed first in a dialog naming the
+  experience and place and saying what will happen: Publish saves a new
+  version and makes it the one players join, Save saves one without
+  publishing it. Success and failure are rows in the Output dock, and
   a failure also opens a dialog with Roblox's documented reason for the
   status. Browsing and restoring older versions is its own item under
   "What's planned". Roblox's own limit, from `creator-docs`

@@ -6,9 +6,11 @@
   Roblox and Publish to Roblox upload the open place as a new saved or
   live version of its Roblox place, replacing the greyed-out Publish
   placeholder — the Open Cloud client could already do it, the editor just
-  had no way to ask. A place opened from Home publishes back without a
-  question; any other file asks once for a place ID or link and remembers
-  it. A refused upload says why in Roblox's own terms, in a dialog and in
+  had no way to ask. A place opened from Home is already linked; any
+  other file picks its game once from Home's own My Games list (or adds a
+  place by its ID or link) and remembers it. Every upload asks first,
+  naming the experience and place and whether it goes live — an
+  overwrite on Roblox can't be taken back from the editor. A refused upload says why in Roblox's own terms, in a dialog and in
   the Output dock, rather than failing quietly. — @chteau
 - **The Transform tool.** The ribbon's 5th Tools button — Move's arrows,
   Scale's balls and Rotate's rings, all grabbable over the same selection
