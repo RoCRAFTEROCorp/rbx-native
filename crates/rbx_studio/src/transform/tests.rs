@@ -1,7 +1,9 @@
 use glam::{Mat3, Mat4, Vec3};
 use rbx_dom::{CFrameData, Ref, Variant, Vector3Data, WeakDom};
 use rbx_reflection::ReflectionDatabase;
+use rbx_viewer::gizmo;
 
+use super::frame::rigid;
 use super::*;
 
 /// `Targets::read` needs one to tell a `BasePart` from a container it has to
