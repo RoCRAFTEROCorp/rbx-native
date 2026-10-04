@@ -1,7 +1,7 @@
-use gpui_kit::SharedString;
+use gpui_kit::{ClickEvent, Modifiers, MouseClickEvent, MouseDownEvent, SharedString};
 use rbx_dom::Ref;
 
-use super::{defers_press, DraggedInstances};
+use super::{defers_press, press_modifiers, DraggedInstances};
 
 fn name() -> SharedString {
     SharedString::from("Part")
@@ -57,4 +57,18 @@ fn a_plain_press_anywhere_else_selects_at_once() {
     assert!(!defers_press(&selected, Ref::new(3)));
     assert!(!defers_press(&[Ref::new(1)], Ref::new(1)));
     assert!(!defers_press(&[], Ref::new(1)));
+}
+
+#[test]
+fn a_click_reads_the_modifiers_held_at_the_press_not_the_release() {
+    // Ctrl held on the press, let go before the button: still a Ctrl-click.
+    let click = ClickEvent::Mouse(MouseClickEvent {
+        down: MouseDownEvent {
+            modifiers: Modifiers::control(),
+            ..Default::default()
+        },
+        up: Default::default(),
+    });
+
+    assert!(press_modifiers(&click).control);
 }

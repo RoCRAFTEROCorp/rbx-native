@@ -64,6 +64,18 @@ fn defers_press(selected: &[Ref], target: Ref) -> bool {
     selected.len() > 1 && selected.contains(&target)
 }
 
+/// The modifiers held when a click's button went *down*. GPUI's own
+/// `ClickEvent::modifiers` reports the release's, but the press is what
+/// decided whether to defer (see `defers_press`): a `Ctrl`-press whose `Ctrl`
+/// lets go before the button would otherwise read as a plain click and undo
+/// its own add.
+fn press_modifiers(event: &ClickEvent) -> Modifiers {
+    match event {
+        ClickEvent::Mouse(click) => click.down.modifiers,
+        _ => event.modifiers(),
+    }
+}
+
 /// The ghost that follows the cursor while a drag is in flight. GPUI paints it
 /// at the cursor itself, so this only has to say what it looks like.
 pub(super) struct DragPreview {
@@ -184,7 +196,7 @@ pub(super) fn draggable_row(
         .on_click({
             let shell = shell.clone();
             move |event: &ClickEvent, window, cx| {
-                let modifiers = event.modifiers();
+                let modifiers = press_modifiers(event);
                 let plain = !(modifiers.shift || modifiers.control || modifiers.platform);
                 shell.update(cx, |shell, cx| {
                     if plain && defers_press(shell.selection.all(), target) {
