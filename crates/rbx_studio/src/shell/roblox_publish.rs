@@ -220,6 +220,15 @@ impl Shell {
         cx: &mut Context<Self>,
     ) {
         if self.roblox.busy {
+            self.output.push(
+                SOURCE,
+                Feedback::Error(format!(
+                    "{} place {} didn\u{2019}t start: an upload is already in progress.",
+                    verb(mode).0,
+                    target.place_id
+                )),
+            );
+            cx.notify();
             return;
         }
         self.roblox.dialog = None;
