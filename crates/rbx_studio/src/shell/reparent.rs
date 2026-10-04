@@ -76,6 +76,20 @@ fn press_modifiers(event: &ClickEvent) -> Modifiers {
     }
 }
 
+/// Whether a click on `target` should narrow the selection down to it before
+/// whatever its click count does next. This is the other half of
+/// `defers_press`: the plain press it deferred fires no `on_click` of its own
+/// once it grows into a drag, so a plain click that still finds `target`
+/// inside a multi-selection is that deferred press's release, landing here
+/// instead. On a double-click inside the selection this only holds for the
+/// first click — by the second, the first has already narrowed the
+/// selection down to one row, so `defers_press` no longer applies and the
+/// click is free to open it instead.
+fn narrows_on_click(selected: &[Ref], target: Ref, modifiers: Modifiers) -> bool {
+    let plain = !(modifiers.shift || modifiers.control || modifiers.platform);
+    plain && defers_press(selected, target)
+}
+
 /// The ghost that follows the cursor while a drag is in flight. GPUI paints it
 /// at the cursor itself, so this only has to say what it looks like.
 pub(super) struct DragPreview {
@@ -197,9 +211,8 @@ pub(super) fn draggable_row(
             let shell = shell.clone();
             move |event: &ClickEvent, window, cx| {
                 let modifiers = press_modifiers(event);
-                let plain = !(modifiers.shift || modifiers.control || modifiers.platform);
                 shell.update(cx, |shell, cx| {
-                    if plain && defers_press(shell.selection.all(), target) {
+                    if narrows_on_click(shell.selection.all(), target, modifiers) {
                         shell.select_row(target, cx);
                     }
                     if event.click_count() >= 2 {
