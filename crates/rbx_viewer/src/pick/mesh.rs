@@ -137,7 +137,9 @@ impl Meshes {
                 })
             });
             if let Some(pack) = pack {
-                materials.entry(referent).or_insert_with(|| Arc::clone(pack));
+                materials
+                    .entry(referent)
+                    .or_insert_with(|| Arc::clone(pack));
             }
         }
         Meshes::new(resolved.meshes.clone(), textures)

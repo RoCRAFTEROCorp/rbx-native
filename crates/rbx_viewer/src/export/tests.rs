@@ -100,7 +100,11 @@ fn obj_face_indices_continue_across_objects() {
 
     assert_eq!(count(&text, "o "), 2);
     assert!(text.contains("o Red_Brick\n"));
-    let first = exported.meshes.iter().position(|m| m.name == "Red Brick").unwrap();
+    let first = exported
+        .meshes
+        .iter()
+        .position(|m| m.name == "Red Brick")
+        .unwrap();
     let offset = exported.meshes[first].positions.len();
     let second_object = text.split("\no ").nth(2).unwrap();
     let smallest = second_object
@@ -341,7 +345,10 @@ fn a_texture_shared_by_several_parts_is_written_once() {
     assert_eq!(document["images"].as_array().unwrap().len(), 1);
     assert_eq!(document["textures"].as_array().unwrap().len(), 1);
     for material in document["materials"].as_array().unwrap() {
-        assert_eq!(material["pbrMetallicRoughness"]["baseColorTexture"]["index"], 0);
+        assert_eq!(
+            material["pbrMetallicRoughness"]["baseColorTexture"]["index"],
+            0
+        );
     }
     let uri = document["images"][0]["uri"].as_str().unwrap();
     let png = base64::engine::general_purpose::STANDARD
@@ -456,7 +463,10 @@ fn a_surface_appearance_exports_its_four_maps() {
     let document: Value = serde_json::from_str(&gltf(&exported)).unwrap();
     let material = &document["materials"][0];
     let pbr = &material["pbrMetallicRoughness"];
-    assert_eq!(pbr["baseColorFactor"], serde_json::json!([0.5, 1.0, 1.0, 1.0]));
+    assert_eq!(
+        pbr["baseColorFactor"],
+        serde_json::json!([0.5, 1.0, 1.0, 1.0])
+    );
     assert_eq!(pbr["metallicFactor"], 1.0);
     assert_eq!(pbr["roughnessFactor"], 1.0);
     assert!(material.get("alphaMode").is_none());
@@ -507,7 +517,13 @@ fn a_textured_material_is_projected_onto_its_part() {
         Variant::Color3uint8 { r: 255, g: 0, b: 0 },
     )
     .unwrap();
-    let color = image(2, 2, &[200, 50, 50, 255, 90, 40, 40, 255, 90, 40, 40, 255, 200, 50, 50, 255]);
+    let color = image(
+        2,
+        2,
+        &[
+            200, 50, 50, 255, 90, 40, 40, 255, 90, 40, 40, 255, 200, 50, 50, 255,
+        ],
+    );
     let normal = image(1, 1, &[128, 128, 255, 255]);
     let meshes = Meshes::default().with_materials(HashMap::from([(
         brick,
@@ -553,7 +569,10 @@ fn a_textured_material_is_projected_onto_its_part() {
     assert!(primitive["attributes"]["TEXCOORD_0"].is_u64());
     let material = &document["materials"][0];
     assert_eq!(
-        embedded(&document, &material["pbrMetallicRoughness"]["baseColorTexture"]),
+        embedded(
+            &document,
+            &material["pbrMetallicRoughness"]["baseColorTexture"]
+        ),
         exported.textures[mesh.maps.color.unwrap()]
     );
     assert!(material["normalTexture"].is_object());
@@ -616,7 +635,9 @@ fn a_union_exports_its_computed_boolean() {
     );
     // Before its boolean resolves, the box it is drawn as.
     assert_eq!(
-        export(&dom, &Meshes::default(), &[union]).meshes[0].indices.len(),
+        export(&dom, &Meshes::default(), &[union]).meshes[0]
+            .indices
+            .len(),
         36
     );
 }
@@ -649,7 +670,11 @@ fn a_real_place_exports_its_textures_and_unions() {
     let database = ReflectionDatabase::embedded();
     let exported = meshes_of(&dom, &database, &viewer.pick_meshes(), dom.root_refs());
 
-    let textured = exported.meshes.iter().filter(|m| m.maps.color.is_some()).count();
+    let textured = exported
+        .meshes
+        .iter()
+        .filter(|m| m.maps.color.is_some())
+        .count();
     let unions: Vec<_> = dom
         .root_refs()
         .iter()

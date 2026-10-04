@@ -17,7 +17,10 @@ use super::{Export, ExportMesh};
 /// named from inside it.
 pub fn obj_files(export: &Export, stem: &str) -> Vec<(String, Vec<u8>)> {
     let mut files = vec![
-        (format!("{stem}.obj"), obj(&export.meshes, stem).into_bytes()),
+        (
+            format!("{stem}.obj"),
+            obj(&export.meshes, stem).into_bytes(),
+        ),
         (
             format!("{}.mtl", no_spaces(stem)),
             mtl(&export.meshes, stem).into_bytes(),
@@ -26,7 +29,14 @@ pub fn obj_files(export: &Export, stem: &str) -> Vec<(String, Vec<u8>)> {
     let used: BTreeSet<usize> = export
         .meshes
         .iter()
-        .flat_map(|m| [m.maps.color, m.maps.normal, m.maps.metalness, m.maps.roughness])
+        .flat_map(|m| {
+            [
+                m.maps.color,
+                m.maps.normal,
+                m.maps.metalness,
+                m.maps.roughness,
+            ]
+        })
         .flatten()
         .collect();
     for index in used {

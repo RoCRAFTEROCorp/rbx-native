@@ -337,10 +337,10 @@ fn data_maps(
     mesh.maps.roughness = roughness.as_ref().and_then(|map| textures.of(map));
     if metalness.is_some() || roughness.is_some() {
         let pointer = |map: &Option<Arc<Image>>| map.as_ref().map_or(std::ptr::null(), Arc::as_ptr);
-        mesh.maps.metallic_roughness = textures.add(
-            Key::Packed(pointer(metalness), pointer(roughness)),
-            || png(&pack(metalness.as_deref(), roughness.as_deref())),
-        );
+        mesh.maps.metallic_roughness = textures
+            .add(Key::Packed(pointer(metalness), pointer(roughness)), || {
+                png(&pack(metalness.as_deref(), roughness.as_deref()))
+            });
     }
 }
 
@@ -349,7 +349,9 @@ fn data_maps(
 fn overlay(map: &Image, part: [f32; 3]) -> Image {
     let pixels = map
         .pixels
-        .chunks_exact(4)
+        .as_chunks::<4>()
+        .0
+        .iter()
         .flat_map(|texel| {
             let a = f32::from(texel[3]) / 255.0;
             let mix = |channel: usize| {
@@ -385,7 +387,12 @@ fn pack(metalness: Option<&Image>, roughness: Option<&Image>) -> Image {
     let pixels = (0..height)
         .flat_map(|y| {
             (0..width).flat_map(move |x| {
-                [u8::MAX, red(roughness, x, y, 230), red(metalness, x, y, 0), u8::MAX]
+                [
+                    u8::MAX,
+                    red(roughness, x, y, 230),
+                    red(metalness, x, y, 0),
+                    u8::MAX,
+                ]
             })
         })
         .collect();
