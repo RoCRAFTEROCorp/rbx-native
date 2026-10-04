@@ -1,7 +1,7 @@
 use gpui_kit::SharedString;
 use rbx_dom::Ref;
 
-use super::{DraggedInstances, defers_press};
+use super::{defers_press, DraggedInstances};
 
 fn name() -> SharedString {
     SharedString::from("Part")
