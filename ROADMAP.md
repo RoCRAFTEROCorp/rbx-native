@@ -453,10 +453,15 @@ Roblox's own engine.
   - **`Tab` summons the gizmo's handles to the cursor**, as Roblox's
     "Pivot Points - Studio Beta Update: Handle Summoning" post describes
     it: holding `Tab` brings the active tool's handles (Move, Scale,
-    Rotate, and Transform's all three) to the point under the cursor —
-    snapped onto a face's edge or vertex when the cursor is close to one —
-    and releasing it sends them home. Rotate turns the selection about the
-    summoned point; Scale's balls stay "within the bounds of [the]
+    Rotate, and Transform's all three) to the point under the cursor, and
+    releasing it sends them home. Rotate turns the selection about the
+    summoned point, snapped onto a face's edge or vertex when the cursor is
+    within 16 pixels of one and marked with a magenta dot — the threshold
+    and indicator Roblox staff gave in that topic (replies #9 and #14),
+    which also describe the snap for Rotate only ("it doesn't matter
+    precisely where the handles are summoned to for Move"), so Move and
+    Scale don't snap; Transform does, carrying Rotate's rings. The marker's
+    size isn't published. Scale's balls stay "within the bounds of [the]
     selected object", which the post leaves unspecified beyond that and is
     read here as each ball sliding across its own face towards the cursor
     (`rbx_viewer::gizmo::Faces::summoned`). Handles are placed once, at

@@ -13,9 +13,11 @@
   on AZERTY keyboards. — @chteau
 - **Hold `Tab` to summon the gizmo's handles to the cursor.** Studio's
   handle summoning, as Roblox's own DevForum announcement describes it:
-  the active tool's handles come to the point under the cursor — onto a
-  face's edge or vertex when it is close to one — and go home when `Tab`
-  is let go. Rotate turns about the summoned point, and Scale's balls stay
+  the active tool's handles come to the point under the cursor and go
+  home when `Tab` is let go. Rotate turns about the summoned point, snapped
+  onto a face's edge or vertex within Studio's published 16 pixels and
+  marked in magenta (Roblox describes the snap for Rotate only, so Move
+  and Scale don't snap; Transform does, for its rings), and Scale's balls stay
   within the selection's bounds. Move and Transform also gained a small
   grey ball at the gizmo's origin that drags the selection like grabbing
   its body, so summoned handles far from the part can still carry it.
