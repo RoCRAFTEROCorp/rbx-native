@@ -17,8 +17,9 @@ use super::{rigid, surface, transform_normals, transform_points, ExportMesh, Map
 use crate::assets::Image;
 use crate::pick::Pack;
 
-/// One bake's triangles in the part's own studs and the maps they read,
-/// shared by every part with the same shape, size and look.
+/// One page of a bake: its triangles in the part's own studs and the maps
+/// they read. A bake is every page, shared by every part with the same
+/// shape, size and look.
 pub(super) struct Bake {
     positions: Vec<Vec3>,
     normals: Vec<Vec3>,
@@ -90,15 +91,15 @@ pub(super) fn dress(
     }
     if !blended.is_empty() {
         let key = bake_key(&blended, pack, image);
-        let baked = match textures.bakes.get(&key) {
-            Some(baked) => Some(Arc::clone(baked)),
-            None => bake_maps(&blended, pack, image.map(Arc::as_ref), textures).map(|baked| {
-                let baked = Arc::new(baked);
-                textures.bakes.insert(key, Arc::clone(&baked));
-                baked
-            }),
+        let pages = match textures.bakes.get(&key) {
+            Some(pages) => Arc::clone(pages),
+            None => {
+                let pages = Arc::new(bake_maps(&blended, pack, image.map(Arc::as_ref), textures));
+                textures.bakes.insert(key, Arc::clone(&pages));
+                pages
+            }
         };
-        if let Some(baked) = baked {
+        for baked in pages.iter() {
             let rotate = |v: &Vec3| placement.transform_vector3(*v);
             out.push(ExportMesh {
                 indices: (0..baked.positions.len() as u32).collect(),
@@ -150,12 +151,18 @@ fn bake_maps(
     pack: &Pack,
     image: Option<&Image>,
     textures: &mut Textures,
-) -> Option<Bake> {
-    let baked = bake::bake(triangles, pack, image)?;
+) -> Vec<Bake> {
+    bake::bake(triangles, pack, image)
+        .into_iter()
+        .map(|baked| page_maps(baked, pack, image.is_some(), textures))
+        .collect()
+}
+
+fn page_maps(baked: bake::Baked, pack: &Pack, has_image: bool, textures: &mut Textures) -> Bake {
     let [has_color, has_normal, has_metalness, has_roughness] =
         pack.maps.each_ref().map(Option::is_some);
     let mut maps = Maps::default();
-    if has_color || image.is_some() {
+    if has_color || has_image {
         maps.color = textures.fresh(&baked.color);
     }
     if has_normal {
@@ -172,13 +179,13 @@ fn bake_maps(
         let roughness = has_roughness.then_some(&baked.roughness);
         maps.metallic_roughness = textures.fresh(&surface::pack(metalness, roughness));
     }
-    Some(Bake {
+    Bake {
         positions: baked.positions,
         normals: baked.normals,
         tangents: baked.tangents,
         uvs: baked.uvs,
         maps,
-    })
+    }
 }
 
 /// [`project`]'s triangles, in the unit frame the caller's model matrix

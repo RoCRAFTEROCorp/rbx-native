@@ -25,7 +25,7 @@ use glam::{Vec2, Vec3, Vec4};
 use crate::assets::Image;
 use crate::pick::Pack;
 use crate::scene::linear_to_srgb;
-use atlas::{Atlas, Map};
+use atlas::{Map, Page};
 
 /// `renderer/material.wgsl`'s blend constants, which this must match.
 const TRIPLANAR_SHARPNESS: f32 = 6.0;
@@ -60,8 +60,8 @@ pub(super) fn single_axis(triangle: &[Corner; 3]) -> bool {
     })
 }
 
-/// The baked triangles, unshared, in the same studs frame as their corners,
-/// and the four maps every one of them reads through `uvs`.
+/// One page of a bake: its triangles, unshared, in the same studs frame as
+/// their corners, and the four maps every one of them reads through `uvs`.
 #[derive(Debug, Clone, PartialEq)]
 pub(super) struct Baked {
     pub(super) positions: Vec<Vec3>,
@@ -80,14 +80,21 @@ pub(super) struct Baked {
 }
 
 /// Bakes `triangles` (degenerate ones dropped) with `pack` projected and,
-/// where the part has one, `image` multiplied in through each corner's UV.
-pub(super) fn bake(triangles: &[[Corner; 3]], pack: &Pack, image: Option<&Image>) -> Option<Baked> {
+/// where the part has one, `image` multiplied in through each corner's UV,
+/// at no less than the pack's own texel density (or the image's, where
+/// finer). A surface too large for one page spills onto more, a triangle
+/// too large for any page is split until its pieces fit, and the pages are
+/// shaded in parallel.
+pub(super) fn bake(triangles: &[[Corner; 3]], pack: &Pack, image: Option<&Image>) -> Vec<Baked> {
     let charts: Vec<Chart> = triangles.iter().filter_map(Chart::of).collect();
     if charts.is_empty() {
-        return None;
+        return Vec::new();
     }
-    let atlas = Atlas::build(&charts, pack, image);
-    let density = atlas.density;
+    let density = atlas::density(&charts, pack, image);
+    let charts: Vec<Chart> = charts
+        .into_iter()
+        .flat_map(|chart| split(chart, density))
+        .collect();
     let spt = pack.studs_per_tile.max(0.001);
     let [color, normal, metalness, roughness] = &pack.maps;
     let maps = Maps {
@@ -98,16 +105,35 @@ pub(super) fn bake(triangles: &[[Corner; 3]], pack: &Pack, image: Option<&Image>
         image: image.map(|image| Map::decode(image, true)),
         studs_per_tile: spt,
     };
-    let mut out = Out::new(atlas.size);
+    let pages = atlas::pages(&charts, density);
+    let shade = |page: &Page| shade_page(page, &charts, &maps, density);
+    if pages.len() == 1 {
+        return pages.iter().map(shade).collect();
+    }
+    std::thread::scope(|scope| {
+        let handles: Vec<_> = pages
+            .iter()
+            .map(|page| scope.spawn(move || shade(page)))
+            .collect();
+        handles
+            .into_iter()
+            .filter_map(|handle| handle.join().ok())
+            .collect()
+    })
+}
+
+fn shade_page(page: &Page, charts: &[Chart], maps: &Maps, density: f32) -> Baked {
+    let mut out = Out::new(page.size);
     let (mut positions, mut normals, mut tangents, mut uvs) =
         (Vec::new(), Vec::new(), Vec::new(), Vec::new());
-    for (chart, cell) in charts.iter().zip(&atlas.cells) {
+    for (index, cell) in &page.cells {
+        let chart = &charts[*index];
         for (corner, local) in chart.corners.iter().zip(chart.local) {
             let texel = cell.origin + (local - chart.min) * density;
             positions.push(corner.studs);
             normals.push(corner.normal);
             tangents.push(chart.u);
-            uvs.push((texel / atlas.size as f32).to_array());
+            uvs.push((texel / page.size as f32).to_array());
         }
         for y in cell.texels.1.clone() {
             for x in cell.texels.0.clone() {
@@ -118,7 +144,7 @@ pub(super) fn bake(triangles: &[[Corner; 3]], pack: &Pack, image: Option<&Image>
         }
     }
     let [color, normal, metalness, roughness] = out.into_images();
-    Some(Baked {
+    Baked {
         positions,
         normals,
         tangents,
@@ -127,7 +153,31 @@ pub(super) fn bake(triangles: &[[Corner; 3]], pack: &Pack, image: Option<&Image>
         normal,
         metalness,
         roughness,
-    })
+    }
+}
+
+/// `chart`, or its four midpoint subdivisions (recursively) where it would
+/// not fit on one page at `density`. The pieces lie on the same plane, so
+/// the surface is unchanged; every corner attribute is interpolated
+/// linearly, as the GPU interpolates it across the original triangle.
+fn split(chart: Chart, density: f32) -> Vec<Chart> {
+    let (w, h) = atlas::texels(&chart, density);
+    if w <= atlas::PAGE_SIZE && h <= atlas::PAGE_SIZE {
+        return vec![chart];
+    }
+    let [a, b, c] = chart.corners;
+    let mid = |p: Corner, q: Corner| Corner {
+        studs: (p.studs + q.studs) * 0.5,
+        unit_normal: (p.unit_normal + q.unit_normal) * 0.5,
+        normal: (p.normal + q.normal) * 0.5,
+        uv: (p.uv + q.uv) * 0.5,
+    };
+    let (ab, bc, ca) = (mid(a, b), mid(b, c), mid(c, a));
+    [[a, ab, ca], [ab, b, bc], [ca, bc, c], [ab, bc, ca]]
+        .iter()
+        .filter_map(Chart::of)
+        .flat_map(|piece| split(piece, density))
+        .collect()
 }
 
 /// One triangle laid flat: `u` across the image, and each corner's place
@@ -174,15 +224,16 @@ impl Chart {
         Vec3::new(1.0 - wb - wc, wb, wc)
     }
 
-    /// The image's texels per stud across this triangle.
-    fn image_density(&self, image: &Image) -> Option<f32> {
+    /// The image's texels and the studs this triangle covers, both as
+    /// areas.
+    fn image_area(&self, image: &Image) -> Option<(f32, f32)> {
         let [a, b, c] = self
             .corners
             .map(|corner| corner.uv * Vec2::new(image.width as f32, image.height as f32));
         let texels = (b - a).perp_dot(c - a).abs();
         let [la, lb, lc] = self.local;
         let studs = (lb - la).perp_dot(lc - la).abs();
-        (studs > 0.0).then(|| (texels / studs).sqrt())
+        (studs > 0.0).then_some((texels, studs))
     }
 }
 

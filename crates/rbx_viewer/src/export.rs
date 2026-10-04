@@ -214,7 +214,7 @@ struct Textures {
     by_key: HashMap<Key, Option<usize>>,
     /// Each bake once, by a hash of everything it depends on (see
     /// [`packed::bake_key`]).
-    bakes: HashMap<u64, Arc<packed::Bake>>,
+    bakes: HashMap<u64, Arc<Vec<packed::Bake>>>,
 }
 
 #[derive(PartialEq, Eq, Hash)]

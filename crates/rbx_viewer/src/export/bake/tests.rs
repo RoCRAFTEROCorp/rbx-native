@@ -73,7 +73,7 @@ fn a_tilted_facet_bakes_the_three_way_blend() {
         ..corner
     });
 
-    let baked = bake(&[triangle], &pack, None).unwrap();
+    let baked = bake(&[triangle], &pack, None).remove(0);
 
     // Each leg's own projection of the centroid, as `sample_axis` takes it.
     let studs = (triangle[0].studs + triangle[1].studs + triangle[2].studs) / 3.0;
@@ -113,7 +113,7 @@ fn a_flat_normal_map_bakes_flat() {
         &pack(None, Some(flat)),
         None,
     )
-    .unwrap();
+    .remove(0);
 
     let [x, y, z, _] = centroid(&baked, &baked.normal);
     assert!(
@@ -132,7 +132,7 @@ fn baked_tangents_follow_the_chart() {
         &pack(None, None),
         None,
     )
-    .unwrap();
+    .remove(0);
 
     let [a, b, c] = [0, 1, 2].map(|i| (baked.positions[i], Vec2::from(baked.uvs[i])));
     let tangent = baked.tangents[0];
@@ -157,7 +157,7 @@ fn a_mesh_image_multiplies_the_pack() {
         &pack(Some(white), None),
         Some(&half),
     )
-    .unwrap();
+    .remove(0);
 
     let [r, _, _, a] = centroid(&baked, &baked.color);
     assert!((r as i32 - 188).abs() <= 2, "{r}");
@@ -175,7 +175,7 @@ fn charts_are_packed_apart() {
             )
         })
         .collect();
-    let baked = bake(&triangles, &pack(None, None), None).unwrap();
+    let baked = bake(&triangles, &pack(None, None), None).remove(0);
 
     let boxes: Vec<(Vec2, Vec2)> = baked
         .uvs
@@ -199,6 +199,33 @@ fn charts_are_packed_apart() {
                 apart,
                 "charts {min}..{max} and {other_min}..{other_max} overlap"
             );
+        }
+    }
+}
+
+/// A facet far larger than one page bakes at the pack's own density anyway:
+/// it is split and spread over several power-of-two pages, never coarsened.
+#[test]
+fn an_oversized_facet_spills_onto_pages_at_full_density() {
+    let map = image(512, 512, |x, y| [x as u8, y as u8, 0, 255]);
+    let pack = Pack {
+        maps: [Some(map), None, None, None],
+        studs_per_tile: 1.0,
+    };
+    let pages = bake(&[facet(Vec3::ONE, 6.0)], &pack, None);
+
+    assert!(pages.len() > 1, "{} page(s)", pages.len());
+    for page in &pages {
+        let size = page.color.width;
+        assert!(size.is_power_of_two() && size <= atlas::PAGE_SIZE);
+        assert_eq!(page.color.height, size);
+        for triangle in page.uvs.chunks(3).zip(page.positions.chunks(3)) {
+            let (uv, at) = triangle;
+            let uv: Vec<Vec2> = uv.iter().map(|&c| Vec2::from(c) * size as f32).collect();
+            let texels = (uv[1] - uv[0]).perp_dot(uv[2] - uv[0]).abs();
+            let studs = (at[1] - at[0]).cross(at[2] - at[0]).length();
+            let density = (texels / studs).sqrt();
+            assert!((density - 512.0).abs() < 1.0, "{density} texels per stud");
         }
     }
 }

@@ -9,16 +9,14 @@ use super::Chart;
 use crate::assets::Image;
 use crate::pick::Pack;
 
-/// Texels of the surface baked per stud at most: past this a pack's tiles
-/// are sharper than any export needs and the atlas only grows.
-const MAX_DENSITY: f32 = 64.0;
-/// The atlas's side at most, the size most viewers and GPUs take whole.
-// ponytail: one atlas per part, capped; a huge tilted part bakes coarser
-// rather than spilling into a second page.
-pub(super) const MAX_SIZE: u32 = 2048;
+/// One page's side at most, the size every viewer and GPU takes whole. A
+/// part whose charts need more spills onto further pages rather than baking
+/// coarser.
+pub(super) const PAGE_SIZE: u32 = 2048;
 /// Texels of each chart's own surface continued past its edges, so a
-/// filtered or mipmapped read near a seam never reaches a neighbour.
-const PADDING: u32 = 2;
+/// filtered read, and the first few mip levels a viewer builds from the
+/// page, never reach a neighbour.
+pub(super) const PADDING: u32 = 4;
 
 pub(super) struct Cell {
     /// The texel the chart's bounding-box corner lands on.
@@ -27,85 +25,82 @@ pub(super) struct Cell {
     pub(super) texels: (Range<u32>, Range<u32>),
 }
 
-pub(super) struct Atlas {
+/// One square, power-of-two page and the charts on it, by index.
+pub(super) struct Page {
     pub(super) size: u32,
-    pub(super) density: f32,
-    pub(super) cells: Vec<Cell>,
+    pub(super) cells: Vec<(usize, Cell)>,
 }
 
-impl Atlas {
-    /// Lays every chart out at the finest density both the pack and the
-    /// image deserve, coarsening until they fit in [`MAX_SIZE`].
-    pub(super) fn build(charts: &[Chart], pack: &Pack, image: Option<&Image>) -> Atlas {
-        let mut density = wanted_density(charts, pack, image);
-        loop {
-            if let Some(atlas) = Atlas::pack(charts, density) {
-                return atlas;
-            }
-            density *= 0.8;
-        }
-    }
+/// A chart's side in texels at `density`, padding included.
+pub(super) fn texels(chart: &Chart, density: f32) -> (u32, u32) {
+    let texels = (chart.extent * density).ceil();
+    (texels.x as u32 + 2 * PADDING, texels.y as u32 + 2 * PADDING)
+}
 
-    /// Shelf packing, tallest first, in the smallest power-of-two square
-    /// that holds everything; `None` past [`MAX_SIZE`].
-    fn pack(charts: &[Chart], density: f32) -> Option<Atlas> {
-        let sizes: Vec<(u32, u32)> = charts
+/// Every chart laid out at `density` (each fits a page, see
+/// `super::split`): one page in the smallest power-of-two square that holds
+/// them all when [`PAGE_SIZE`] is enough, else full pages filled in turn by
+/// shelves, tallest first, and a last page shrunk to what it holds.
+pub(super) fn pages(charts: &[Chart], density: f32) -> Vec<Page> {
+    let sizes: Vec<(u32, u32)> = charts.iter().map(|chart| texels(chart, density)).collect();
+    let mut order: Vec<usize> = (0..sizes.len()).collect();
+    order.sort_by_key(|&i| std::cmp::Reverse(sizes[i].1));
+    let mut pages = Vec::new();
+    let mut rest: &[usize] = &order;
+    while !rest.is_empty() {
+        let area: u64 = rest
             .iter()
-            .map(|chart| {
-                let texels = (chart.extent * density).ceil();
-                (texels.x as u32 + 2 * PADDING, texels.y as u32 + 2 * PADDING)
-            })
-            .collect();
-        let area: u64 = sizes
-            .iter()
-            .map(|&(w, h)| u64::from(w) * u64::from(h))
+            .map(|&i| u64::from(sizes[i].0) * u64::from(sizes[i].1))
             .sum();
         let mut size = ((area as f64).sqrt().ceil() as u32)
             .next_power_of_two()
-            .max(16);
-        let mut order: Vec<usize> = (0..sizes.len()).collect();
-        order.sort_by_key(|&i| std::cmp::Reverse(sizes[i].1));
-        while size <= MAX_SIZE {
-            if let Some(cells) = shelves(&sizes, &order, size) {
-                return Some(Atlas {
-                    size,
-                    density,
-                    cells,
-                });
+            .clamp(16, PAGE_SIZE);
+        // The smallest page that takes everything left, else a full page
+        // of as much as fits.
+        let (cells, placed) = loop {
+            let (cells, placed) = shelves(&sizes, rest, size);
+            if placed == rest.len() || size == PAGE_SIZE {
+                break (cells, placed);
             }
             size *= 2;
-        }
-        None
+        };
+        pages.push(Page { size, cells });
+        rest = &rest[placed.max(1)..];
     }
+    pages
 }
 
-fn shelves(sizes: &[(u32, u32)], order: &[usize], size: u32) -> Option<Vec<Cell>> {
-    let mut cells: Vec<Option<Cell>> = (0..sizes.len()).map(|_| None).collect();
+/// Shelves `order` onto a `size` page until one no longer fits: the cells
+/// placed, and how many of `order` they are.
+fn shelves(sizes: &[(u32, u32)], order: &[usize], size: u32) -> (Vec<(usize, Cell)>, usize) {
+    let mut cells = Vec::new();
     let (mut x, mut y, mut shelf) = (0, 0, 0);
     for &i in order {
         let (w, h) = sizes[i];
-        if w > size {
-            return None;
-        }
         if x + w > size {
             (x, y, shelf) = (0, y + shelf, 0);
         }
-        if y + h > size {
-            return None;
+        if y + h > size || w > size {
+            break;
         }
-        cells[i] = Some(Cell {
-            origin: Vec2::new((x + PADDING) as f32, (y + PADDING) as f32),
-            texels: (x..x + w, y..y + h),
-        });
+        cells.push((
+            i,
+            Cell {
+                origin: Vec2::new((x + PADDING) as f32, (y + PADDING) as f32),
+                texels: (x..x + w, y..y + h),
+            },
+        ));
         x += w;
         shelf = shelf.max(h);
     }
-    cells.into_iter().collect()
+    let placed = cells.len();
+    (cells, placed)
 }
 
 /// The pack's own texels per stud, or the image's across the mesh where
-/// that is finer, capped at [`MAX_DENSITY`].
-fn wanted_density(charts: &[Chart], pack: &Pack, image: Option<&Image>) -> f32 {
+/// that is finer (its area-weighted mean, so one sliver of a triangle with a
+/// large UV area cannot blow the bake up): never coarser than either.
+pub(super) fn density(charts: &[Chart], pack: &Pack, image: Option<&Image>) -> f32 {
     let pack_density = pack
         .maps
         .iter()
@@ -113,12 +108,19 @@ fn wanted_density(charts: &[Chart], pack: &Pack, image: Option<&Image>) -> f32 {
         .map(|map| map.width as f32 / pack.studs_per_tile.max(0.001))
         .fold(1.0, f32::max);
     let image_density = image.map_or(0.0, |image| {
-        charts
+        let (texels, studs) = charts
             .iter()
-            .filter_map(|chart| chart.image_density(image))
-            .fold(0.0, f32::max)
+            .filter_map(|chart| chart.image_area(image))
+            .fold((0.0, 0.0), |(t, s), (texels, studs)| {
+                (t + texels, s + studs)
+            });
+        if studs > 0.0 {
+            (texels / studs).sqrt()
+        } else {
+            0.0
+        }
     });
-    pack_density.max(image_density).min(MAX_DENSITY)
+    pack_density.max(image_density)
 }
 
 /// One map as the bake reads it: filtered down to the bake's density, as a

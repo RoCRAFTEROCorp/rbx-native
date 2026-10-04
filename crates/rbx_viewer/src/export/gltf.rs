@@ -31,6 +31,9 @@ const ELEMENT_ARRAY_BUFFER: u32 = 34963;
 const FLOAT: u32 = 5126;
 const UNSIGNED_INT: u32 = 5125;
 const TRIANGLES: u32 = 4;
+const LINEAR: u32 = 9729;
+const LINEAR_MIPMAP_LINEAR: u32 = 9987;
+const REPEAT: u32 = 10497;
 
 /// `NEON_HDR` in `renderer/material.wgsl`: how many times its own colour a
 /// Neon surface glows by before the frame is exposed and tone-mapped.
@@ -173,7 +176,7 @@ pub fn gltf(export: &Export) -> String {
         .map(|mesh| material(mesh, &mut texture, &mut used))
         .collect();
     let textures: Vec<Value> = (0..images.len())
-        .map(|index| json!({ "source": index }))
+        .map(|index| json!({ "source": index, "sampler": 0 }))
         .collect();
 
     let mut document = json!({
@@ -198,6 +201,15 @@ pub fn gltf(export: &Export) -> String {
     // The specification forbids an empty array where one may be left out.
     if !images.is_empty() {
         document["textures"] = json!(textures);
+        // Trilinear and repeating, as the viewport samples every map: a
+        // viewer then picks a mip level per pixel the way it does, and a
+        // pack tiled across a face wraps.
+        document["samplers"] = json!([{
+            "magFilter": LINEAR,
+            "minFilter": LINEAR_MIPMAP_LINEAR,
+            "wrapS": REPEAT,
+            "wrapT": REPEAT,
+        }]);
         document["images"] = json!(images);
     }
     if !used.is_empty() {
