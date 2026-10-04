@@ -199,9 +199,8 @@ fn gltf_is_a_valid_two_point_oh_document_with_the_vertices_inline() {
     for (index, mesh) in exported.iter().enumerate() {
         let primitive = &document["meshes"][index]["primitives"][0];
         assert_eq!(primitive["mode"], 4);
-        let position = &document["accessors"][primitive["attributes"]["POSITION"]
-            .as_u64()
-            .unwrap() as usize];
+        let position =
+            &document["accessors"][primitive["attributes"]["POSITION"].as_u64().unwrap() as usize];
         assert_eq!(position["count"], mesh.positions.len());
         assert_eq!(position["componentType"], 5126);
         assert!(position["min"].is_array() && position["max"].is_array());
@@ -221,5 +220,7 @@ fn gltf_is_a_valid_two_point_oh_document_with_the_vertices_inline() {
 
     let blended = exported.iter().position(|m| m.name == "A").unwrap();
     assert_eq!(document["materials"][blended]["alphaMode"], "BLEND");
-    assert!(document["materials"][1 - blended].get("alphaMode").is_none());
+    assert!(document["materials"][1 - blended]
+        .get("alphaMode")
+        .is_none());
 }

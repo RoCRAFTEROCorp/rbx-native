@@ -36,8 +36,18 @@ pub fn gltf(meshes: &[ExportMesh]) -> String {
 
     let mut primitives = Vec::new();
     for mesh in meshes {
-        let positions: Vec<u8> = mesh.positions.iter().flatten().flat_map(|v| v.to_le_bytes()).collect();
-        let normals: Vec<u8> = mesh.normals.iter().flatten().flat_map(|v| v.to_le_bytes()).collect();
+        let positions: Vec<u8> = mesh
+            .positions
+            .iter()
+            .flatten()
+            .flat_map(|v| v.to_le_bytes())
+            .collect();
+        let normals: Vec<u8> = mesh
+            .normals
+            .iter()
+            .flatten()
+            .flat_map(|v| v.to_le_bytes())
+            .collect();
         let indices: Vec<u8> = mesh.indices.iter().flat_map(|i| i.to_le_bytes()).collect();
         let (min, max) = bounds(&mesh.positions);
 
