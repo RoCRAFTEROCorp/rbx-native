@@ -213,8 +213,14 @@ impl Catalog {
     /// The image of one layer's map, `None` where the material has no such map
     /// or it failed to download.
     pub(crate) fn image(&self, layer: usize, kind: MapKind) -> Option<&Image> {
+        self.shared_image(layer, kind).map(Arc::as_ref)
+    }
+
+    /// [`Catalog::image`] as the shared handle itself, for a holder that
+    /// outlives the catalog — an export's (see `crate::pick::Meshes`).
+    pub(crate) fn shared_image(&self, layer: usize, kind: MapKind) -> Option<&Arc<Image>> {
         let reference = self.defs.get(layer)?.maps[kind.index()].as_ref()?;
-        self.images.get(reference).map(Arc::as_ref)
+        self.images.get(reference)
     }
 
     /// Builds the definition a part's `Material`/`MaterialVariantSerialized`

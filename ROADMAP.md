@@ -1129,6 +1129,30 @@ Roblox's own engine.
   `Instance:Clone()` does (the root itself is always copied, and the copy is
   always `Archivable`). Still open: the right-click **Paste Options** ⟩
   **Paste Into At Original Location** the docs mention.
+- [x] **Explorer export** — Save / Export rows on the Explorer row's
+  right-click menu, named as Studio's own are (`creator-docs`):
+  **Save to File…** writes the selection's subtrees as a model file,
+  `.rbxm` (or `.rbxmx` when that is the name picked), through the same
+  serializers Ctrl+S uses — a service included, so `Lighting` saves with
+  its sky and effects; a reference to anything left out of the file is
+  written as nil. **Export Selection…** writes a Wavefront `.obj` (what
+  Studio's own Export Selection writes, per the `MeshPart` reference), and
+  **Export as glTF…** a single self-contained glTF 2.0 file, its buffer
+  inline. Both export every part in the selection as the viewport draws
+  it — procedural shapes and downloaded `MeshPart`/`SpecialMesh` triangles
+  alike, in world space, in studs, and a legacy `UnionOperation` as the
+  boolean this project carves from its original parts — and are greyed
+  when the selection holds no part. Each part's colour goes along as its
+  material (a `.mtl` beside the `.obj`), and a mesh drawn with a
+  `TextureID`/`TextureId` image takes it too: a `.png` the `.mtl` maps,
+  or a PNG data URI inside the glTF. A `MeshPart` wearing a
+  `SurfaceAppearance` takes its four maps (glTF base colour, normal and a
+  packed metallic-roughness texture; `map_Kd`/`map_Bump`/`map_Pm`/`map_Pr`
+  in the `.mtl`), its `Color` tint and its `AlphaMode` as the viewport
+  shades them, an `Overlay` colour map baked over the part's colour since
+  neither format can mix one by its alpha. A part whose `Material` has a
+  texture pack takes the pack, with UVs projected per face the way the
+  viewport tiles it. An image several parts share is written once.
 - [x] Drag-and-drop reparenting in the Explorer tree. Dragging a row
   onto another reparents onto it, the way creator-docs describes
   ("simply drag and drop them onto the new parent") — with a ghost under
@@ -1790,17 +1814,22 @@ Roblox's own engine.
   Luau — the Command Bar and scripts — has `PVInstance:GetPivot()` and
   `PVInstance:PivotTo()` through the same pivot (`rbx_lua::pivot`), with
   `BasePart.PivotOffset` readable and writable like any property.
-- [ ] 📋 **Explorer export**, the half of Explorer DOM editing that did not
-  land with the row affordances above or the search (see "What's been
-  implemented" → Editor).
-  Export from the row's menu: services and the whole place to Roblox
-  (Save/Publish, see below), to a local file; individual instances to
-  `.obj` and `.gltf` — genuinely useful native additions since Studio
-  itself has no built-in mesh export today. Roblox's own roadmap does
-  list glTF export, pushed from Late 2025 to Late 2026 in its
-  [fall 2026 update](https://devforum.roblox.com/t/creator-roadmap-2026-fall-update/4880208),
-  so `.gltf` may become Studio parity rather than an addition. Check what
-  it actually exports once it ships.
+- [ ] 📋 **Whole-place and fuller Explorer export.** Left open by the
+  Explorer row's Save / Export rows (see "What's been implemented" →
+  Editor): the whole place to a local file under a name of its choosing
+  (Studio's File › Save to File / File › Export as glTF, both File-menu
+  items rather than row ones), and services and the place to Roblox
+  (Save/Publish, see below). In the mesh exports a union whose boolean
+  failed, or one baked only as `MeshData` (never decoded here), still
+  exports as its box; a textured mesh whose `Material` also has a pack
+  takes its own image alone (one UV set per part), a material projected
+  across a facet tilted off every axis takes one axis's projection where
+  the viewport blends three, and the procedural materials (Neon, Glass,
+  ForceField) export as their colour.
+  Roblox's own roadmap lists glTF export, pushed from
+  Late 2025 to Late 2026 in its
+  [fall 2026 update](https://devforum.roblox.com/t/creator-roadmap-2026-fall-update/4880208);
+  check what it actually exports once it ships.
 - [ ] 📋 **Save/Publish to Roblox from the editor UI.** The Open Cloud
   client side of this already exists and works —
   `rbx_cloud::Client::publish_place`

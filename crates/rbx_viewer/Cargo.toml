@@ -45,6 +45,9 @@ swash = { version = "0.2", features = ["render"] }
 # Roblox describes a font family as a small JSON file (`fonts/families/*.json`,
 # see `fonts::Family`); already in `Cargo.lock` through `rbx_cloud`.
 serde_json = "1"
+# A `.gltf` export carries its vertex buffer inline as a base64 data URI, so
+# one file is the whole model; already in `Cargo.lock` through `rbx_xml`.
+base64 = "0.22"
 # `std::time::Instant::now` panics on wasm; this is the same type on native
 # and `performance.now()` in a browser. Already in `Cargo.lock` through winit.
 web-time = "1.1"

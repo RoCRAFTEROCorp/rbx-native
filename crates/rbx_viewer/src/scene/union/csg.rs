@@ -267,7 +267,7 @@ fn dominant_axes(normal: [f32; 3]) -> (usize, usize) {
 
 /// The unit mesh a leaf's shape draws as, the same generators the renderer
 /// instances (`renderer::geometry`), so a carved sphere matches a drawn one.
-fn unit_mesh(kind: ShapeKind) -> MeshData {
+pub(crate) fn unit_mesh(kind: ShapeKind) -> MeshData {
     match kind {
         ShapeKind::Box => shapes::block(),
         ShapeKind::Ball => shapes::sphere(),
