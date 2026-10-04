@@ -29,7 +29,7 @@ impl Meshes {
         Meshes(Arc::new(meshes))
     }
 
-    pub(super) fn get(&self, asset: &AssetRef) -> Option<&Arc<Mesh>> {
+    pub(crate) fn get(&self, asset: &AssetRef) -> Option<&Arc<Mesh>> {
         self.0.get(asset)
     }
 }

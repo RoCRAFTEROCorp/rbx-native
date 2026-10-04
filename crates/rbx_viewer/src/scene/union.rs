@@ -26,6 +26,7 @@ use crate::textures::asset_uri;
 use super::material::{Catalog, Slot};
 use super::{Part, ResolvedInstance};
 
+pub(crate) use csg::unit_mesh;
 pub(super) use patch::replan;
 
 const PART_OPERATION: &str = "PartOperation";

@@ -67,12 +67,12 @@ use resync::Standing;
 pub(crate) use resync::{Drawn, PartSync};
 pub(crate) use shape::{resolve as resolve_shape, ShapeKind};
 pub(crate) use trail::{segments as trail_segments, Recorder as TrailRecorder, Trail};
-pub(crate) use union::Evaluations as UnionEvaluations;
+pub(crate) use union::{unit_mesh, Evaluations as UnionEvaluations};
 
 use crate::assets::Image;
 
 // Roblox's own "Medium stone grey", the default part color.
-const FALLBACK_COLOR: [u8; 3] = [163, 162, 165];
+pub(crate) const FALLBACK_COLOR: [u8; 3] = [163, 162, 165];
 const PART_ANCESTOR: &str = "BasePart";
 // Terrain is a BasePart whose `size` covers the whole voxel region, so drawing it as a
 // box would swallow the rest of the scene and wreck the camera framing.
