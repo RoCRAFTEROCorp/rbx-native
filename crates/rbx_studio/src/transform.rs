@@ -521,6 +521,13 @@ impl Targets {
         gizmo::scale_box(self.0.iter().map(|target| target.model))
     }
 
+    /// The same box squared to the pivot, as the renderer draws Edit
+    /// Pivot's hotspots on it — see `rbx_viewer::gizmo::box_along`.
+    pub(crate) fn pivot_box(&self) -> Option<Mat4> {
+        let axes = Mat3::from_mat4(self.1?);
+        gizmo::box_along(self.0.iter().map(|target| target.model), axes)
+    }
+
     /// Every part scaled by the same `factor` about `pivot`, from where it
     /// stood in `held` — the selection as it was when the handle was grabbed,
     /// so a whole gesture is one absolute factor rather than a running

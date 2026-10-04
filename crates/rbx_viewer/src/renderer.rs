@@ -536,7 +536,9 @@ impl Renderer {
         Some(match gizmo.kind {
             Kind::Rotate => Shape::Rotate(handles),
             Kind::Pivot => {
-                let scaled = self.selection.scale_box().unwrap_or(model);
+                // Squared to the pivot, so the hotspots turn with it.
+                let axes = Mat3::from_mat4(gizmo.pivot?);
+                let scaled = self.selection.box_along(axes).unwrap_or(model);
                 let faces = Faces::new(scaled, pose, orthographic);
                 Shape::Pivot(handles, gizmo.hotspots.then_some((faces, gizmo.snapped)))
             }

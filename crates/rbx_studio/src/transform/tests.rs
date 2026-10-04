@@ -777,3 +777,31 @@ fn a_cframe_and_its_matrix_round_trip() {
     assert_eq!(matrix.w_axis.truncate(), Vec3::new(1.0, 2.0, 3.0));
     assert_eq!(cframe(matrix), frame);
 }
+
+/// Edit Pivot's hotspots stand on the model's box squared to its pivot:
+/// turned a quarter about Y, the box's own X runs along the world's -Z, so
+/// it is 1 long that way and 5 along its Z (cubes at x = 0 and x = 4).
+#[test]
+fn a_models_hotspot_box_turns_with_its_pivot() {
+    let (mut dom, model, ..) = model_of_two_parts();
+    let quarter = CFrameData {
+        position: Vector3Data {
+            x: 2.0,
+            y: 0.0,
+            z: 0.0,
+        },
+        rotation: [0.0, 0.0, 1.0, 0.0, 1.0, 0.0, -1.0, 0.0, 0.0],
+    };
+    dom.set_property(model, "WorldPivot", Variant::CFrame(quarter))
+        .unwrap();
+    let targets = Targets::read(&dom, &database(), &[model]);
+
+    let boxed = targets.pivot_box().unwrap();
+    let axes = Mat3::from_mat4(targets.pivot().unwrap());
+    assert!((boxed.w_axis.truncate() - Vec3::new(2.0, 0.0, 0.0)).length() < 1e-5);
+    assert!((boxed.x_axis.truncate() - axes.x_axis).length() < 1e-5);
+    assert!((boxed.z_axis.truncate() - axes.z_axis * 5.0).length() < 1e-5);
+    // Without a pivot of its own to square to, there is none.
+    let several = Targets::read(&dom, &database(), dom.get(model).unwrap().children());
+    assert_eq!(several.pivot_box(), None);
+}

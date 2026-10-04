@@ -53,7 +53,7 @@ impl WorkspaceView {
         self.drag = Some(drag);
         let hotspots =
             matches!(drag, Drag::Plane { .. }) && self.transform.pivot_snap && !modifiers.shift;
-        let faces = self.faces().filter(|_| hotspots);
+        let faces = self.hotspot_faces().filter(|_| hotspots);
         let (moved, snapped) = stepped(pivot, change, faces.as_ref(), ray);
         self.snapped = snapped;
         if moved == pivot {
@@ -64,6 +64,16 @@ impl WorkspaceView {
         self.refresh_gizmo();
         let first = !std::mem::replace(&mut self.dragged, true);
         cx.emit(ViewportAction::Pivot { to: moved, first });
+    }
+
+    /// The box the hotspots stand on: the selection's, squared to its pivot
+    /// as the renderer draws it (see `transform::Targets::pivot_box`).
+    fn hotspot_faces(&self) -> Option<Faces> {
+        Some(Faces::new(
+            self.targets.pivot_box()?,
+            self.view?,
+            self.orthographic,
+        ))
     }
 }
 

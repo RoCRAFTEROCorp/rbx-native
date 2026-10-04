@@ -376,13 +376,23 @@ pub fn centre_of(models: impl IntoIterator<Item = Mat4>) -> Option<Vec3> {
 /// based on the center of its bounding box" — and the bounding box it means
 /// is the world-aligned one `bounds_of` computes.
 pub fn scale_box(models: impl IntoIterator<Item = Mat4>) -> Option<Mat4> {
+    box_along(models, Mat3::IDENTITY)
+}
+
+/// [`scale_box`] with a group's box squared to `axes` (a rotation) rather
+/// than to the world's — how `Model:GetBoundingBox` squares a model's box to
+/// its pivot, and `rbx_lua::pivot::reset` with it. What Edit Pivot's
+/// hotspots stand on, so they turn with the pivot.
+pub fn box_along(models: impl IntoIterator<Item = Mat4>, axes: Mat3) -> Option<Mat4> {
     let models: Vec<Mat4> = models.into_iter().collect();
     match models.as_slice() {
         [] => None,
         [only] => Some(*only),
         many => {
-            let (min, max) = bounds_of(many.iter().copied())?;
-            Some(Mat4::from_translation((min + max) * 0.5) * Mat4::from_scale(max - min))
+            let turn = Mat4::from_mat3(axes);
+            let into = turn.transpose();
+            let (min, max) = bounds_of(many.iter().map(|model| into * *model))?;
+            Some(turn * Mat4::from_translation((min + max) * 0.5) * Mat4::from_scale(max - min))
         }
     }
 }

@@ -17,7 +17,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use glam::{Mat4, Vec3};
+use glam::{Mat3, Mat4, Vec3};
 use rbx_dom::Ref;
 use wgpu::util::DeviceExt;
 
@@ -278,11 +278,17 @@ impl Selection {
 
     /// The box the Scale handles stand on — see `gizmo::scale_box`.
     pub(super) fn scale_box(&self) -> Option<Mat4> {
-        gizmo::scale_box(
+        self.box_along(Mat3::IDENTITY)
+    }
+
+    /// The same box squared to `axes` — see `gizmo::box_along`.
+    pub(super) fn box_along(&self, axes: Mat3) -> Option<Mat4> {
+        gizmo::box_along(
             self.outline
                 .selected
                 .iter()
                 .flat_map(|entry| outline::models_of(&self.outline.placements, entry)),
+            axes,
         )
     }
 
