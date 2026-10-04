@@ -277,9 +277,12 @@ impl Selection {
         anchor_of(&self.outline.placements, &self.outline.selected)
     }
 
-    /// The box the Scale handles stand on — see `gizmo::scale_box`.
-    pub(super) fn scale_box(&self) -> Option<Mat4> {
-        self.box_along(Mat3::IDENTITY)
+    /// The box the Scale handles stand on — see `gizmo::scale_box`. `pivot`
+    /// is the selection's, and goes unused for a lone part, whose own box
+    /// Studio scales whatever its `PivotOffset`.
+    pub(super) fn scale_box(&self, pivot: Option<Mat4>, local: bool) -> Option<Mat4> {
+        let lone_part = matches!(self.outline.selected.as_slice(), [only] if only.is_part());
+        gizmo::scale_box(self.models(), pivot.filter(|_| !lone_part), local)
     }
 
     /// The same box squared to `axes` — see `gizmo::box_along`.

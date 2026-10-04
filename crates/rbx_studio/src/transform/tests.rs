@@ -581,7 +581,11 @@ fn dragging_a_model_carries_the_parts_of_a_model_nested_inside_it() {
     let deep = unit_cube_at(&mut dom, Some(inner), 9.0);
 
     let mut targets = Targets::read(&dom, &database(), &[outer]);
-    assert_eq!(targets.len(), 2, "the nested model's part is a target too");
+    assert_eq!(
+        targets.iter().count(),
+        2,
+        "the nested model's part is a target too"
+    );
 
     let moves = targets.translate(Vec3::new(0.0, 5.0, 0.0));
     let buried = moves
@@ -636,6 +640,7 @@ fn a_group_scales_every_part_and_its_offset_from_the_pivot_by_one_factor() {
             part_at(2, Vec3::new(2.0, 0.0, 0.0), Vec3::splat(2.0)),
         ],
         None,
+        false,
     );
     let mut targets = held.clone();
     let pivot = Vec3::new(-3.0, 0.0, 0.0);
@@ -661,7 +666,7 @@ fn a_group_scales_every_part_and_its_offset_from_the_pivot_by_one_factor() {
 
 #[test]
 fn a_group_scale_is_absolute_from_the_grab_not_a_running_product() {
-    let held = Targets(vec![part_at(1, Vec3::ZERO, Vec3::splat(2.0))], None);
+    let held = Targets(vec![part_at(1, Vec3::ZERO, Vec3::splat(2.0))], None, false);
     let mut targets = held.clone();
     targets.scale_about(&held, Vec3::ZERO, 3.0);
     targets.scale_about(&held, Vec3::ZERO, 1.5);
@@ -676,6 +681,7 @@ fn a_group_factor_stops_where_any_part_would_leave_the_size_range() {
             part_at(2, Vec3::ZERO, Vec3::new(10.0, 1.0, 1.0)),
         ],
         None,
+        false,
     );
     // The 10-stud part hits a 20-stud ceiling at a factor of 2, however far
     // the handle is pulled.
@@ -695,6 +701,7 @@ fn a_group_rotates_about_its_centre_carrying_each_part_round_with_it() {
             part_at(2, Vec3::new(-4.0, 0.0, 0.0), Vec3::splat(2.0)),
         ],
         None,
+        false,
     );
     let mut targets = held.clone();
     let quarter = Mat3::from_axis_angle(Vec3::Y, std::f32::consts::FRAC_PI_2);
@@ -715,7 +722,11 @@ fn a_group_rotates_about_its_centre_carrying_each_part_round_with_it() {
 /// A pivot two studs above a lone part, which every gesture carries along.
 fn with_pivot() -> Targets {
     let pivot = Mat4::from_translation(Vec3::new(0.0, 2.0, 0.0));
-    Targets(vec![part_at(1, Vec3::ZERO, Vec3::splat(2.0))], Some(pivot))
+    Targets(
+        vec![part_at(1, Vec3::ZERO, Vec3::splat(2.0))],
+        Some(pivot),
+        true,
+    )
 }
 
 fn pivot_at(targets: &Targets) -> Vec3 {
@@ -756,11 +767,16 @@ fn a_scale_carries_the_pivot_out_from_the_point_it_scales_about() {
 }
 
 #[test]
-fn a_lone_parts_pivot_rides_along_with_its_resize() {
+fn a_lone_parts_pivot_moves_as_a_scaled_point_of_its_resize() {
     let mut targets = with_pivot();
     let anchor = targets.anchor().unwrap();
+    // Doubled in Y with its bottom face (y = -1) held: the pivot two studs
+    // above the centre stretches to four, standing at y = 5 — where y = 2
+    // lands when everything is scaled by two about y = -1.
     targets.set_anchor(anchor.resized_to(Vec3::new(2.0, 4.0, 2.0), Vec3::new(0.0, 1.0, 0.0)));
-    assert!((pivot_at(&targets) - Vec3::new(0.0, 3.0, 0.0)).length() < 1e-5);
+    assert!((pivot_at(&targets) - Vec3::new(0.0, 5.0, 0.0)).length() < 1e-5);
+    // Its turn is its own, untouched by a resize.
+    assert_eq!(Mat3::from_mat4(targets.pivot().unwrap()), Mat3::IDENTITY);
 }
 
 #[test]

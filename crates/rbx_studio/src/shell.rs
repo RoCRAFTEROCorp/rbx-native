@@ -215,6 +215,8 @@ pub(crate) struct Shell {
     settings_window: Option<WindowHandle<gpui_kit::component::Root>>,
     /// Script Templates, while open — see `templates_window`.
     templates_window: Option<WindowHandle<gpui_kit::component::Root>>,
+    /// Version History, while open — see `roblox_publish::history`.
+    version_history: Option<WindowHandle<gpui_kit::component::Root>>,
     /// Install from GitHub's progress, kept here so it outlives Settings.
     theme_install: settings_window::ThemeInstall,
     /// The Explorer's type-ahead buffer — see `shell::tree_keys`.
@@ -640,6 +642,7 @@ impl Shell {
             argon_diff: None,
             settings_window: None,
             templates_window: None,
+            version_history: None,
             theme_install: settings_window::ThemeInstall::Idle,
             tree_focus_handle,
             typeahead: tree_keys::Typeahead::default(),

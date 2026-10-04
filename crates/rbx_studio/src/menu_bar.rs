@@ -53,6 +53,7 @@ actions!(
         MenuSaveToRoblox,
         MenuPublishToRoblox,
         MenuLinkRobloxPlace,
+        MenuVersionHistory,
         MenuOpenAutoSaves,
         MenuStudioSettings,
         MenuScriptTemplates,
@@ -173,6 +174,9 @@ fn menus(templates: &[Template]) -> Vec<OwnedMenu> {
                 MenuItem::action("Save to Roblox", MenuSaveToRoblox),
                 MenuItem::action("Publish to Roblox", MenuPublishToRoblox),
                 MenuItem::action("Link to Roblox Place…", MenuLinkRobloxPlace),
+                // Studio's lives under Window; this bar has none, and it
+                // belongs with the uploads it browses and restores.
+                MenuItem::action("Version History…", MenuVersionHistory),
                 MenuItem::separator(),
                 // Studio files this under File › Advanced; this bar draws
                 // no submenus (`popup`), so it sits flat, under Studio's

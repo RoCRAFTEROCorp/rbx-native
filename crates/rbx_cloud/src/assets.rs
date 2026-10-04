@@ -72,11 +72,14 @@ impl Client {
     }
 
     pub fn asset_with_key(&self, asset_id: u64) -> Result<AssetContent, CloudError> {
-        let url = format!("{KEYED_URL}/{asset_id}");
-        let response = self.get_raw(&url, true, true)?;
+        self.keyed_delivery(&format!("{KEYED_URL}/{asset_id}"))
+    }
+
+    fn keyed_delivery(&self, url: &str) -> Result<AssetContent, CloudError> {
+        let response = self.get_raw(url, true, true)?;
         if !(200..300).contains(&response.status) {
             return Err(error::error_for_status(
-                &url,
+                url,
                 response.status,
                 &response.headers,
             ));
@@ -88,14 +91,32 @@ impl Client {
     }
 
     pub fn download_place(&self, place_id: u64) -> Result<Vec<u8>, CloudError> {
-        let content = self.asset(place_id)?;
-        // Binary places start `<roblox!`; XML places start `<roblox `; both
-        // share the `<roblox` prefix, so one check covers either format.
-        if content.bytes.starts_with(b"<roblox") {
-            Ok(content.bytes)
-        } else {
-            Err(CloudError::NotAPlace)
-        }
+        place_bytes(self.asset(place_id)?)
+    }
+
+    /// One saved version of a place (see `Client::place_versions`), always
+    /// through the key: a place's older versions are never public, and the
+    /// anonymous route can't name a version for an Open Cloud key anyway.
+    pub fn download_place_version(
+        &self,
+        place_id: u64,
+        version: u64,
+    ) -> Result<Vec<u8>, CloudError> {
+        place_bytes(self.keyed_delivery(&versioned_url(place_id, version))?)
+    }
+}
+
+fn versioned_url(place_id: u64, version: u64) -> String {
+    format!("{KEYED_URL}/{place_id}/version/{version}")
+}
+
+fn place_bytes(content: AssetContent) -> Result<Vec<u8>, CloudError> {
+    // Binary places start `<roblox!`; XML places start `<roblox `; both
+    // share the `<roblox` prefix, so one check covers either format.
+    if content.bytes.starts_with(b"<roblox") {
+        Ok(content.bytes)
+    } else {
+        Err(CloudError::NotAPlace)
     }
 }
 
@@ -259,6 +280,27 @@ mod tests {
 
         assert!(!message.contains("sig=secret"), "{message}");
         assert!(message.contains("not a string"), "{message}");
+    }
+
+    #[test]
+    fn a_version_is_fetched_from_the_keyed_route_with_its_number() {
+        assert_eq!(
+            versioned_url(17675488706, 409),
+            "https://apis.roblox.com/asset-delivery-api/v1/assetId/17675488706/version/409"
+        );
+    }
+
+    #[test]
+    fn only_place_bytes_pass_as_a_place() {
+        let content = |bytes: &[u8]| AssetContent {
+            bytes: bytes.to_vec(),
+            asset_type_id: Some(9),
+        };
+        assert!(place_bytes(content(b"<roblox!rest")).is_ok());
+        assert!(matches!(
+            place_bytes(content(b"\x89PNG")),
+            Err(CloudError::NotAPlace)
+        ));
     }
 
     #[test]

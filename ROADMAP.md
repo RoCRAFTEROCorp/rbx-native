@@ -385,8 +385,9 @@ Roblox's own engine.
   same `transform::Targets` machinery multi-select already used, and
   `Alt`/`⌥`-click still reaches one specific part inside the model and
   gizmos it with its own oriented box. One derivation
-  (`rbx_viewer::gizmo::bounds_of`) feeds the outline, the gizmo's centre
-  and the Scale handles' box alike, and the Align tool's own **Selection
+  (`rbx_viewer::gizmo::bounds_of`) feeds the outline and the gizmo's
+  centre alike (the Scale handles stand on the pivot's own box instead,
+  see "Pivot tools follow-ups" under Renderer), and the Align tool's own **Selection
   Bounds** agrees with it on the world axes. The outline itself is
   squared to the model's pivot (the `PrimaryPart`'s, or the `WorldPivot`)
   the way `Model:GetBoundingBox` orients Studio's box, so it turns with
@@ -504,8 +505,23 @@ Roblox's own engine.
   does and moves the instance the way `PivotTo` does (see Editor), and
   Luau — the Command Bar and scripts — has `PVInstance:GetPivot()` and
   `PVInstance:PivotTo()` through the same pivot (`rbx_lua::pivot`), with
-  `BasePart.PivotOffset` readable and writable like any property. What is
-  still open is "What's planned" → Renderer's Pivot tools follow-ups.
+  `BasePart.PivotOffset` readable and writable like any property. Scale's
+  side of it is the next bullet.
+- [x] **Pivot tools follow-ups**, the part of Studio's pivot behaviour
+  (`studio/pivot-tools.md`) the Edit Pivot tool did not bring: Scale's
+  handles stand on the pivot and scale about it, matching Studio's own
+  `ScaleDragger` (its `ExtrudeHandles` and `DraggerSchemaCore`, read from
+  the client's disassembled built-in plugin). A model's balls stand on its
+  box squared to its pivot in Local space, or on the world axes anchored
+  at the pivot in World space, grown to hold the pivot
+  (`rbx_viewer::gizmo::scale_box`); a lone part keeps its own box, its
+  `PivotOffset` left out. A pull scales the whole model by one factor from
+  the opposite face, its pivot moving as one more scaled point; `Ctrl`
+  scales about the pivot instead, the pull doubled as Studio doubles it,
+  and is re-read on every move, the drag measured afresh when it changes
+  so the model never jumps. A model of one part scales as a model, and a
+  resized part's `PivotOffset` stretches with its `Size`, as Studio's
+  fix-up does.
 
 ### Editor (`rbx_studio`, binary `rbxstudio`)
 - [x] Explorer: this project's own flat, from-scratch class icon kit
@@ -1778,13 +1794,33 @@ Roblox's own engine.
   version and makes it the one players join, Save saves one without
   publishing it. Success and failure are rows in the Output dock, and
   a failure also opens a dialog with Roblox's documented reason for the
-  status. Browsing and restoring older versions is its own item under
-  "What's planned". Roblox's own limit, from `creator-docs`
+  status. Browsing and restoring older versions is File › Version
+  History, the next bullet. Roblox's own limit, from `creator-docs`
   (`cloud/guides/usage-place-publishing.md`): this API does **not** update
   `EditableImage`, `EditableMesh`, `PartOperation` (unions),
   `SurfaceAppearance` or `BaseWrap` instances — edits to those only go live
   when published from Roblox Studio. A successful upload of a place holding
   any of them adds a warning row to the Output dock saying so.
+- [x] **Place version history (browse and restore).** File › Version
+  History… lists the linked place's saved and published versions, newest
+  first, fifty at a time with Load more, through
+  `GET /place-version-history-api/v1/{placeId}/history` and
+  `.../contributors` (`rbx_cloud::Client::place_versions`/
+  `place_contributors`, scope `universe.place:read`): each row shows the
+  version number, the UTC date, who saved it (names resolved in one
+  `users.roblox.com/v1/users` batch), its name and notes when it has them,
+  and whether it was published; one pill per contributor filters the list
+  to their versions. **Open** downloads that version through the keyed
+  asset-delivery route with `/version/{n}` and opens it, unlinked, in a new
+  editor — Studio's Open Local Copy. **Restore** uploads that version's
+  file as a new version of the place, which is what Roblox's own restore
+  does (`creator-docs`, `projects/version-history.md`; Open Cloud has no
+  revert call): Restore only saves it, as Roblox's does, and Restore and
+  publish also makes it live. A restore is asked first, in the same
+  confirmation dialog as every upload; both actions land as rows in the
+  Output dock. An unlinked file
+  links its place from the window through the same game picker, and the
+  window follows a relink or an upload from the File menu.
 
 ### Platform
 - [x] Linux (X11) — the daily-driven target.
@@ -1911,16 +1947,6 @@ Roblox's own engine.
   above existing first regardless of which direction it takes.
 
 ### Renderer
-- [ ] 📋 **Pivot tools follow-ups**, the part of Studio's pivot behaviour
-  (`studio/pivot-tools.md`) the Edit Pivot tool and its follow-up passes
-  did not bring: Scale's handles still stand on the world-aligned box and
-  scale about it rather than about the pivot.
-- [ ] 📋 **Place version history (browse and restore).** Browsing and
-  restoring an older saved/published version of a place, not just writing
-  a new one (File › Save/Publish to Roblox, above, already does that). A
-  separate Open Cloud surface from the publish endpoint —
-  `GET /place-version-history-api/v1/{placeId}/history` and
-  `.../contributors` — and not yet wired into `rbx_cloud` at all.
 - [ ] 📋 **Export and draw unions baked only as `MeshData`.** A union
   whose only geometry is a baked `MeshData`/CSGMDL blob — no `ChildData`
   inline or behind its `AssetId` (asset 305197512, 7 instances in

@@ -3,6 +3,7 @@ use gpui_kit::{Action, OwnedMenuItem};
 use super::{
     menus, MenuExportGltf, MenuInsertTemplate, MenuLinkRobloxPlace, MenuOpenAutoSaves,
     MenuPlaceholder, MenuPublishToRoblox, MenuSave, MenuSaveToFile, MenuSaveToRoblox,
+    MenuVersionHistory,
 };
 use crate::script_templates::Template;
 
@@ -105,6 +106,7 @@ fn file_saves_and_publishes_to_roblox_as_two_live_commands() {
     assert!(live("Save to Roblox", &MenuSaveToRoblox));
     assert!(live("Publish to Roblox", &MenuPublishToRoblox));
     assert!(live("Link to Roblox Place\u{2026}", &MenuLinkRobloxPlace));
+    assert!(live("Version History\u{2026}", &MenuVersionHistory));
     // The whole place to a local file of the user's naming, and as glTF:
     // live, and neither one Ctrl+S's own Save.
     assert!(live("Save to File", &MenuSave));

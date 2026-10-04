@@ -52,7 +52,8 @@ pub const PERMISSIONS: &[Permission] = &[
     // The Inventory API's CREATED_PLACE listing: the one way an unrestricted
     // key reaches the owner's private experiences, so without it My Games
     // silently misses them. Required, unlike the optional scopes below,
-    // which only switch on features this editor doesn't have yet.
+    // each of which only switches one feature on (Version History) or
+    // one this editor doesn't have yet.
     required(
         "user.inventory-item:read",
         "List private experiences on Home",
