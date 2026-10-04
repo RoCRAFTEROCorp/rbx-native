@@ -502,7 +502,10 @@ fn the_origin_ball_is_grabbed_at_the_origin_and_nowhere_near_an_arm() {
     assert_eq!(handles.grab(looking(0.3, 0.0)), Some(Axis::X));
     // An arm pointing nearly at the eye is drawn right over the ball, so both
     // answer dead on — which is why the view tries the arms first.
-    let tilted = Ray::new(Vec3::new(1.0, 0.0, 10.0), Vec3::new(-1.0, 0.0, -10.0).normalize());
+    let tilted = Ray::new(
+        Vec3::new(1.0, 0.0, 10.0),
+        Vec3::new(-1.0, 0.0, -10.0).normalize(),
+    );
     assert!(handles.grab_origin(tilted));
     assert_eq!(handles.grab(tilted), Some(Axis::Z));
     // Behind the eye is not under the cursor.

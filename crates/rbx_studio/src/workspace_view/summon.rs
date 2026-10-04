@@ -32,8 +32,8 @@ use gpui_kit::{Context, Window};
 use rbx_viewer::gizmo::{self, Gizmo};
 use rbx_viewer::pick::{self, Ray};
 
-use crate::dragger::{handle_scale, pixel_size, Dot};
 use crate::dragger::surface::{SurfaceFrame, TargetKind};
+use crate::dragger::{handle_scale, pixel_size, Dot};
 use crate::transform::Tool;
 
 use super::gizmo::Drag;
