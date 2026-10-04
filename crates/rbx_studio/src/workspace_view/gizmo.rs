@@ -272,11 +272,6 @@ impl WorkspaceView {
         let extend = extends_selection(modifiers);
         self.measure_from_part();
         if self.transform.drags() {
-            // The free-drag ball sits innermost of all, at the origin.
-            if let Some(drag) = self.grab_origin(ray) {
-                self.begin(drag, cx);
-                return;
-            }
             // A handle is the gizmo's own, drawn over everything: grabbing
             // one needs no second opinion.
             if let Some(drag) = self.grab_handle(ray, modifiers.alt) {
@@ -296,6 +291,13 @@ impl WorkspaceView {
             // never with `Alt` or an extend modifier, which ask to change
             // the selection, not to move it.
             if !cycling && !extend {
+                // The free-drag ball is a body grab too, so it yields to
+                // the same modifiers — and to any handle: an arrow pointing
+                // nearly at the camera is drawn right over it.
+                if let Some(drag) = self.grab_origin(ray) {
+                    self.begin(drag, cx);
+                    return;
+                }
                 self.pending_grab = self.grab_body(ray, None).map(|_| ray);
             }
         }
