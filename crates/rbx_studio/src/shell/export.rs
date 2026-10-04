@@ -131,20 +131,29 @@ impl Shell {
             Export::Gltf => match workspace(&self.dom) {
                 Some(workspace) => vec![workspace],
                 None => {
-                    self.report_export(Err("nothing to export: the place has no Workspace".into()), cx);
+                    self.report_export(
+                        Err("nothing to export: the place has no Workspace".into()),
+                        cx,
+                    );
                     return;
                 }
             },
             _ => self.dom.root_refs().to_vec(),
         };
-        let name = self
-            .path
-            .file_stem()
-            .map_or_else(|| "Place".to_owned(), |stem| stem.to_string_lossy().into_owned());
+        let name = self.path.file_stem().map_or_else(
+            || "Place".to_owned(),
+            |stem| stem.to_string_lossy().into_owned(),
+        );
         self.ask_and_export(kind, roots, &name, cx);
     }
 
-    fn ask_and_export(&mut self, kind: Export, roots: Vec<Ref>, name: &str, cx: &mut Context<Self>) {
+    fn ask_and_export(
+        &mut self,
+        kind: Export,
+        roots: Vec<Ref>,
+        name: &str,
+        cx: &mut Context<Self>,
+    ) {
         let extension = match (kind, self.format) {
             (Export::Place, Format::Xml) => "rbxlx",
             _ => kind.extension(),

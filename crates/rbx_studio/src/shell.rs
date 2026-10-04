@@ -42,9 +42,9 @@ mod roblox_publish;
 mod roving;
 
 pub(crate) use chrome::panel_topbar;
+pub(crate) use export::Export;
 pub(crate) use layout::{edge_from_key, edge_key, Edge, Panel, SavedEdge, SavedGroup, SavedLayout};
 pub(crate) use roving::install as install_key_bindings;
-pub(crate) use export::Export;
 mod tree_keys;
 
 mod argon_dock;

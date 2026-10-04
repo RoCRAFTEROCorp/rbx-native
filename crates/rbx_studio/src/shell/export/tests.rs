@@ -150,13 +150,25 @@ fn export_as_gltf_of_the_place_is_rooted_at_workspace() {
             part,
             "CFrame",
             Variant::CFrame(rbx_dom::CFrameData {
-                position: rbx_dom::Vector3Data { x: 0.0, y: 0.0, z: 0.0 },
+                position: rbx_dom::Vector3Data {
+                    x: 0.0,
+                    y: 0.0,
+                    z: 0.0,
+                },
                 rotation: [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0],
             }),
         )
         .unwrap();
-        dom.set_property(part, "size", Variant::Vector3(rbx_dom::Vector3Data { x: 1.0, y: 1.0, z: 1.0 }))
-            .unwrap();
+        dom.set_property(
+            part,
+            "size",
+            Variant::Vector3(rbx_dom::Vector3Data {
+                x: 1.0,
+                y: 1.0,
+                z: 1.0,
+            }),
+        )
+        .unwrap();
     }
     let root = workspace(&dom).unwrap();
 
@@ -173,7 +185,10 @@ fn export_as_gltf_of_the_place_is_rooted_at_workspace() {
 
     let roots = document["scenes"][0]["nodes"].as_array().unwrap();
     assert_eq!(roots.len(), 1);
-    assert_eq!(document["nodes"][roots[0].as_u64().unwrap() as usize]["name"], "Workspace");
+    assert_eq!(
+        document["nodes"][roots[0].as_u64().unwrap() as usize]["name"],
+        "Workspace"
+    );
     let names: Vec<_> = document["nodes"]
         .as_array()
         .unwrap()

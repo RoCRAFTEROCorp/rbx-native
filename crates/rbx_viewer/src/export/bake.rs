@@ -176,7 +176,9 @@ impl Chart {
 
     /// The image's texels per stud across this triangle.
     fn image_density(&self, image: &Image) -> Option<f32> {
-        let [a, b, c] = self.corners.map(|corner| corner.uv * Vec2::new(image.width as f32, image.height as f32));
+        let [a, b, c] = self
+            .corners
+            .map(|corner| corner.uv * Vec2::new(image.width as f32, image.height as f32));
         let texels = (b - a).perp_dot(c - a).abs();
         let [la, lb, lc] = self.local;
         let studs = (lb - la).perp_dot(lc - la).abs();
@@ -214,7 +216,9 @@ impl Maps {
         let studs = at(|c| c.studs);
         let unit_normal = at(|c| c.unit_normal).normalize_or(Vec3::Y);
         let normal = at(|c| c.normal).normalize_or(Vec3::Y);
-        let read = |map: &Option<Map>, uv: Vec2, neutral: Vec4| map.as_ref().map_or(neutral, |m| m.sample(uv));
+        let read = |map: &Option<Map>, uv: Vec2, neutral: Vec4| {
+            map.as_ref().map_or(neutral, |m| m.sample(uv))
+        };
 
         let mut texel = Texel {
             color: Vec3::ZERO,
@@ -242,7 +246,11 @@ impl Maps {
         let shaded = texel.normal.normalize_or(normal);
         let tangent = (chart.u - normal * normal.dot(chart.u)).normalize_or(chart.u);
         let bitangent = normal.cross(tangent);
-        texel.normal = Vec3::new(shaded.dot(tangent), shaded.dot(bitangent), shaded.dot(normal));
+        texel.normal = Vec3::new(
+            shaded.dot(tangent),
+            shaded.dot(bitangent),
+            shaded.dot(normal),
+        );
         texel
     }
 }

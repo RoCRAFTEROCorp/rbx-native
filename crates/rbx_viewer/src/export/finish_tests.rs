@@ -22,7 +22,11 @@ fn part(dom: &mut WeakDom, class: &str, size: [f32; 3]) -> Ref {
         referent,
         "CFrame",
         Variant::CFrame(CFrameData {
-            position: Vector3Data { x: 1.0, y: 2.0, z: 3.0 },
+            position: Vector3Data {
+                x: 1.0,
+                y: 2.0,
+                z: 3.0,
+            },
             rotation: IDENTITY,
         }),
     )
@@ -35,7 +39,13 @@ fn part(dom: &mut WeakDom, class: &str, size: [f32; 3]) -> Ref {
 
 fn checker() -> Pack {
     let pixels = (0..16)
-        .flat_map(|i| if (i % 4 + i / 4) % 2 == 0 { [200, 60, 60, 255] } else { [60, 60, 200, 255] })
+        .flat_map(|i| {
+            if (i % 4 + i / 4) % 2 == 0 {
+                [200, 60, 60, 255]
+            } else {
+                [60, 60, 200, 255]
+            }
+        })
         .collect();
     Pack {
         maps: [
@@ -71,12 +81,19 @@ fn a_wedges_slope_bakes_and_its_upright_faces_tile() {
 
     let exported = export(&dom, &meshes, wedge);
 
-    assert_eq!(exported.meshes.len(), 2, "tiled faces, then the baked slope");
+    assert_eq!(
+        exported.meshes.len(),
+        2,
+        "tiled faces, then the baked slope"
+    );
     let (tiled, baked) = (&exported.meshes[0], &exported.meshes[1]);
     assert_eq!(tiled.tangents.len(), tiled.positions.len());
     assert_eq!(baked.tangents.len(), baked.positions.len());
     assert_eq!(baked.indices.len(), 6, "the slope's two triangles");
-    assert_ne!(tiled.maps.color, baked.maps.color, "the slope reads its own bake");
+    assert_ne!(
+        tiled.maps.color, baked.maps.color,
+        "the slope reads its own bake"
+    );
     assert!(baked.uvs.iter().flatten().all(|c| (0.0..=1.0).contains(c)));
     // Both under one node, placed by the part's own CFrame.
     assert_eq!(exported.nodes.len(), 1);
@@ -87,7 +104,8 @@ fn a_wedges_slope_bakes_and_its_upright_faces_tile() {
     let primitives = document["meshes"][0]["primitives"].as_array().unwrap();
     assert_eq!(primitives.len(), 2);
     assert!(primitives[1]["attributes"]["TANGENT"].is_u64());
-    let tangent = &document["accessors"][primitives[1]["attributes"]["TANGENT"].as_u64().unwrap() as usize];
+    let tangent =
+        &document["accessors"][primitives[1]["attributes"]["TANGENT"].as_u64().unwrap() as usize];
     assert_eq!(tangent["type"], "VEC4");
 }
 
@@ -101,11 +119,16 @@ fn alike_parts_share_one_bake() {
     dom.set_parent(a, Some(model));
     dom.set_parent(b, Some(model));
     let pack = Arc::new(checker());
-    let meshes = Meshes::default().with_materials(HashMap::from([(a, Arc::clone(&pack)), (b, pack)]));
+    let meshes =
+        Meshes::default().with_materials(HashMap::from([(a, Arc::clone(&pack)), (b, pack)]));
 
     let exported = export(&dom, &meshes, model);
 
-    let baked: Vec<_> = exported.meshes.iter().filter(|m| m.indices.len() == 6).collect();
+    let baked: Vec<_> = exported
+        .meshes
+        .iter()
+        .filter(|m| m.indices.len() == 6)
+        .collect();
     assert_eq!(baked.len(), 2);
     assert_eq!(baked[0].maps, baked[1].maps);
     // The pack's colour map, and one baked colour map.
@@ -169,8 +192,12 @@ fn a_textured_mesh_with_a_pack_bakes_both() {
 fn neon_glows_by_the_viewports_own_factor() {
     let mut dom = WeakDom::new();
     let lamp = part(&mut dom, "Part", [1.0, 1.0, 1.0]);
-    dom.set_property(lamp, "Color3uint8", Variant::Color3uint8 { r: 255, g: 0, b: 0 })
-        .unwrap();
+    dom.set_property(
+        lamp,
+        "Color3uint8",
+        Variant::Color3uint8 { r: 255, g: 0, b: 0 },
+    )
+    .unwrap();
     let meshes = Meshes::default().with_kinds(HashMap::from([(lamp, Kind::Neon)]));
 
     let exported = export(&dom, &meshes, lamp);
@@ -178,10 +205,22 @@ fn neon_glows_by_the_viewports_own_factor() {
 
     assert_eq!(exported.meshes[0].finish, Finish::Neon);
     let material = &document["materials"][0];
-    assert_eq!(material["emissiveFactor"], serde_json::json!([1.0, 0.0, 0.0]));
-    assert_eq!(material["pbrMetallicRoughness"]["baseColorFactor"], serde_json::json!([0.0, 0.0, 0.0, 1.0]));
-    assert_eq!(material["extensions"]["KHR_materials_emissive_strength"]["emissiveStrength"], 6.0);
-    assert!(document["extensionsUsed"].as_array().unwrap().contains(&"KHR_materials_emissive_strength".into()));
+    assert_eq!(
+        material["emissiveFactor"],
+        serde_json::json!([1.0, 0.0, 0.0])
+    );
+    assert_eq!(
+        material["pbrMetallicRoughness"]["baseColorFactor"],
+        serde_json::json!([0.0, 0.0, 0.0, 1.0])
+    );
+    assert_eq!(
+        material["extensions"]["KHR_materials_emissive_strength"]["emissiveStrength"],
+        6.0
+    );
+    assert!(document["extensionsUsed"]
+        .as_array()
+        .unwrap()
+        .contains(&"KHR_materials_emissive_strength".into()));
     let mtl = mtl(&exported.meshes, "x");
     assert!(mtl.contains("Ke 1 0 0"));
 }
@@ -190,16 +229,23 @@ fn neon_glows_by_the_viewports_own_factor() {
 fn glass_transmits_what_its_transparency_lets_through() {
     let mut dom = WeakDom::new();
     let pane = part(&mut dom, "Part", [4.0, 4.0, 0.2]);
-    dom.set_property(pane, "Transparency", Variant::Float32(0.75)).unwrap();
+    dom.set_property(pane, "Transparency", Variant::Float32(0.75))
+        .unwrap();
     let meshes = Meshes::default().with_kinds(HashMap::from([(pane, Kind::Glass)]));
 
     let exported = export(&dom, &meshes, pane);
     let document = document(&exported);
 
     let material = &document["materials"][0];
-    assert_eq!(material["extensions"]["KHR_materials_transmission"]["transmissionFactor"], 0.75);
+    assert_eq!(
+        material["extensions"]["KHR_materials_transmission"]["transmissionFactor"],
+        0.75
+    );
     assert_eq!(material["extensions"]["KHR_materials_ior"]["ior"], 1.5);
-    assert!(material.get("alphaMode").is_none(), "transmission, not blending");
+    assert!(
+        material.get("alphaMode").is_none(),
+        "transmission, not blending"
+    );
     assert_eq!(material["pbrMetallicRoughness"]["baseColorFactor"][3], 1.0);
     let mtl = mtl(&exported.meshes, "x");
     assert!(mtl.contains("Tr 0.75") && mtl.contains("Ni 1.5"));
@@ -219,7 +265,9 @@ fn a_force_field_is_a_faint_glowing_shell() {
     assert_eq!(exported.meshes[0].color[3], 0.5);
     let material = &document["materials"][0];
     assert_eq!(material["alphaMode"], "BLEND");
-    let alpha = material["pbrMetallicRoughness"]["baseColorFactor"][3].as_f64().unwrap();
+    let alpha = material["pbrMetallicRoughness"]["baseColorFactor"][3]
+        .as_f64()
+        .unwrap();
     assert!((alpha - 0.5 * (0.4 + 1.6 / 6.0)).abs() < 1e-6);
     let strength = material["extensions"]["KHR_materials_emissive_strength"]["emissiveStrength"]
         .as_f64()
@@ -249,7 +297,10 @@ fn a_union_drawn_as_its_pieces_exports_them() {
     assert_eq!(exported.meshes.len(), 2);
     assert_eq!(exported.meshes[0].color, [1.0, 0.0, 0.0, 1.0]);
     assert_eq!(exported.meshes[1].color, [0.0, 0.0, 1.0, 1.0]);
-    assert!(exported.meshes[0].positions.iter().all(|p| p[0] <= -0.5 + 1e-5));
+    assert!(exported.meshes[0]
+        .positions
+        .iter()
+        .all(|p| p[0] <= -0.5 + 1e-5));
     assert_eq!(exported.nodes[0].meshes, [0, 1]);
 }
 
@@ -267,10 +318,25 @@ fn the_instance_tree_comes_along() {
     dom.new_instance("Folder", "Empty", Some(workspace));
 
     let exported = export(&dom, &Meshes::default(), workspace);
-    let names: Vec<_> = exported.nodes.iter().map(|n| (n.name.as_str(), n.parent)).collect();
+    let names: Vec<_> = exported
+        .nodes
+        .iter()
+        .map(|n| (n.name.as_str(), n.parent))
+        .collect();
 
-    assert_eq!(names, [("Workspace", None), ("Car", Some(0)), ("Body", Some(1)), ("Part", Some(2))]);
+    assert_eq!(
+        names,
+        [
+            ("Workspace", None),
+            ("Car", Some(0)),
+            ("Body", Some(1)),
+            ("Part", Some(2))
+        ]
+    );
     let document = document(&exported);
-    assert_eq!(document["nodes"][3]["translation"], serde_json::json!([1.0, 2.0, 3.0]));
+    assert_eq!(
+        document["nodes"][3]["translation"],
+        serde_json::json!([1.0, 2.0, 3.0])
+    );
     assert_eq!(document["nodes"][3]["extras"]["Material"], Value::Null);
 }

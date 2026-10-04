@@ -5,7 +5,9 @@ use glam::{Mat4, Vec3};
 use rbx_dom::{Ref, Variant, WeakDom};
 use rbx_reflection::ReflectionDatabase;
 
-use super::{packed, surface, transform_normals, transform_points, ExportMesh, Finish, Maps, Textures};
+use super::{
+    packed, surface, transform_normals, transform_points, ExportMesh, Finish, Maps, Textures,
+};
 use crate::pick::Meshes;
 use crate::scene::{
     cframe_matrix, file_mesh_fit, resolve_shape, srgb_to_linear, union_fit, unit_mesh, Kind,

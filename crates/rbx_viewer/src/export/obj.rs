@@ -105,7 +105,11 @@ pub fn mtl(meshes: &[ExportMesh], stem: &str) -> String {
                 }
             }
             Finish::Glass => {
-                let _ = writeln!(out, "d {alpha}\nTr {}\nNi {GLASS_IOR}\nillum 4", 1.0 - alpha);
+                let _ = writeln!(
+                    out,
+                    "d {alpha}\nTr {}\nNi {GLASS_IOR}\nillum 4",
+                    1.0 - alpha
+                );
             }
             Finish::ForceField => {
                 let glow = |c: f32| c * FORCE_FIELD_GLOW;

@@ -72,7 +72,12 @@ pub(super) fn dress(
             normals: transform_normals(geometry.model, normals),
             tangents: tangents
                 .iter()
-                .map(|t| placement.transform_vector3(t.truncate()).extend(t.w).to_array())
+                .map(|t| {
+                    placement
+                        .transform_vector3(t.truncate())
+                        .extend(t.w)
+                        .to_array()
+                })
                 .collect(),
             uvs,
             ..template.clone()
@@ -147,7 +152,8 @@ fn bake_maps(
     textures: &mut Textures,
 ) -> Option<Bake> {
     let baked = bake::bake(triangles, pack, image)?;
-    let [has_color, has_normal, has_metalness, has_roughness] = pack.maps.each_ref().map(Option::is_some);
+    let [has_color, has_normal, has_metalness, has_roughness] =
+        pack.maps.each_ref().map(Option::is_some);
     let mut maps = Maps::default();
     if has_color || image.is_some() {
         maps.color = textures.fresh(&baked.color);
@@ -202,7 +208,11 @@ fn project(triangles: &[[Corner; 3]], extent: Vec3, studs_per_tile: f32) -> Proj
     for triangle in triangles {
         let axis = bake::dominant_axis(triangle[0].unit_normal);
         let (u, v) = bake::face_frame(axis);
-        let handedness = if axis.cross(u).dot(-v) >= 0.0 { 1.0 } else { -1.0 };
+        let handedness = if axis.cross(u).dot(-v) >= 0.0 {
+            1.0
+        } else {
+            -1.0
+        };
         for corner in triangle {
             // Back in the unit frame, for the caller's model matrix.
             out.positions

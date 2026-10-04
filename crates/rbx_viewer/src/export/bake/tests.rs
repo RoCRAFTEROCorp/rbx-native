@@ -96,7 +96,10 @@ fn a_tilted_facet_bakes_the_three_way_blend() {
     );
     // Not any one projection alone.
     for leg in legs {
-        assert!((got - leg).abs().max_element() > 0.05, "{got} is one leg, {leg}");
+        assert!(
+            (got - leg).abs().max_element() > 0.05,
+            "{got} is one leg, {leg}"
+        );
     }
 }
 
@@ -105,10 +108,18 @@ fn a_tilted_facet_bakes_the_three_way_blend() {
 #[test]
 fn a_flat_normal_map_bakes_flat() {
     let flat = image(4, 4, |_, _| [128, 128, 255, 255]);
-    let baked = bake(&[facet(Vec3::new(1.0, 2.0, 3.0), 2.0)], &pack(None, Some(flat)), None).unwrap();
+    let baked = bake(
+        &[facet(Vec3::new(1.0, 2.0, 3.0), 2.0)],
+        &pack(None, Some(flat)),
+        None,
+    )
+    .unwrap();
 
     let [x, y, z, _] = centroid(&baked, &baked.normal);
-    assert!((x as i32 - 128).abs() <= 2 && (y as i32 - 128).abs() <= 2 && z >= 253, "{x} {y} {z}");
+    assert!(
+        (x as i32 - 128).abs() <= 2 && (y as i32 - 128).abs() <= 2 && z >= 253,
+        "{x} {y} {z}"
+    );
 }
 
 /// The tangent each baked vertex carries runs along its chart's U, and the
@@ -116,7 +127,12 @@ fn a_flat_normal_map_bakes_flat() {
 /// normal map.
 #[test]
 fn baked_tangents_follow_the_chart() {
-    let baked = bake(&[facet(Vec3::new(0.3, 1.0, -0.7), 3.0)], &pack(None, None), None).unwrap();
+    let baked = bake(
+        &[facet(Vec3::new(0.3, 1.0, -0.7), 3.0)],
+        &pack(None, None),
+        None,
+    )
+    .unwrap();
 
     let [a, b, c] = [0, 1, 2].map(|i| (baked.positions[i], Vec2::from(baked.uvs[i])));
     let tangent = baked.tangents[0];
@@ -136,7 +152,12 @@ fn baked_tangents_follow_the_chart() {
 fn a_mesh_image_multiplies_the_pack() {
     let white = image(8, 8, |_, _| [255, 255, 255, 255]);
     let half = image(8, 8, |_, _| [188, 188, 188, 128]);
-    let baked = bake(&[facet(Vec3::ONE, 1.0)], &pack(Some(white), None), Some(&half)).unwrap();
+    let baked = bake(
+        &[facet(Vec3::ONE, 1.0)],
+        &pack(Some(white), None),
+        Some(&half),
+    )
+    .unwrap();
 
     let [r, _, _, a] = centroid(&baked, &baked.color);
     assert!((r as i32 - 188).abs() <= 2, "{r}");
@@ -147,7 +168,12 @@ fn a_mesh_image_multiplies_the_pack() {
 #[test]
 fn charts_are_packed_apart() {
     let triangles: Vec<[Corner; 3]> = (0..40)
-        .map(|i| facet(Vec3::new(1.0, i as f32 * 0.1 - 2.0, 0.5), 0.5 + i as f32 * 0.05))
+        .map(|i| {
+            facet(
+                Vec3::new(1.0, i as f32 * 0.1 - 2.0, 0.5),
+                0.5 + i as f32 * 0.05,
+            )
+        })
         .collect();
     let baked = bake(&triangles, &pack(None, None), None).unwrap();
 
@@ -156,14 +182,23 @@ fn charts_are_packed_apart() {
         .chunks(3)
         .map(|uv| {
             let p = uv.iter().map(|&u| Vec2::from(u));
-            (p.clone().fold(Vec2::MAX, Vec2::min), p.fold(Vec2::MIN, Vec2::max))
+            (
+                p.clone().fold(Vec2::MAX, Vec2::min),
+                p.fold(Vec2::MIN, Vec2::max),
+            )
         })
         .collect();
     for (i, (min, max)) in boxes.iter().enumerate() {
         assert!(min.cmpge(Vec2::ZERO).all() && max.cmple(Vec2::ONE).all());
         for (other_min, other_max) in &boxes[i + 1..] {
-            let apart = max.x <= other_min.x || other_max.x <= min.x || max.y <= other_min.y || other_max.y <= min.y;
-            assert!(apart, "charts {min}..{max} and {other_min}..{other_max} overlap");
+            let apart = max.x <= other_min.x
+                || other_max.x <= min.x
+                || max.y <= other_min.y
+                || other_max.y <= min.y;
+            assert!(
+                apart,
+                "charts {min}..{max} and {other_min}..{other_max} overlap"
+            );
         }
     }
 }

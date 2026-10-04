@@ -72,8 +72,16 @@ pub fn gltf(export: &Export) -> String {
             .iter()
             .flat_map(|p| to_local.transform_point3(Vec3::from(*p)).to_array())
             .collect();
-        let turn = |v: [f32; 3]| to_local.transform_vector3(Vec3::from(v)).normalize_or(Vec3::Y);
-        let normals: Vec<f32> = mesh.normals.iter().flat_map(|n| turn(*n).to_array()).collect();
+        let turn = |v: [f32; 3]| {
+            to_local
+                .transform_vector3(Vec3::from(v))
+                .normalize_or(Vec3::Y)
+        };
+        let normals: Vec<f32> = mesh
+            .normals
+            .iter()
+            .flat_map(|n| turn(*n).to_array())
+            .collect();
         let position = out.add(&positions, ARRAY_BUFFER, mesh.positions.len(), "VEC3");
         // Required on POSITION by the specification.
         let (min, max) = bounds(&positions);
@@ -87,7 +95,8 @@ pub fn gltf(export: &Export) -> String {
                 .iter()
                 .flat_map(|t| turn([t[0], t[1], t[2]]).extend(t[3]).to_array())
                 .collect();
-            attributes["TANGENT"] = json!(out.add(&tangents, ARRAY_BUFFER, mesh.tangents.len(), "VEC4"));
+            attributes["TANGENT"] =
+                json!(out.add(&tangents, ARRAY_BUFFER, mesh.tangents.len(), "VEC4"));
         }
         if !mesh.uvs.is_empty() {
             let uvs: Vec<f32> = mesh.uvs.iter().flatten().copied().collect();
@@ -260,7 +269,11 @@ fn node_worlds(export: &Export) -> Vec<Mat4> {
 
 /// The part's colour and maps as a metallic-roughness material, matte and
 /// non-metallic unless its maps say otherwise, then its [`finish`].
-fn material(mesh: &ExportMesh, texture: &mut impl FnMut(usize) -> usize, used: &mut BTreeSet<&'static str>) -> Value {
+fn material(
+    mesh: &ExportMesh,
+    texture: &mut impl FnMut(usize) -> usize,
+    used: &mut BTreeSet<&'static str>,
+) -> Value {
     let mut material = json!({
         "name": mesh.name,
         "pbrMetallicRoughness": {
@@ -301,7 +314,10 @@ fn finish(material: &mut Value, mesh: &ExportMesh, used: &mut BTreeSet<&'static 
         Finish::Neon => {
             let pbr = &mut material["pbrMetallicRoughness"];
             pbr["baseColorFactor"] = json!([0.0, 0.0, 0.0, alpha]);
-            if let Some(texture) = pbr.as_object_mut().and_then(|pbr| pbr.remove("baseColorTexture")) {
+            if let Some(texture) = pbr
+                .as_object_mut()
+                .and_then(|pbr| pbr.remove("baseColorTexture"))
+            {
                 material["emissiveTexture"] = texture;
             }
             material["emissiveFactor"] = json!([r, g, b]);
@@ -319,7 +335,8 @@ fn finish(material: &mut Value, mesh: &ExportMesh, used: &mut BTreeSet<&'static 
             if let Some(material) = material.as_object_mut() {
                 material.remove("alphaMode");
             }
-            material["extensions"]["KHR_materials_transmission"] = json!({ "transmissionFactor": 1.0 - alpha });
+            material["extensions"]["KHR_materials_transmission"] =
+                json!({ "transmissionFactor": 1.0 - alpha });
             material["extensions"]["KHR_materials_ior"] = json!({ "ior": GLASS_IOR });
         }
         Finish::ForceField => {
@@ -335,7 +352,8 @@ fn finish(material: &mut Value, mesh: &ExportMesh, used: &mut BTreeSet<&'static 
 fn emissive_strength(material: &mut Value, strength: f32, used: &mut BTreeSet<&'static str>) {
     if strength != 1.0 {
         used.insert("KHR_materials_emissive_strength");
-        material["extensions"]["KHR_materials_emissive_strength"] = json!({ "emissiveStrength": strength });
+        material["extensions"]["KHR_materials_emissive_strength"] =
+            json!({ "emissiveStrength": strength });
     }
 }
 

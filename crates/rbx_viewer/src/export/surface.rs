@@ -132,4 +132,3 @@ pub(super) fn png(image: &Image) -> Option<Vec<u8>> {
     writer.finish().ok()?;
     Some(bytes)
 }
-

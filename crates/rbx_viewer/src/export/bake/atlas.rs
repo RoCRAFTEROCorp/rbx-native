@@ -56,8 +56,13 @@ impl Atlas {
                 (texels.x as u32 + 2 * PADDING, texels.y as u32 + 2 * PADDING)
             })
             .collect();
-        let area: u64 = sizes.iter().map(|&(w, h)| u64::from(w) * u64::from(h)).sum();
-        let mut size = ((area as f64).sqrt().ceil() as u32).next_power_of_two().max(16);
+        let area: u64 = sizes
+            .iter()
+            .map(|&(w, h)| u64::from(w) * u64::from(h))
+            .sum();
+        let mut size = ((area as f64).sqrt().ceil() as u32)
+            .next_power_of_two()
+            .max(16);
         let mut order: Vec<usize> = (0..sizes.len()).collect();
         order.sort_by_key(|&i| std::cmp::Reverse(sizes[i].1));
         while size <= MAX_SIZE {
@@ -128,7 +133,12 @@ pub(super) struct Map {
 impl Map {
     /// `map` filtered for a bake `density` texels per stud when it tiles
     /// every `studs_per_tile`; `None` without a map.
-    pub(super) fn tiled(map: Option<&Image>, srgb: bool, density: f32, studs_per_tile: f32) -> Option<Map> {
+    pub(super) fn tiled(
+        map: Option<&Image>,
+        srgb: bool,
+        density: f32,
+        studs_per_tile: f32,
+    ) -> Option<Map> {
         let map = map?;
         let own = map.width as f32 / studs_per_tile.max(0.001);
         let level = (own / density).log2().floor().max(0.0) as u32;
