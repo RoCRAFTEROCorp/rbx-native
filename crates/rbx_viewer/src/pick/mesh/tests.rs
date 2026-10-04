@@ -155,7 +155,8 @@ fn assert_same_points(mut actual: Vec<Vec3>, expected: &[[f32; 2]]) {
 #[test]
 fn a_flat_quad_of_two_triangles_is_outlined_without_its_diagonal() {
     // The top of a box, z = 0.5, split along its diagonal, and a side of it
-    // standing up from one edge so the walk has a neighbour to turn down.
+    // standing up from one edge so the walk has a neighbour to turn down:
+    // that edge a crease, the other three open boundaries.
     let mesh = soup(&[
         [[-0.5, -0.5, 0.5], [0.5, -0.5, 0.5], [0.5, 0.5, 0.5]],
         [[-0.5, -0.5, 0.5], [0.5, 0.5, 0.5], [-0.5, 0.5, 0.5]],
@@ -187,17 +188,96 @@ fn a_vertex_splitting_a_straight_side_is_no_corner() {
 }
 
 #[test]
-fn a_curved_region_falls_back_to_the_hit_triangle() {
-    // No face of the tetrahedron lies flat with another: the slanted face's
-    // outline is its own triangle.
+fn a_lone_triangle_between_sharp_edges_snaps_to_its_corners() {
+    // No face of the tetrahedron lies flat with another, but every edge of it
+    // is a real crease: the slanted face is its own triangle, corners and all.
     let face = flat_face(
         &corner_tetrahedron(),
         Mat4::IDENTITY,
         toward_neg_z(-0.4, -0.4),
     )
     .unwrap();
-    assert_eq!(face.corners.len(), 3);
     assert_eq!(face.sides.len(), 3);
+    let mut corners = face.corners;
+    corners.sort_by(|a, b| a.to_array().partial_cmp(&b.to_array()).unwrap());
+    assert_eq!(
+        corners,
+        [
+            Vec3::new(-0.5, -0.5, 0.5),
+            Vec3::new(-0.5, 0.5, -0.5),
+            Vec3::new(0.5, -0.5, -0.5),
+        ]
+    );
+}
+
+/// The triangles of a band round the y axis, radius 0.5 and a stud tall,
+/// `segments` facets of `step` degrees either side of +z — each split along
+/// its diagonal.
+fn band(segments: i32, step: f32) -> Vec<[[f32; 3]; 3]> {
+    let at = |k: i32, y: f32| {
+        let angle = (k as f32 * step).to_radians();
+        [0.5 * angle.sin(), y, 0.5 * angle.cos()]
+    };
+    (-segments..segments)
+        .flat_map(|k| {
+            let (a, b) = (at(k, -0.5), at(k + 1, -0.5));
+            let (c, d) = (at(k + 1, 0.5), at(k, 0.5));
+            [[a, b, c], [a, c, d]]
+        })
+        .collect()
+}
+
+#[test]
+fn a_faceted_sphere_has_nothing_to_snap_to() {
+    // 32 segments round, 16 up: neighbouring triangles turn about 11 degrees.
+    let (round, up) = (32, 16);
+    let point = |i: i32, j: i32| {
+        let around = (i as f32 * 360.0 / round as f32).to_radians();
+        let down = (j as f32 * 180.0 / up as f32).to_radians();
+        [
+            0.5 * down.sin() * around.sin(),
+            0.5 * down.cos(),
+            0.5 * down.sin() * around.cos(),
+        ]
+    };
+    let triangles: Vec<_> = (0..round)
+        .flat_map(|i| (0..up).map(move |j| (i, j)))
+        .flat_map(|(i, j)| {
+            let (a, b) = (point(i, j), point(i + 1, j));
+            let (c, d) = (point(i + 1, j + 1), point(i, j + 1));
+            [[a, b, c], [a, c, d]]
+        })
+        .collect();
+    let mesh = soup(&triangles);
+    for (x, y) in [(0.1, 0.1), (0.01, 0.02), (-0.2, 0.3), (0.05, -0.4)] {
+        let face = flat_face(&mesh, Mat4::IDENTITY, toward_neg_z(x, y)).unwrap();
+        assert!(face.corners.is_empty(), "corners at ({x}, {y}): {face:?}");
+        assert!(face.sides.is_empty(), "sides at ({x}, {y}): {face:?}");
+    }
+}
+
+#[test]
+fn a_curved_band_snaps_only_to_its_open_boundary() {
+    // Ten-degree facets: the sides between them are soft, the band's top and
+    // bottom open boundaries. Where an open side meets a soft one is no
+    // corner.
+    let mesh = soup(&band(4, 10.0));
+    let face = flat_face(&mesh, Mat4::IDENTITY, toward_neg_z(0.03, 0.45)).unwrap();
+    assert!(face.corners.is_empty(), "{face:?}");
+    assert_eq!(face.sides.len(), 2);
+    for [a, b] in face.sides {
+        assert!(a.y.abs() == 0.5 && b.y == a.y, "not a boundary: {a} {b}");
+    }
+}
+
+#[test]
+fn a_fold_sharper_than_the_crease_angle_is_a_real_edge() {
+    // The same band at 40 degrees a facet: the sides between facets turn far
+    // enough to be real, and the facet hit is a whole rectangle.
+    let mesh = soup(&band(2, 40.0));
+    let face = flat_face(&mesh, Mat4::IDENTITY, toward_neg_z(0.05, 0.0)).unwrap();
+    assert_eq!(face.sides.len(), 4);
+    assert_eq!(face.corners.len(), 4);
 }
 
 #[test]
