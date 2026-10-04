@@ -33,7 +33,7 @@ impl Shell {
                         ui::field_frame(None, ui::panel2(), border, "link").child(
                             Input::new(&self.roblox.input)
                                 .appearance(false)
-                                .disabled(*resolving)
+                                .disabled(resolving.is_some())
                                 .flex_1()
                                 .h_full()
                                 .px(px(0.))
@@ -51,7 +51,7 @@ impl Shell {
                     Some(PublishMode::Published) => "Link and publish",
                     None => "Link",
                 };
-                let confirm = if *resolving {
+                let confirm = if resolving.is_some() {
                     ui::disabled_button("roblox-link-go", "Looking up place\u{2026}")
                         .into_any_element()
                 } else {

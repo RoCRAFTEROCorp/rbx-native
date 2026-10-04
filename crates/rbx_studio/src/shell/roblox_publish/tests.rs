@@ -2,7 +2,9 @@ use std::path::{Path, PathBuf};
 
 use rbx_cloud::{CloudError, PublishMode};
 
-use super::{describe, linked_target, mocked, outcome, upload_with, Target};
+use super::{
+    describe, linked_target, lookup_finished, mocked, outcome, upload_with, Dialog, Target,
+};
 use crate::command_bar::Feedback;
 use crate::home::RecentPlace;
 
@@ -107,4 +109,77 @@ fn the_capture_mock_answers_each_case() {
         Err(CloudError::Http { status: 401, .. })
     ));
     assert!(matches!(mocked("network"), Err(CloudError::Transport(_))));
+}
+
+/// What `open_roblox_link` puts up, then what `confirm_roblox_link` does to
+/// it before the lookup leaves for the network.
+fn opened(then: Option<PublishMode>) -> Option<Dialog> {
+    Some(Dialog::Link {
+        then,
+        error: None,
+        resolving: None,
+    })
+}
+
+fn confirm(dialog: &mut Option<Dialog>, token: u64) {
+    let Some(Dialog::Link { resolving, .. }) = dialog else {
+        panic!("no link dialog to confirm");
+    };
+    *resolving = Some(token);
+}
+
+fn resolving(dialog: &Option<Dialog>) -> Option<u64> {
+    match dialog {
+        Some(Dialog::Link { resolving, .. }) => *resolving,
+        _ => None,
+    }
+}
+
+#[test]
+fn a_lookup_that_lands_after_cancel_neither_links_nor_publishes() {
+    // "Link and publish", then Cancel while it says "Looking up place…".
+    let mut dialog = opened(Some(PublishMode::Published));
+    confirm(&mut dialog, 1);
+    assert!(
+        dialog.take().is_some(),
+        "Cancel closes it, as close_roblox_dialog does"
+    );
+    assert!(lookup_finished(&mut dialog, 1, Ok(TARGET)).is_none());
+    assert!(dialog.is_none(), "a cancelled dialog stays closed");
+}
+
+#[test]
+fn only_the_lookup_the_reopened_dialog_waits_on_links_and_publishes() {
+    // Confirm, Cancel, reopen, confirm again: two lookups in flight.
+    let mut dialog = opened(Some(PublishMode::Published));
+    confirm(&mut dialog, 1);
+    assert!(dialog.take().is_some());
+    dialog = opened(Some(PublishMode::Saved));
+    confirm(&mut dialog, 2);
+
+    // The first one lands — success or failure — and changes nothing.
+    assert!(lookup_finished(&mut dialog, 1, Ok(TARGET)).is_none());
+    assert!(lookup_finished(&mut dialog, 1, Err("boom".to_string())).is_none());
+    assert_eq!(resolving(&dialog), Some(2));
+    assert!(matches!(&dialog, Some(Dialog::Link { error: None, .. })));
+
+    // The second one is the one acted on, with the reopened dialog's mode.
+    assert_eq!(
+        lookup_finished(&mut dialog, 2, Ok(TARGET)),
+        Some((TARGET, Some(PublishMode::Saved)))
+    );
+    assert!(dialog.is_none());
+    // And a late duplicate of it can't run a second upload.
+    assert!(lookup_finished(&mut dialog, 2, Ok(TARGET)).is_none());
+}
+
+#[test]
+fn a_failed_lookup_shows_its_reason_and_lets_the_user_confirm_again() {
+    let mut dialog = opened(None);
+    confirm(&mut dialog, 3);
+    assert!(lookup_finished(&mut dialog, 3, Err("No place with ID 9.".to_string())).is_none());
+    assert!(matches!(
+        &dialog,
+        Some(Dialog::Link { error: Some(e), resolving: None, .. }) if e == "No place with ID 9."
+    ));
 }

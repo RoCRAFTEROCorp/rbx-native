@@ -45,10 +45,13 @@ pub(super) struct Target {
 pub(super) enum Dialog {
     /// Asking for the place. `then` is the upload the link was opened for,
     /// run as soon as the link is stored; `None` when the user only relinks.
+    /// `resolving` is the token of the lookup in flight for this very dialog:
+    /// a lookup whose token isn't here any more (Cancel, Escape, or a fresh
+    /// dialog opened since) lands as a no-op — see [`lookup_finished`].
     Link {
         then: Option<PublishMode>,
         error: Option<String>,
-        resolving: bool,
+        resolving: Option<u64>,
     },
     Failed {
         mode: PublishMode,
@@ -65,6 +68,8 @@ pub(super) struct RobloxPublish {
     prefill: Option<String>,
     /// An upload is in flight; a second one is refused until it answers.
     busy: bool,
+    /// The last lookup token handed out; see [`Dialog::Link`].
+    lookups: u64,
     _subscription: Subscription,
 }
 
@@ -81,6 +86,7 @@ impl RobloxPublish {
             dialog: None,
             prefill: None,
             busy: false,
+            lookups: 0,
             _subscription: subscription,
         }
     }
@@ -104,7 +110,7 @@ impl Shell {
         self.roblox.dialog = Some(Dialog::Link {
             then,
             error: None,
-            resolving: false,
+            resolving: None,
         });
         cx.notify();
     }
@@ -128,57 +134,58 @@ impl Shell {
 
     fn confirm_roblox_link(&mut self, cx: &mut Context<Self>) {
         let Some(Dialog::Link {
-            then,
-            error,
-            resolving,
+            error, resolving, ..
         }) = &mut self.roblox.dialog
         else {
             return;
         };
-        if *resolving {
+        if resolving.is_some() {
             return;
         }
-        let then = *then;
         let text = self.roblox.input.read(cx).value().to_string();
         let Some(place_id) = rbx_cloud::place_id_from_link(&text) else {
             *error = Some("That isn\u{2019}t a place ID or a Roblox game link.".to_string());
             cx.notify();
             return;
         };
+        self.roblox.lookups += 1;
+        let token = self.roblox.lookups;
         *error = None;
-        *resolving = true;
+        *resolving = Some(token);
         cx.notify();
-        let path = self.path.clone();
         cx.spawn(async move |this, cx| {
             let found = cx
                 .background_spawn(async move { resolve_target(place_id) })
-                .await
-                .and_then(|target| link(&path, target).map(|()| target));
-            let _ = this.update(cx, |shell, cx| match found {
-                Ok(target) => {
-                    shell.roblox.dialog = None;
-                    shell.output.push(
-                        SOURCE,
-                        Feedback::Output(format!("Linked to place {place_id}")),
-                    );
-                    if let Some(mode) = then {
-                        shell.start_upload(target, mode, cx);
-                    }
-                    cx.notify();
-                }
-                Err(message) => {
-                    if let Some(Dialog::Link {
-                        error, resolving, ..
-                    }) = &mut shell.roblox.dialog
-                    {
-                        *error = Some(message);
-                        *resolving = false;
-                    }
-                    cx.notify();
-                }
+                .await;
+            let _ = this.update(cx, |shell, cx| {
+                shell.finish_lookup(token, found, cx);
+                cx.notify();
             });
         })
         .detach();
+    }
+
+    /// Lands lookup `token`: stores the link and runs the upload it was
+    /// opened for, unless the dialog it belonged to is gone.
+    fn finish_lookup(&mut self, token: u64, found: Result<Target, String>, cx: &mut Context<Self>) {
+        let Some((target, then)) = lookup_finished(&mut self.roblox.dialog, token, found) else {
+            return;
+        };
+        if let Err(message) = link(&self.path, target) {
+            self.roblox.dialog = Some(Dialog::Link {
+                then,
+                error: Some(message),
+                resolving: None,
+            });
+            return;
+        }
+        self.output.push(
+            SOURCE,
+            Feedback::Output(format!("Linked to place {}", target.place_id)),
+        );
+        if let Some(mode) = then {
+            self.start_upload(target, mode, cx);
+        }
     }
 
     pub(super) fn start_upload(
@@ -234,6 +241,41 @@ impl Shell {
             });
         }
         cx.notify();
+    }
+}
+
+/// What lookup `token` coming back does to `dialog`. Only the lookup the
+/// open link dialog is still waiting on counts: it closes the dialog and
+/// hands back the place to link and the upload to run. A stale one — the
+/// dialog was cancelled, or reopened and confirmed again — changes nothing,
+/// so a cancelled "Link and publish" never links nor publishes.
+fn lookup_finished(
+    dialog: &mut Option<Dialog>,
+    token: u64,
+    found: Result<Target, String>,
+) -> Option<(Target, Option<PublishMode>)> {
+    let Some(Dialog::Link {
+        then,
+        error,
+        resolving,
+    }) = dialog
+    else {
+        return None;
+    };
+    if *resolving != Some(token) {
+        return None;
+    }
+    match found {
+        Ok(target) => {
+            let then = *then;
+            *dialog = None;
+            Some((target, then))
+        }
+        Err(message) => {
+            *error = Some(message);
+            *resolving = None;
+            None
+        }
     }
 }
 
