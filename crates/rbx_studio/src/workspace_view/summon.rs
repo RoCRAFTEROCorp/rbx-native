@@ -13,7 +13,8 @@
 //!   around the point that you summoned them to" — Rotate's rings turn the
 //!   selection about wherever they stand, so that comes for free.
 //! - "if you place your cursor close to an edge or vertex when summoning,
-//!   the handles will snap to that edge or vertex" — see [`onto_edges`].
+//!   the handles will snap to that edge or vertex" — said of Rotate, and
+//!   kept to the tools with Rotate's rings here; see [`onto_edges`].
 //! - Scale's balls are kept "within the bounds of [the] selected object" —
 //!   see `rbx_viewer::gizmo::Faces::summoned` for how that is read here.
 //!
@@ -31,6 +32,7 @@ use gpui_kit::{Context, Window};
 use rbx_viewer::gizmo::{self, Gizmo};
 use rbx_viewer::pick::{self, Ray};
 
+use crate::dragger::pixel_size;
 use crate::dragger::surface::{SurfaceFrame, TargetKind};
 use crate::transform::Tool;
 
@@ -56,10 +58,10 @@ pub(crate) fn install(cx: &mut gpui_kit::App) {
 }
 
 /// How close to a face's edge or corner the cursor has to be for the
-/// summoned handles to snap onto it, in gizmo arm lengths — so the same
-/// distance on screen however far away the face is. Roblox does not publish
-/// Studio's; this is the Move arrows' own pick radius.
-const EDGE_SNAP: f32 = 0.15;
+/// summoned handles to snap onto it, in (logical) pixels on screen. Roblox
+/// published Studio's in the same topic (staff replies #9 and #14): "within
+/// 16 pixels of an edge or vertex".
+const EDGE_SNAP: f32 = 16.0;
 
 /// The summoning state the view keeps between events.
 #[derive(Debug, Default, Clone, Copy)]
@@ -152,9 +154,15 @@ impl WorkspaceView {
     }
 
     /// Where the cursor puts the handles: the point under it on whatever
-    /// part it is over (`Shell`'s last hover answer), snapped onto that
-    /// face's edge or corner when it is close to one; over nothing, the
-    /// point under the cursor level with the selection's centre.
+    /// part it is over (`Shell`'s last hover answer) — snapped onto that
+    /// face's edge or corner when it is close to one, for the tools with
+    /// Rotate's rings only; over nothing, the point under the cursor level
+    /// with the selection's centre.
+    ///
+    /// Roblox describes the snap for Rotate alone, and says why (staff reply
+    /// #9): "it doesn't matter precisely where the handles are summoned to
+    /// for Move -- the result is the same regardless." Transform snaps too,
+    /// carrying Rotate's very rings; Scale and Move do not.
     fn summon_point(&self, scale: f32) -> Option<Vec3> {
         let (inside, hover) = self.cursor_over();
         if !inside {
@@ -162,8 +170,12 @@ impl WorkspaceView {
         }
         let pose = self.view?;
         if let Some((frame, hit)) = hover {
-            let reach = EDGE_SNAP * gizmo::arm_length(hit, pose, self.orthographic);
-            return Some(onto_edges(&frame, hit, reach));
+            if !matches!(self.transform.tool, Tool::Rotate | Tool::Transform) {
+                return Some(hit);
+            }
+            let height = self.viewport.get().size.1 as f32;
+            let pixel = pixel_size(hit, pose, self.orthographic, height.max(1.0));
+            return Some(onto_edges(&frame, hit, EDGE_SNAP * scale * pixel));
         }
         let ray = self.cursor_ray(self.cursor?, scale)?;
         pick::ray_hits_plane(ray, self.targets.centre()?, -ray.direction)
