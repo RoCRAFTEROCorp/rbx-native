@@ -1129,6 +1129,19 @@ Roblox's own engine.
   `Instance:Clone()` does (the root itself is always copied, and the copy is
   always `Archivable`). Still open: the right-click **Paste Options** ⟩
   **Paste Into At Original Location** the docs mention.
+- [x] **Explorer export** — Save / Export rows on the Explorer row's
+  right-click menu, named as Studio's own are (`creator-docs`):
+  **Save to File…** writes the selection's subtrees as a model file,
+  `.rbxm` (or `.rbxmx` when that is the name picked), through the same
+  serializers Ctrl+S uses — a service included, so `Lighting` saves with
+  its sky and effects; a reference to anything left out of the file is
+  written as nil. **Export Selection…** writes a Wavefront `.obj` (what
+  Studio's own Export Selection writes, per the `MeshPart` reference), and
+  **Export as glTF…** a single self-contained glTF 2.0 file, its buffer
+  inline. Both export every part in the selection as the viewport draws
+  it — procedural shapes and downloaded `MeshPart`/`SpecialMesh` triangles
+  alike, in world space, in studs — and are greyed when the selection
+  holds no part.
 - [x] Drag-and-drop reparenting in the Explorer tree. Dragging a row
   onto another reparents onto it, the way creator-docs describes
   ("simply drag and drop them onto the new parent") — with a ghost under
@@ -1779,17 +1792,19 @@ Roblox's own engine.
   Luau — the Command Bar and scripts — has `PVInstance:GetPivot()` and
   `PVInstance:PivotTo()` through the same pivot (`rbx_lua::pivot`), with
   `BasePart.PivotOffset` readable and writable like any property.
-- [ ] 📋 **Explorer export**, the half of Explorer DOM editing that did not
-  land with the row affordances above or the search (see "What's been
-  implemented" → Editor).
-  Export from the row's menu: services and the whole place to Roblox
-  (Save/Publish, see below), to a local file; individual instances to
-  `.obj` and `.gltf` — genuinely useful native additions since Studio
-  itself has no built-in mesh export today. Roblox's own roadmap does
-  list glTF export, pushed from Late 2025 to Late 2026 in its
-  [fall 2026 update](https://devforum.roblox.com/t/creator-roadmap-2026-fall-update/4880208),
-  so `.gltf` may become Studio parity rather than an addition. Check what
-  it actually exports once it ships.
+- [ ] 📋 **Whole-place and fuller Explorer export.** Left open by the
+  Explorer row's Save / Export rows (see "What's been implemented" →
+  Editor): the whole place to a local file under a name of its choosing
+  (Studio's File › Save to File / File › Export as glTF, both File-menu
+  items rather than row ones), and services and the place to Roblox
+  (Save/Publish, see below). The mesh exports also still leave out what
+  Studio's own carry: a `UnionOperation` exports as its box (the carved
+  mesh is not reachable from the editor yet), and neither textures nor
+  material maps travel with an `.obj` or a `.gltf` — only each part's
+  colour, in the glTF. Roblox's own roadmap lists glTF export, pushed from
+  Late 2025 to Late 2026 in its
+  [fall 2026 update](https://devforum.roblox.com/t/creator-roadmap-2026-fall-update/4880208);
+  check what it actually exports once it ships.
 - [ ] 📋 **Multi-instance drag from a row outside the selection.** Pressing
   such a row collapses the selection to it before the drag starts, so a
   multi-instance drag only carries the whole selection when grabbed by its

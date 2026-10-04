@@ -2,6 +2,14 @@
 
 ## 2026-10-04
 
+- **Save to File and mesh export from the Explorer.** An Explorer row's
+  right-click menu gains Studio's Save / Export rows: **Save to File…**
+  writes the selection as an `.rbxm` (or `.rbxmx`) model file with the
+  same serializers a save uses, services included, and **Export
+  Selection…** / **Export as glTF…** write its parts as `.obj` or a
+  single-file glTF 2.0 — the geometry the viewport draws, real downloaded
+  meshes included — for opening in Blender or any other 3D tool. —
+  @chteau
 - **The Transform tool.** The ribbon's 5th Tools button — Move's arrows,
   Scale's balls and Rotate's rings, all grabbable over the same selection
   at once — the roadmap could previously only confirm as `creator-docs`'
