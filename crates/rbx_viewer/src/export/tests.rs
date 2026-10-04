@@ -131,7 +131,7 @@ fn a_mesh_part_exports_its_own_triangles_scaled_to_its_size() {
             vertex([0.0, 1.0, 0.0]),
         ],
         indices: vec![0, 1, 2],
-        lods: vec![0..1],
+        lods: Vec::new(),
         bounds: rbx_mesh::Aabb {
             min: [-1.0, -1.0, 0.0],
             max: [1.0, 1.0, 0.0],
