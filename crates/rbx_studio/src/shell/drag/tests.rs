@@ -83,3 +83,55 @@ fn carrying_it_with_one_part_alone_would_jump() {
     let (shown, written) = scaled(false);
     assert!((position(shown) - position(written.unwrap())).length() > 0.5);
 }
+
+/// A long Rotate drag of a whole model, written step by step as
+/// `Shell::rotate_parts` writes it. `once` reads the followers at the first
+/// step only (what `Shell` does); otherwise afresh every step, carrying the
+/// pivot on from the last one. Returns how far the written `WorldPivot`
+/// ends up from the turn applied to it exactly.
+fn drift_after_a_long_turn(once: bool) -> f32 {
+    let db = ReflectionDatabase::embedded();
+    let (mut dom, model) = model();
+    let held = Targets::read(&dom, &db, &[model]);
+    let start = held.pivot().unwrap();
+    let centre = Vec3::new(2.0, 0.0, 0.0);
+    let mut followers = rbx_lua::pivot::followers(&dom, &db, &[model]);
+    let steps = 2000;
+    let mut turn = glam::Mat3::IDENTITY;
+    for step in 1..=steps {
+        let angle = step as f32 * 0.7_f32.to_radians();
+        turn = glam::Mat3::from_axis_angle(Vec3::new(1.0, 2.0, 3.0).normalize(), angle);
+        let mut view = held.clone();
+        let parts = view.rotate_about(&held, centre, turn);
+        let writes: Vec<(Ref, &str, String)> = parts
+            .iter()
+            .map(|&(referent, orientation, position)| {
+                (
+                    referent,
+                    CFRAME_PROPERTY,
+                    super::cframe(orientation, position),
+                )
+            })
+            .collect();
+        if !once {
+            followers = rbx_lua::pivot::followers(&dom, &db, &[model]);
+        }
+        apply(&mut dom, &db, &writes, &followers, None).unwrap();
+    }
+    let exact = Mat4::from_translation(centre)
+        * Mat4::from_mat3(turn)
+        * Mat4::from_translation(-centre)
+        * start;
+    let written = Targets::read(&dom, &db, &[model]).pivot().unwrap();
+    (0..4)
+        .map(|column| (written.col(column) - exact.col(column)).length())
+        .fold(0.0, f32::max)
+}
+
+#[test]
+fn a_long_turn_carries_the_pivot_from_the_drags_start_without_drift() {
+    let held = drift_after_a_long_turn(true);
+    let stepped = drift_after_a_long_turn(false);
+    assert!(held < 1e-5, "{held}");
+    assert!(held < stepped, "{held} vs {stepped}");
+}

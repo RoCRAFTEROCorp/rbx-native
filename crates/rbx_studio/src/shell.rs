@@ -350,6 +350,9 @@ pub(crate) struct Shell {
     /// the toolbar renders from it; pushed down to the viewport, which
     /// hit-tests against it, whenever it changes.
     transform: Transform,
+    /// The model pivots a viewport drag carries with its parts, read once at
+    /// the drag's first step — see `Shell::write_drag_after`.
+    drag_followers: Vec<rbx_lua::pivot::Follower>,
     /// The two snap increment fields' live text — see `shell::toolbar::snap`.
     snap_fields: SnapFields,
     /// The Align tool's current toggles (axes, Min/Center/Max, World/Local,
@@ -679,6 +682,7 @@ impl Shell {
             format,
             folder_colors,
             transform,
+            drag_followers: Vec::new(),
             snap_fields,
             align: AlignOptions::default(),
             align_open: false,

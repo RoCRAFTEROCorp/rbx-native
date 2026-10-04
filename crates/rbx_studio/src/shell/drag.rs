@@ -344,16 +344,26 @@ impl Shell {
     ) {
         if first {
             self.push_history();
+            // Studio carries a dragged model's pivot with it; the writes
+            // below only move its parts. Read once, here, against the DOM
+            // as the drag found it: every step's writes are measured from
+            // there too, so the pivot is carried in one go each step rather
+            // than nudged on from the last one, piling up rounding.
+            self.drag_followers =
+                rbx_lua::pivot::followers(&self.dom, &self.database, self.selection.all());
         }
         let pivot = pivot.and_then(|to| match self.pivot_owners()[..] {
             [owner] => Some((owner, transform::cframe(to))),
             _ => None,
         });
 
-        // Studio carries a dragged model's pivot with it; the writes below
-        // only move its parts.
-        let followers = rbx_lua::pivot::followers(&self.dom, &self.database, self.selection.all());
-        let written = apply(&mut self.dom, &self.database, writes, &followers, pivot);
+        let written = apply(
+            &mut self.dom,
+            &self.database,
+            writes,
+            &self.drag_followers,
+            pivot,
+        );
         // Same reasoning as `move_parts`: overwrites the entry's log with
         // just this step's writes — one `CFrame` per part for a Rotate,
         // Size and CFrame per part for a Scale — one patch of each part
