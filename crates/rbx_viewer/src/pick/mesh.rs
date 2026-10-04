@@ -41,6 +41,23 @@ pub struct Meshes {
     textures: Arc<HashMap<Ref, Arc<Image>>>,
     surfaces: Arc<HashMap<Ref, Surface>>,
     materials: Arc<HashMap<Ref, Arc<Pack>>>,
+    /// Every part drawn as one of the materials no texture captures (Neon,
+    /// Glass, ForceField); the rest are plain.
+    kinds: Arc<HashMap<Ref, Kind>>,
+    /// The additive pieces each union whose boolean could not be run is
+    /// drawn as instead (see `scene::union`).
+    pieces: Arc<HashMap<Ref, Vec<Piece>>>,
+}
+
+/// One recovered piece of a union, as the scene draws it.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct Piece {
+    pub(crate) kind: crate::scene::ShapeKind,
+    /// Unit shape to world.
+    pub(crate) transform: Mat4,
+    /// Linear.
+    pub(crate) color: [f32; 3],
+    pub(crate) alpha: f32,
 }
 
 /// A textured `Material`'s maps as the renderer projects them (see
@@ -72,11 +89,23 @@ impl Meshes {
             textures: Arc::new(textures),
             surfaces: Arc::default(),
             materials: Arc::default(),
+            kinds: Arc::default(),
+            pieces: Arc::default(),
         }
     }
 
     pub(crate) fn with_materials(mut self, materials: HashMap<Ref, Arc<Pack>>) -> Self {
         self.materials = Arc::new(materials);
+        self
+    }
+
+    pub(crate) fn with_kinds(mut self, kinds: HashMap<Ref, Kind>) -> Self {
+        self.kinds = Arc::new(kinds);
+        self
+    }
+
+    pub(crate) fn with_pieces(mut self, pieces: HashMap<Ref, Vec<Piece>>) -> Self {
+        self.pieces = Arc::new(pieces);
         self
     }
 
@@ -122,17 +151,34 @@ impl Meshes {
         let catalog = scene.materials();
         let mut packs: HashMap<u32, Option<Arc<Pack>>> = HashMap::new();
         let mut materials = HashMap::new();
+        let mut kinds = HashMap::new();
+        let mut pieces: HashMap<Ref, Vec<Piece>> = HashMap::new();
+        for part in scene.parts() {
+            if part.id.piece_index().is_some() {
+                pieces.entry(part.id.referent()).or_default().push(Piece {
+                    kind: part.kind,
+                    transform: part.transform,
+                    color: part.color,
+                    alpha: part.alpha,
+                });
+            }
+        }
         let slots = scene
             .parts()
             .iter()
             .map(|part| (part.id.referent(), part.material))
             .chain(resolved.instances.iter().map(|i| (i.referent, i.material)));
         for (referent, Slot { layer, .. }) in slots {
+            // Re-read rather than trusted: the slot a part was built with
+            // is plastic until its pack lands (see `Catalog::slot`).
+            let slot = catalog.slot(layer);
+            if matches!(slot.kind, Kind::Neon | Kind::Glass | Kind::ForceField) {
+                kinds.entry(referent).or_insert(slot.kind);
+            }
             let pack = packs.entry(layer).or_insert_with(|| {
-                // Re-read rather than trusted: the slot a part was built with
-                // is plastic until its pack lands (see `Catalog::slot`).
-                let slot = catalog.slot(layer);
-                (slot.kind == Kind::Textured).then(|| {
+                // Glass reads its pack too (`mapped_shade`); only Neon and
+                // ForceField shade procedurally.
+                matches!(slot.kind, Kind::Textured | Kind::Glass).then(|| {
                     Arc::new(Pack {
                         maps: rbx_materials::MapKind::ALL
                             .map(|kind| catalog.shared_image(layer as usize, kind).cloned()),
@@ -149,6 +195,8 @@ impl Meshes {
         Meshes::new(resolved.meshes.clone(), textures)
             .with_surfaces(surfaces)
             .with_materials(materials)
+            .with_kinds(kinds)
+            .with_pieces(pieces)
     }
 
     pub(crate) fn get(&self, asset: &AssetRef) -> Option<&Arc<Mesh>> {
@@ -165,6 +213,14 @@ impl Meshes {
 
     pub(crate) fn material(&self, referent: Ref) -> Option<&Pack> {
         self.materials.get(&referent).map(Arc::as_ref)
+    }
+
+    pub(crate) fn kind(&self, referent: Ref) -> Kind {
+        self.kinds.get(&referent).copied().unwrap_or(Kind::Plastic)
+    }
+
+    pub(crate) fn pieces(&self, referent: Ref) -> &[Piece] {
+        self.pieces.get(&referent).map_or(&[], Vec::as_slice)
     }
 }
 

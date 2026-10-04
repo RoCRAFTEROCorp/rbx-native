@@ -8,7 +8,8 @@
 use std::collections::BTreeSet;
 use std::fmt::Write as _;
 
-use super::{Export, ExportMesh};
+use super::gltf::{FORCE_FIELD_GLOW, FORCE_FIELD_OPACITY, GLASS_IOR};
+use super::{Export, ExportMesh, Finish};
 
 /// Every file an `.obj` export is, named for `stem` (the `.obj`'s own file
 /// name without its extension): the `.obj` itself, its `.mtl`, and one
@@ -91,7 +92,33 @@ pub fn mtl(meshes: &[ExportMesh], stem: &str) -> String {
         let [r, g, b, alpha] = mesh.color;
         let _ = writeln!(out, "\nnewmtl {}", material_name(mesh, index));
         let _ = writeln!(out, "Kd {r} {g} {b}");
-        let _ = writeln!(out, "d {alpha}");
+        // OBJ has no strength for its emission, nor any Fresnel: Neon emits
+        // its colour as is, a ForceField its mean rim glow (see `gltf`).
+        match mesh.finish {
+            Finish::Plain => {
+                let _ = writeln!(out, "d {alpha}");
+            }
+            Finish::Neon => {
+                let _ = writeln!(out, "d {alpha}\nKe {r} {g} {b}");
+                if let Some(texture) = mesh.maps.color {
+                    let _ = writeln!(out, "map_Ke {}", texture_file(&stem, texture));
+                }
+            }
+            Finish::Glass => {
+                let _ = writeln!(out, "d {alpha}\nTr {}\nNi {GLASS_IOR}\nillum 4", 1.0 - alpha);
+            }
+            Finish::ForceField => {
+                let glow = |c: f32| c * FORCE_FIELD_GLOW;
+                let _ = writeln!(
+                    out,
+                    "d {}\nKe {} {} {}",
+                    (alpha * FORCE_FIELD_OPACITY).min(1.0),
+                    glow(r),
+                    glow(g),
+                    glow(b)
+                );
+            }
+        }
         // `map_Bump` rather than the PBR extension's `norm`: it is the key
         // Blender's importer (and most others) turns into a tangent-space
         // normal map. `map_Pm`/`map_Pr` are that extension's own.

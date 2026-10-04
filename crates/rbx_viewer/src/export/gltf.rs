@@ -1,20 +1,29 @@
 //! glTF 2.0 as a single `.gltf` file: the JSON document with its one binary
 //! buffer inline as a base64 data URI, so the export is one file to move
-//! around rather than a `.gltf` and a `.bin` that break apart.
+//! around — the layout Studio's own glTF export writes too ("a single .gltf
+//! file that includes embedded textures", the beta's announcement, DevForum
+//! thread 3905928).
 //!
-//! One node, mesh and material per part; a part drawn with an image carries
-//! it, inline as a PNG data URI, as its material's base colour texture, and
-//! a `SurfaceAppearance` its normal and metallic-roughness maps too. An
-//! image several parts share is embedded once, as one `images` entry every
-//! one of their materials points at. Vertices are already in world space
-//! (see [`super::meshes_of`]), so no node carries a transform.
+//! Like Studio's, the instance tree survives: one node per part and per
+//! container above it, named after the instance, each placed relative to
+//! its parent by rotation and translation, with the instance's class (and a
+//! part's `Material`) in `extras` under Studio's own keys. Where this differs
+//! from Studio's output, on purpose: a part's scale is in its vertices rather
+//! than on its node, so a mesh is never shared between parts of different
+//! sizes (Studio shares one unit cube); `baseColorFactor` is linear, as the
+//! specification asks, where Studio writes the sRGB bytes over 255 (which is
+//! why its colours come out washed in Blender); metalness and roughness are
+//! written rather than left at the specification's metallic default; and
+//! Neon, Glass and ForceField are written as the closest PBR extensions say
+//! (see [`finish`]) where Studio keeps only the material's name.
 
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 
 use base64::Engine as _;
+use glam::{Mat4, Quat, Vec3};
 use serde_json::{json, Value};
 
-use super::{Export, ExportMesh};
+use super::{Export, ExportMesh, Finish};
 
 // glTF's enumerations, from the 2.0 specification.
 const ARRAY_BUFFER: u32 = 34962;
@@ -23,103 +32,116 @@ const FLOAT: u32 = 5126;
 const UNSIGNED_INT: u32 = 5125;
 const TRIANGLES: u32 = 4;
 
+/// `NEON_HDR` in `renderer/material.wgsl`: how many times its own colour a
+/// Neon surface glows by before the frame is exposed and tone-mapped.
+const NEON_STRENGTH: f32 = 6.0;
+/// A ForceField's look depends on the angle it is seen at, which a material
+/// cannot. `material.wgsl` makes its opacity `alpha * mix(0.4, 2.0, rim)`
+/// and its glow `colour * 2.2 * rim`, with `rim = (1 - |n·v|)²`; over every
+/// angle a closed shell shows an eye (`|n·v|` spread as `2c dc`) the mean
+/// rim is 1/6, so those are the figures here: the shell as a whole, not any
+/// one angle of it.
+const FORCE_FIELD_MEAN_RIM: f32 = 1.0 / 6.0;
+pub(super) const FORCE_FIELD_OPACITY: f32 = 0.4 + (2.0 - 0.4) * FORCE_FIELD_MEAN_RIM;
+pub(super) const FORCE_FIELD_GLOW: f32 = 2.2 * FORCE_FIELD_MEAN_RIM;
+/// Roblox publishes no index of refraction for Glass, and the viewport's
+/// refraction is a screen-space displacement with none either (see
+/// `GLASS_REFRACTION` in `material.wgsl`); 1.5 is window glass, and the
+/// extension's own default.
+pub(super) const GLASS_IOR: f32 = 1.5;
+/// `material.wgsl` keeps Glass "barely rougher than a mirror" when no
+/// roughness map says otherwise.
+const GLASS_ROUGHNESS: f32 = 0.05;
+
 pub fn gltf(export: &Export) -> String {
-    let meshes = &export.meshes;
-    let mut buffer: Vec<u8> = Vec::new();
-    let mut views = Vec::new();
-    let mut accessors = Vec::new();
-    // Every element below is four bytes wide, so each view starts aligned
-    // without padding, as the specification requires of an accessor.
-    let mut view = |buffer: &mut Vec<u8>, bytes: &[u8], target: u32| {
-        views.push(json!({
-            "buffer": 0,
-            "byteOffset": buffer.len(),
-            "byteLength": bytes.len(),
-            "target": target,
-        }));
-        buffer.extend_from_slice(bytes);
-        views.len() - 1
-    };
-
-    let mut primitives = Vec::new();
-    for mesh in meshes {
-        let positions: Vec<u8> = mesh
-            .positions
-            .iter()
-            .flatten()
-            .flat_map(|v| v.to_le_bytes())
-            .collect();
-        let normals: Vec<u8> = mesh
-            .normals
-            .iter()
-            .flatten()
-            .flat_map(|v| v.to_le_bytes())
-            .collect();
-        let indices: Vec<u8> = mesh.indices.iter().flat_map(|i| i.to_le_bytes()).collect();
-        let uvs: Vec<u8> = mesh
-            .uvs
-            .iter()
-            .flatten()
-            .flat_map(|v| v.to_le_bytes())
-            .collect();
-        let (min, max) = bounds(&mesh.positions);
-
-        let base = accessors.len();
-        let mut attributes = json!({ "POSITION": base, "NORMAL": base + 1 });
-        accessors.push(json!({
-            "bufferView": view(&mut buffer, &positions, ARRAY_BUFFER),
-            "componentType": FLOAT,
-            "count": mesh.positions.len(),
-            "type": "VEC3",
-            // Required on POSITION by the specification.
-            "min": min,
-            "max": max,
-        }));
-        accessors.push(json!({
-            "bufferView": view(&mut buffer, &normals, ARRAY_BUFFER),
-            "componentType": FLOAT,
-            "count": mesh.normals.len(),
-            "type": "VEC3",
-        }));
-        accessors.push(json!({
-            "bufferView": view(&mut buffer, &indices, ELEMENT_ARRAY_BUFFER),
-            "componentType": UNSIGNED_INT,
-            "count": mesh.indices.len(),
-            "type": "SCALAR",
-        }));
-        if !mesh.uvs.is_empty() {
-            attributes["TEXCOORD_0"] = json!(accessors.len());
-            accessors.push(json!({
-                "bufferView": view(&mut buffer, &uvs, ARRAY_BUFFER),
-                "componentType": FLOAT,
-                "count": mesh.uvs.len(),
-                "type": "VEC2",
-            }));
+    let mut out = Buffers::default();
+    // Each part's vertices back in its own frame, which its node places.
+    let worlds = node_worlds(export);
+    let mut owner = vec![Mat4::IDENTITY; export.meshes.len()];
+    for (node, world) in export.nodes.iter().zip(&worlds) {
+        for &mesh in &node.meshes {
+            owner[mesh] = *world;
         }
-        primitives.push((attributes, base + 2));
     }
 
-    let nodes: Vec<Value> = meshes
+    let mut primitives = Vec::new();
+    for (index, mesh) in export.meshes.iter().enumerate() {
+        let to_local = owner[index].inverse();
+        let positions: Vec<f32> = mesh
+            .positions
+            .iter()
+            .flat_map(|p| to_local.transform_point3(Vec3::from(*p)).to_array())
+            .collect();
+        let turn = |v: [f32; 3]| to_local.transform_vector3(Vec3::from(v)).normalize_or(Vec3::Y);
+        let normals: Vec<f32> = mesh.normals.iter().flat_map(|n| turn(*n).to_array()).collect();
+        let position = out.add(&positions, ARRAY_BUFFER, mesh.positions.len(), "VEC3");
+        // Required on POSITION by the specification.
+        let (min, max) = bounds(&positions);
+        out.accessors[position]["min"] = json!(min);
+        out.accessors[position]["max"] = json!(max);
+        let normal = out.add(&normals, ARRAY_BUFFER, mesh.normals.len(), "VEC3");
+        let mut attributes = json!({ "POSITION": position, "NORMAL": normal });
+        if !mesh.tangents.is_empty() {
+            let tangents: Vec<f32> = mesh
+                .tangents
+                .iter()
+                .flat_map(|t| turn([t[0], t[1], t[2]]).extend(t[3]).to_array())
+                .collect();
+            attributes["TANGENT"] = json!(out.add(&tangents, ARRAY_BUFFER, mesh.tangents.len(), "VEC4"));
+        }
+        if !mesh.uvs.is_empty() {
+            let uvs: Vec<f32> = mesh.uvs.iter().flatten().copied().collect();
+            attributes["TEXCOORD_0"] = json!(out.add(&uvs, ARRAY_BUFFER, mesh.uvs.len(), "VEC2"));
+        }
+        // Carried through the float writer bit for bit, then retyped.
+        let indices: Vec<f32> = mesh.indices.iter().map(|&i| f32::from_bits(i)).collect();
+        let indices = out.add(&indices, ELEMENT_ARRAY_BUFFER, mesh.indices.len(), "SCALAR");
+        out.accessors[indices]["componentType"] = json!(UNSIGNED_INT);
+        primitives.push(json!({
+            "attributes": attributes,
+            "indices": indices,
+            "material": index,
+            "mode": TRIANGLES,
+        }));
+    }
+
+    let mut gltf_meshes = Vec::new();
+    let nodes: Vec<Value> = export
+        .nodes
         .iter()
         .enumerate()
-        .map(|(index, mesh)| json!({ "name": mesh.name, "mesh": index }))
-        .collect();
-    let gltf_meshes: Vec<Value> = meshes
-        .iter()
-        .zip(&primitives)
-        .enumerate()
-        .map(|(index, (mesh, (attributes, indices)))| {
-            json!({
-                "name": mesh.name,
-                "primitives": [{
-                    "attributes": attributes,
-                    "indices": indices,
-                    "material": index,
-                    "mode": TRIANGLES,
-                }],
-            })
+        .map(|(index, node)| {
+            let mut out = json!({ "name": node.name });
+            let parent = node.parent.map_or(Mat4::IDENTITY, |p| worlds[p]);
+            let (_, rotation, translation) = (parent.inverse() * worlds[index]).to_scale_rotation_translation();
+            if rotation.angle_between(Quat::IDENTITY) > 1e-6 {
+                out["rotation"] = json!(rotation.normalize().to_array());
+            }
+            if translation != Vec3::ZERO {
+                out["translation"] = json!(translation.to_array());
+            }
+            let children: Vec<usize> = (0..export.nodes.len())
+                .filter(|&child| export.nodes[child].parent == Some(index))
+                .collect();
+            if !children.is_empty() {
+                out["children"] = json!(children);
+            }
+            if !node.meshes.is_empty() {
+                gltf_meshes.push(json!({
+                    "name": node.name,
+                    "primitives": node.meshes.iter().map(|&m| primitives[m].clone()).collect::<Vec<_>>(),
+                }));
+                out["mesh"] = json!(gltf_meshes.len() - 1);
+            }
+            let mut extras = json!({ "RobloxInstanceType": node.class });
+            if let Some(material) = &node.material {
+                extras["Material"] = json!(material);
+            }
+            out["extras"] = extras;
+            out
         })
         .collect();
+
     // Texture `n` is image `n`, in the order materials first name them; an
     // `Export::textures` entry nothing here names is left out.
     let mut images = Vec::new();
@@ -135,27 +157,11 @@ pub fn gltf(export: &Export) -> String {
             images.len() - 1
         })
     };
-    let materials: Vec<Value> = meshes
+    let mut used = BTreeSet::new();
+    let materials: Vec<Value> = export
+        .meshes
         .iter()
-        .map(|mesh| {
-            let mut material = material(mesh);
-            let maps = mesh.maps;
-            if let Some(index) = maps.color {
-                material["pbrMetallicRoughness"]["baseColorTexture"] =
-                    json!({ "index": texture(index) });
-            }
-            if let Some(index) = maps.normal {
-                material["normalTexture"] = json!({ "index": texture(index) });
-            }
-            // The factors multiply the texture, so 1 leaves it as authored.
-            if let Some(index) = maps.metallic_roughness {
-                let pbr = &mut material["pbrMetallicRoughness"];
-                pbr["metallicRoughnessTexture"] = json!({ "index": texture(index) });
-                pbr["metallicFactor"] = json!(1.0);
-                pbr["roughnessFactor"] = json!(1.0);
-            }
-            material
-        })
+        .map(|mesh| material(mesh, &mut texture, &mut used))
         .collect();
     let textures: Vec<Value> = (0..images.len())
         .map(|index| json!({ "source": index }))
@@ -164,17 +170,19 @@ pub fn gltf(export: &Export) -> String {
     let mut document = json!({
         "asset": { "version": "2.0", "generator": "rbxstudio" },
         "scene": 0,
-        "scenes": [{ "nodes": (0..meshes.len()).collect::<Vec<_>>() }],
+        "scenes": [{
+            "nodes": (0..export.nodes.len()).filter(|&n| export.nodes[n].parent.is_none()).collect::<Vec<_>>(),
+        }],
         "nodes": nodes,
         "meshes": gltf_meshes,
         "materials": materials,
-        "accessors": accessors,
-        "bufferViews": views,
+        "accessors": out.accessors,
+        "bufferViews": out.views,
         "buffers": [{
-            "byteLength": buffer.len(),
+            "byteLength": out.bytes.len(),
             "uri": format!(
                 "data:application/octet-stream;base64,{}",
-                base64::engine::general_purpose::STANDARD.encode(&buffer)
+                base64::engine::general_purpose::STANDARD.encode(&out.bytes)
             ),
         }],
     });
@@ -183,14 +191,76 @@ pub fn gltf(export: &Export) -> String {
         document["textures"] = json!(textures);
         document["images"] = json!(images);
     }
+    if !used.is_empty() {
+        document["extensionsUsed"] = json!(used);
+    }
+    if let Some(document) = document.as_object_mut() {
+        for key in ["meshes", "materials", "accessors", "bufferViews"] {
+            if document[key].as_array().is_some_and(Vec::is_empty) {
+                document.remove(key);
+            }
+        }
+        if export.meshes.is_empty() {
+            document.remove("buffers");
+        }
+    }
     // `json!` cannot fail to serialize: every key is a string and every
     // number a finite one (a NaN would have become `null`).
     serde_json::to_string_pretty(&document).unwrap_or_default()
 }
 
-/// The part's own colour, matte and non-metallic: the closest a plain PBR
-/// material gets to a `Plastic` part without its material texture.
-fn material(mesh: &ExportMesh) -> Value {
+/// The one binary buffer, its views and their accessors.
+#[derive(Default)]
+struct Buffers {
+    bytes: Vec<u8>,
+    views: Vec<Value>,
+    accessors: Vec<Value>,
+}
+
+impl Buffers {
+    /// Appends `values` as a view of its own and an accessor over it,
+    /// returning the accessor's index. Every element is four bytes wide, so
+    /// each view starts aligned without padding, as the specification
+    /// requires of an accessor.
+    fn add(&mut self, values: &[f32], target: u32, count: usize, kind: &str) -> usize {
+        let bytes: Vec<u8> = values.iter().flat_map(|v| v.to_le_bytes()).collect();
+        self.views.push(json!({
+            "buffer": 0,
+            "byteOffset": self.bytes.len(),
+            "byteLength": bytes.len(),
+            "target": target,
+        }));
+        self.bytes.extend_from_slice(&bytes);
+        self.accessors.push(json!({
+            "bufferView": self.views.len() - 1,
+            "componentType": FLOAT,
+            "count": count,
+            "type": kind,
+        }));
+        self.accessors.len() - 1
+    }
+}
+
+/// Each node's world placement: a part's own, a container's its parent's
+/// (it places nothing itself). Nodes come parent first.
+fn node_worlds(export: &Export) -> Vec<Mat4> {
+    let mut worlds: Vec<Mat4> = Vec::with_capacity(export.nodes.len());
+    for node in &export.nodes {
+        let world = match node.placement {
+            Some((rotation, translation)) => Mat4::from_rotation_translation(
+                Quat::from_array(rotation).normalize(),
+                Vec3::from(translation),
+            ),
+            None => node.parent.map_or(Mat4::IDENTITY, |p| worlds[p]),
+        };
+        worlds.push(world);
+    }
+    worlds
+}
+
+/// The part's colour and maps as a metallic-roughness material, matte and
+/// non-metallic unless its maps say otherwise, then its [`finish`].
+fn material(mesh: &ExportMesh, texture: &mut impl FnMut(usize) -> usize, used: &mut BTreeSet<&'static str>) -> Value {
     let mut material = json!({
         "name": mesh.name,
         "pbrMetallicRoughness": {
@@ -202,11 +272,75 @@ fn material(mesh: &ExportMesh) -> Value {
     if mesh.blend {
         material["alphaMode"] = json!("BLEND");
     }
+    let maps = mesh.maps;
+    if let Some(index) = maps.color {
+        material["pbrMetallicRoughness"]["baseColorTexture"] = json!({ "index": texture(index) });
+    }
+    if let Some(index) = maps.normal {
+        material["normalTexture"] = json!({ "index": texture(index) });
+    }
+    // The factors multiply the texture, so 1 leaves it as authored.
+    if let Some(index) = maps.metallic_roughness {
+        let pbr = &mut material["pbrMetallicRoughness"];
+        pbr["metallicRoughnessTexture"] = json!({ "index": texture(index) });
+        pbr["metallicFactor"] = json!(1.0);
+        pbr["roughnessFactor"] = json!(1.0);
+    }
+    finish(&mut material, mesh, used);
     material
 }
 
-fn bounds(positions: &[[f32; 3]]) -> ([f32; 3], [f32; 3]) {
-    positions.iter().fold(
+/// What `material.wgsl` does with the three materials no texture captures,
+/// in the extensions that say the most of it.
+fn finish(material: &mut Value, mesh: &ExportMesh, used: &mut BTreeSet<&'static str>) {
+    let [r, g, b, alpha] = mesh.color;
+    match mesh.finish {
+        Finish::Plain => {}
+        // Unlit: the light it gives is all a Neon surface shows, so it
+        // reflects none (black base) and emits its colour, times its image.
+        Finish::Neon => {
+            let pbr = &mut material["pbrMetallicRoughness"];
+            pbr["baseColorFactor"] = json!([0.0, 0.0, 0.0, alpha]);
+            if let Some(texture) = pbr.as_object_mut().and_then(|pbr| pbr.remove("baseColorTexture")) {
+                material["emissiveTexture"] = texture;
+            }
+            material["emissiveFactor"] = json!([r, g, b]);
+            emissive_strength(material, NEON_STRENGTH, used);
+        }
+        // See-through by `Transparency` through transmission rather than
+        // blending, which is what lets a viewer refract what is behind it.
+        Finish::Glass => {
+            used.insert("KHR_materials_transmission");
+            used.insert("KHR_materials_ior");
+            material["pbrMetallicRoughness"]["baseColorFactor"] = json!([r, g, b, 1.0]);
+            if mesh.maps.metallic_roughness.is_none() {
+                material["pbrMetallicRoughness"]["roughnessFactor"] = json!(GLASS_ROUGHNESS);
+            }
+            if let Some(material) = material.as_object_mut() {
+                material.remove("alphaMode");
+            }
+            material["extensions"]["KHR_materials_transmission"] = json!({ "transmissionFactor": 1.0 - alpha });
+            material["extensions"]["KHR_materials_ior"] = json!({ "ior": GLASS_IOR });
+        }
+        Finish::ForceField => {
+            material["alphaMode"] = json!("BLEND");
+            material["pbrMetallicRoughness"]["baseColorFactor"] =
+                json!([r, g, b, (alpha * FORCE_FIELD_OPACITY).min(1.0)]);
+            material["emissiveFactor"] = json!([r, g, b]);
+            emissive_strength(material, FORCE_FIELD_GLOW, used);
+        }
+    }
+}
+
+fn emissive_strength(material: &mut Value, strength: f32, used: &mut BTreeSet<&'static str>) {
+    if strength != 1.0 {
+        used.insert("KHR_materials_emissive_strength");
+        material["extensions"]["KHR_materials_emissive_strength"] = json!({ "emissiveStrength": strength });
+    }
+}
+
+fn bounds(positions: &[f32]) -> ([f32; 3], [f32; 3]) {
+    positions.as_chunks::<3>().0.iter().fold(
         ([f32::INFINITY; 3], [f32::NEG_INFINITY; 3]),
         |(min, max), p| {
             (

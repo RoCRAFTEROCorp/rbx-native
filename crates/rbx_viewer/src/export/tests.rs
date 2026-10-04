@@ -3,11 +3,12 @@ use std::sync::Arc;
 
 use base64::Engine as _;
 use rbx_assets::AssetRef;
-use rbx_dom::{CFrameData, Vector3Data};
+use rbx_dom::{CFrameData, Variant, Vector3Data};
 use serde_json::Value;
 
 use super::*;
 use crate::pick::{Pack, Surface};
+use crate::scene::{union_fit, AlphaMode};
 
 const IDENTITY: [f32; 9] = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0];
 
@@ -194,7 +195,13 @@ fn gltf_is_a_valid_two_point_oh_document_with_the_vertices_inline() {
     let document: Value = serde_json::from_str(&gltf(&exported)).unwrap();
 
     assert_eq!(document["asset"]["version"], "2.0");
-    assert_eq!(document["scenes"][0]["nodes"].as_array().unwrap().len(), 2);
+    // The model is the one root, its parts its children.
+    let roots = document["scenes"][0]["nodes"].as_array().unwrap();
+    assert_eq!(roots.len(), 1);
+    let root = &document["nodes"][roots[0].as_u64().unwrap() as usize];
+    assert_eq!(root["name"], "Pair");
+    assert_eq!(root["extras"]["RobloxInstanceType"], "Model");
+    assert_eq!(root["children"].as_array().unwrap().len(), 2);
     assert_eq!(document["meshes"].as_array().unwrap().len(), 2);
     assert_eq!(document["accessors"].as_array().unwrap().len(), 6);
     assert_eq!(document["bufferViews"].as_array().unwrap().len(), 6);
@@ -227,7 +234,11 @@ fn gltf_is_a_valid_two_point_oh_document_with_the_vertices_inline() {
             .chunks(4)
             .map(|bytes| f32::from_le_bytes(bytes.try_into().unwrap()))
             .collect();
-        assert_eq!(first, mesh.positions[0]);
+        // In the part's own frame, which its node places.
+        let node = exported.nodes.iter().find(|n| n.meshes == [index]).unwrap();
+        let (_, at) = node.placement.unwrap();
+        let world: Vec<f32> = (0..3).map(|i| first[i] + at[i]).collect();
+        assert_eq!(world, mesh.positions[0]);
     }
 
     let blended = exported.meshes.iter().position(|m| m.name == "A").unwrap();
