@@ -1645,6 +1645,28 @@ Roblox's own engine.
   by a narrow field — went with the panel's rework: hairline seams between
   rows, and a numeric value shown whole on its own row with its components
   behind an expander.
+- [x] **Save/Publish to Roblox from the editor UI.** File › Save to Roblox
+  (`versionType=Saved`) and Publish to Roblox (`versionType=Published`)
+  upload the open place through `rbx_cloud::Client::publish_place` as a new
+  version of its linked place; re-running either is simply the next
+  version. A file opened from Home already carries its universe/place ids;
+  any other file picks its game once from a window listing Home's own My
+  Games (the same listing, cache and owner dropdown, the user's and their
+  groups' experiences), which links it to the experience's starting place —
+  Roblox's listings carry no other place — while Home's add-by-place-ID-or-
+  link row links any other place, listed or not (File › Link to Roblox
+  Place… changes it). Every upload is confirmed first in a dialog naming the
+  experience and place and saying what will happen: Publish saves a new
+  version and makes it the one players join, Save saves one without
+  publishing it. Success and failure are rows in the Output dock, and
+  a failure also opens a dialog with Roblox's documented reason for the
+  status. Browsing and restoring older versions is its own item under
+  "What's planned". Roblox's own limit, from `creator-docs`
+  (`cloud/guides/usage-place-publishing.md`): this API does **not** update
+  `EditableImage`, `EditableMesh`, `PartOperation` (unions),
+  `SurfaceAppearance` or `BaseWrap` instances — edits to those only go live
+  when published from Roblox Studio. A successful upload of a place holding
+  any of them adds a warning row to the Output dock saying so.
 
 ### Platform
 - [x] Linux (X11) — the daily-driven target.
@@ -1814,12 +1836,18 @@ Roblox's own engine.
   Luau — the Command Bar and scripts — has `PVInstance:GetPivot()` and
   `PVInstance:PivotTo()` through the same pivot (`rbx_lua::pivot`), with
   `BasePart.PivotOffset` readable and writable like any property.
+- [ ] 📋 **Place version history (browse and restore).** Browsing and
+  restoring an older saved/published version of a place, not just writing
+  a new one (File › Save/Publish to Roblox, above, already does that). A
+  separate Open Cloud surface from the publish endpoint —
+  `GET /place-version-history-api/v1/{placeId}/history` and
+  `.../contributors` — and not yet wired into `rbx_cloud` at all.
 - [ ] 📋 **Whole-place and fuller Explorer export.** Left open by the
   Explorer row's Save / Export rows (see "What's been implemented" →
   Editor): the whole place to a local file under a name of its choosing
   (Studio's File › Save to File / File › Export as glTF, both File-menu
-  items rather than row ones), and services and the place to Roblox
-  (Save/Publish, see below). In the mesh exports a union whose boolean
+  items rather than row ones; uploading the place to Roblox is File ›
+  Save/Publish to Roblox, see "What's been implemented"). In the mesh exports a union whose boolean
   failed, or one baked only as `MeshData` (never decoded here), still
   exports as its box; a textured mesh whose `Material` also has a pack
   takes its own image alone (one UV set per part), a material projected
@@ -1830,25 +1858,6 @@ Roblox's own engine.
   Late 2025 to Late 2026 in its
   [fall 2026 update](https://devforum.roblox.com/t/creator-roadmap-2026-fall-update/4880208);
   check what it actually exports once it ships.
-- [ ] 📋 **Save/Publish to Roblox from the editor UI.** The Open Cloud
-  client side of this already exists and works —
-  `rbx_cloud::Client::publish_place`
-  (`POST /universes/v1/{universe}/places/{place}/versions?versionType=Saved|Published`)
-  already distinguishes **Save** (`versionType=Saved`) from **Publish**
-  (`versionType=Published`), which is exactly the Roblox-side distinction
-  between saving a version and publishing a new live version of an already
-  -published place. What's missing is wiring it into `rbxstudio`'s own
-  File menu: prompting for (or remembering) a universe/place id, offering
-  "Save" vs. "Publish" as separate actions once a place is linked to one,
-  and "publish as a new version" being the natural behaviour once a place
-  already has an associated `placeId` — no new API work, this is an editor
-  -UI task on top of an existing, working client. **Version history**
-  (browsing and restoring an older saved/published version, not just
-  writing a new one) is a separate, real Open Cloud surface —
-  `GET /place-version-history-api/v1/{placeId}/history` and
-  `.../contributors` — distinct from the publish endpoint above and not
-  yet wired into `rbx_cloud` at all; worth treating as its own follow-up
-  rather than assuming the existing client already covers it.
 #### Properties panel — remaining type editors
 - [ ] 📋 **"Freeze"/"Apply" a `MeshPart`'s rotation** — zero out
   `Orientation` while leaving the object's *visual* placement unchanged,

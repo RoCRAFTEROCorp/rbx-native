@@ -37,6 +37,7 @@ mod recovery;
 mod ref_pick;
 mod reparent;
 mod ribbon;
+mod roblox_publish;
 mod roving;
 
 pub(crate) use chrome::panel_topbar;
@@ -343,6 +344,9 @@ pub(crate) struct Shell {
     /// regardless of what the tree currently looks like.
     path: PathBuf,
     format: Format,
+    /// File › Save/Publish to Roblox's dialogs and in-flight upload; see
+    /// `shell::roblox_publish`.
+    roblox: roblox_publish::RobloxPublish,
     /// This place's `Folder` colour tags; see `shell::folder_color`.
     folder_colors: FolderColors,
     /// Which transform tool the toolbar has active, and whether its draggers
@@ -666,6 +670,7 @@ impl Shell {
             viewport_scroll: ScrollHandle::new(),
             viewport_rows: Rc::default(),
             output_search: cx.new(|cx| InputState::new(window, cx).placeholder("Search")),
+            roblox: roblox_publish::RobloxPublish::new(cx),
             argon_ui: argon_dock::ArgonDock::new(&argon_address_setting, window, cx),
             wally_ui: wally_dock::WallyDock::new(cx),
             viewport_ui: viewport_dock::ViewportDock::new(),
@@ -871,6 +876,7 @@ impl Shell {
         // script can prove Ctrl+S round-trips whatever every block above just
         // mutated.
         shell.apply_debug_save(cx);
+        shell.apply_debug_roblox(cx);
 
         shell.watch_theme(cx);
         shell.watch_recovery(cx);
@@ -1554,6 +1560,7 @@ impl Render for Shell {
         // Before the tree is built, so the box this focuses is in the very
         // frame that hands it the caret — see `Shell::focus_explorer_edit`.
         self.focus_explorer_edit(window, cx);
+        self.focus_roblox_dialog(window, cx);
         // An increment set from Settings has to reach the popover's text.
         self.snap_fields.sync(self.transform, window, cx);
         self.sync_argon_fields(window, cx);
@@ -1648,6 +1655,7 @@ impl Render for Shell {
             // a popup nested in the tree's own scrolled, virtualised list
             // is clipped by it.
             .children(self.explorer_popups(cx))
+            .children(self.roblox_dialog(cx))
             .children(self.theme_background(true))
     }
 }

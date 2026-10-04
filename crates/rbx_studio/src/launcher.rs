@@ -6,7 +6,8 @@
 //!
 //! Only one launcher window is open at a time and it is the app's only
 //! window, so closing it quits; handing over to the editor closes it
-//! without quitting.
+//! without quitting. The one exception is Home's My Games reopened over the
+//! editor as its game picker ([`open_game_picker`]), which only closes.
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -81,6 +82,26 @@ pub(crate) fn open_home(boot: Boot, cx: &mut App) {
         let view = cx.new(|cx| HomeWindow::new(boot, window, cx));
         cx.new(|cx| Root::new(view, window, cx))
     });
+}
+
+/// The editor's game picker (1040×720, resizable down to 760×520): Home's
+/// My Games, where picking a game, or adding one by place ID or link, hands
+/// it to `on_pick` and closes the picker.
+pub(crate) fn open_game_picker(
+    on_pick: impl Fn(rbx_cloud::Experience, &mut App) + 'static,
+    cx: &mut App,
+) -> Option<WindowHandle<Root>> {
+    let options = options(
+        "Link to a Roblox place",
+        (1040., 720.),
+        Some((760., 520.)),
+        cx,
+    );
+    cx.open_window(options, move |window, cx| {
+        let view = cx.new(|cx| HomeWindow::picker(Rc::new(on_pick), window, cx));
+        cx.new(|cx| Root::new(view, window, cx))
+    })
+    .ok()
 }
 
 /// Roblox publishing (760×720, height resizable), over Home. `on_change`

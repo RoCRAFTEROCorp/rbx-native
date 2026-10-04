@@ -44,6 +44,14 @@ impl Shell {
         // No keyboard traps: Escape closes whichever menu is open, from
         // anywhere, and this handler sits on the window's own root so it
         // cannot be out of reach of one (WCAG 2.1.2).
+        if keystroke.key == "escape" && self.close_roblox_dialog() {
+            cx.notify();
+        }
+        // The upload confirmation's default button; it holds the keyboard
+        // while open, so Enter here is never meant for anything else.
+        if keystroke.key == "enter" {
+            self.confirm_roblox_upload(cx);
+        }
         if keystroke.key == "escape" && self.open_menu.take().is_some() {
             cx.notify();
         }
