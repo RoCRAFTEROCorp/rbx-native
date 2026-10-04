@@ -2,6 +2,14 @@
 
 ## 2026-10-04
 
+- **Place version history, browse and restore.** File › Version History…
+  lists the linked place's saved and published versions with who saved
+  them and when, a page at a time and filterable by contributor. Any
+  version can be opened as a local copy in a new editor, or restored:
+  its file is uploaded as a new version, exactly as Roblox's own restore
+  does since Open Cloud has no revert call, after the same confirmation
+  every upload asks for, with the choice to publish it too. Before, the
+  editor could only ever write a new version. — @chteau
 - **`Instance:GetFullName()` in Luau.** The Command Bar and scripts can
   now ask for an instance's dotted path (`Workspace.Terrain`), as Roblox
   documents it: the `DataModel` is left out, an unparented instance's path

@@ -74,3 +74,45 @@ fn listing_is_quick_and_group_games_come_one_group_at_a_time() {
             .all(|g| g.owner == rbx_cloud::Owner::Group(group.id)));
     }
 }
+
+/// Read-only: lists versions and downloads one, never publishes. Needs
+/// `universe.place:read` on the test experience for the history calls.
+#[test]
+#[ignore]
+fn version_history_pages_and_downloads_an_old_version() {
+    let Some(key) = rbx_cloud::ApiKey::from_env_or_config() else {
+        eprintln!("no API key configured (RBX_API_KEY unset), skipping");
+        return;
+    };
+    let client = rbx_cloud::Client::new(Some(key));
+
+    let first = client
+        .place_versions(TEST_PLACE_ID, None, None)
+        .expect("history should list");
+    assert!(!first.versions.is_empty());
+    assert!(first
+        .versions
+        .windows(2)
+        .all(|w| w[0].version > w[1].version));
+    if let Some(cursor) = &first.next_cursor {
+        let second = client
+            .place_versions(TEST_PLACE_ID, Some(cursor), None)
+            .expect("second page should list");
+        let last_of_first = first.versions.last().unwrap().version;
+        assert!(second.versions.iter().all(|v| v.version < last_of_first));
+    }
+
+    let contributors = client
+        .place_contributors(TEST_PLACE_ID)
+        .expect("contributors should list");
+    let names = client
+        .user_display_names(&contributors)
+        .expect("names should resolve");
+    assert!(!names.is_empty() || contributors.is_empty());
+
+    let oldest_listed = first.versions.last().unwrap().version;
+    let bytes = client
+        .download_place_version(TEST_PLACE_ID, oldest_listed)
+        .expect("an old version should download");
+    assert!(bytes.starts_with(b"<roblox"));
+}

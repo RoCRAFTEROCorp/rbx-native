@@ -3,7 +3,7 @@
 //! can show on an unrestricted key (Open Cloud has no "list my universes";
 //! the Creator Dashboard's own `universes/v1/search` is cookie-only).
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::client::Client;
 use crate::error::{self, CloudError};
@@ -17,6 +17,30 @@ struct UniverseOfPlaceRaw {
 
 #[derive(Deserialize)]
 struct UserRaw {
+    #[serde(rename = "displayName")]
+    display_name: String,
+}
+
+/// `POST users.roblox.com/v1/users` takes at most this many ids per call
+/// (`MultiGetByUserIdRequest.userIds.maxItems` in `openapi.json`).
+const USERS_PER_CALL: usize = 200;
+
+#[derive(Serialize)]
+struct UsersRequest<'a> {
+    #[serde(rename = "userIds")]
+    user_ids: &'a [u64],
+    #[serde(rename = "excludeBannedUsers")]
+    exclude_banned_users: bool,
+}
+
+#[derive(Deserialize)]
+struct UsersRaw {
+    data: Vec<UserIdRaw>,
+}
+
+#[derive(Deserialize)]
+struct UserIdRaw {
+    id: u64,
     #[serde(rename = "displayName")]
     display_name: String,
 }
@@ -72,6 +96,31 @@ impl Client {
         let raw: UserRaw = serde_json::from_slice(&response.body)?;
         Ok(raw.display_name)
     }
+
+    /// Display names for many users at once (anonymous). A deleted account
+    /// is simply missing from the answer; banned ones are kept, since a
+    /// place's history still names them.
+    pub fn user_display_names(&self, user_ids: &[u64]) -> Result<Vec<(u64, String)>, CloudError> {
+        let url = "https://users.roblox.com/v1/users";
+        let mut names = Vec::with_capacity(user_ids.len());
+        for chunk in user_ids.chunks(USERS_PER_CALL) {
+            let body = UsersRequest {
+                user_ids: chunk,
+                exclude_banned_users: false,
+            };
+            let response = self.post_json_raw(url, false, &body)?;
+            if !(200..300).contains(&response.status) {
+                return Err(error::error_for_status(
+                    url,
+                    response.status,
+                    &response.headers,
+                ));
+            }
+            let raw: UsersRaw = serde_json::from_slice(&response.body)?;
+            names.extend(raw.data.into_iter().map(|u| (u.id, u.display_name)));
+        }
+        Ok(names)
+    }
 }
 
 /// The place id in what a user pastes: a bare id, a game page link
@@ -118,6 +167,33 @@ mod tests {
             None
         );
         assert_eq!(place_id_from_link("not a link"), None);
+    }
+
+    #[test]
+    fn the_users_request_and_answer_have_the_real_shape() {
+        let body = serde_json::to_string(&UsersRequest {
+            user_ids: &[925308243, 1],
+            exclude_banned_users: false,
+        })
+        .unwrap();
+        assert_eq!(
+            body,
+            r#"{"userIds":[925308243,1],"excludeBannedUsers":false}"#
+        );
+        // users.roblox.com, 2026-10-04.
+        let raw: UsersRaw = serde_json::from_str(r#"{"data":[{"hasVerifiedBadge":true,"id":1,"name":"Roblox","displayName":"Roblox"},{"hasVerifiedBadge":true,"id":925308243,"name":"Cheeteau","displayName":"Cheeteau"}]}"#).unwrap();
+        let names: Vec<(u64, String)> = raw
+            .data
+            .into_iter()
+            .map(|u| (u.id, u.display_name))
+            .collect();
+        assert_eq!(
+            names,
+            [
+                (1, "Roblox".to_string()),
+                (925308243, "Cheeteau".to_string())
+            ]
+        );
     }
 
     #[test]

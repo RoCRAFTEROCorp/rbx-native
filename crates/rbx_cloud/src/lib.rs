@@ -1,7 +1,7 @@
 //! Blocking HTTP client for the Roblox APIs a native editor needs: API key
 //! introspection, universe/place metadata, public game listings, asset
 //! delivery (anonymous first, Open Cloud key as fallback), place publishing,
-//! experience icons, and the scope check behind the API key setup wizard.
+//! place version history, experience icons, and the scope check behind the API key setup wizard.
 //! See `Client` for the entry point.
 
 mod api_key;
@@ -18,6 +18,7 @@ mod retry;
 mod scopes;
 mod thumbnails;
 mod universes;
+mod version_history;
 
 pub use api_key::ApiKey;
 pub use assets::AssetContent;
@@ -33,3 +34,4 @@ pub use scopes::{
     PERMISSIONS,
 };
 pub use universes::{Owner, Universe, Visibility};
+pub use version_history::{PlaceVersion, VersionPage};

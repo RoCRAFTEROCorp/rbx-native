@@ -23,8 +23,11 @@
 //!
 //! `RBX_STUDIO_PUBLISH_MOCK=ok|<HTTP status>|network` answers the upload
 //! with a canned result instead of the network, and
-//! `RBX_STUDIO_ROBLOX=link|save|publish` runs that File menu command at
-//! open, for scripted captures.
+//! `RBX_STUDIO_ROBLOX=link|save|publish|history` runs that File menu
+//! command at open, for scripted captures.
+//!
+//! File › Version History… lists the linked place's versions and restores
+//! one through this same upload; see `history`.
 
 use std::path::Path;
 
@@ -37,10 +40,11 @@ use crate::home::{self, RecentPlace};
 
 use super::Shell;
 
+mod history;
 mod upload;
 mod view;
 
-use upload::{not_updated, upload};
+use upload::{not_updated, outcome, upload, verb};
 
 const MOCK_VARIABLE: &str = "RBX_STUDIO_PUBLISH_MOCK";
 pub(super) const OPEN_VARIABLE: &str = "RBX_STUDIO_ROBLOX";
@@ -122,6 +126,9 @@ pub(super) struct RobloxPublish {
     /// The last picker token handed out.
     picks: u64,
     picker: Option<WindowHandle<Root>>,
+    /// Bumped when the file is linked or one of its uploads lands, so
+    /// Version History knows to re-read the link and the list.
+    pub(super) changes: u64,
 }
 
 impl RobloxPublish {
@@ -134,6 +141,7 @@ impl RobloxPublish {
             picking: None,
             picks: 0,
             picker: None,
+            changes: 0,
         }
     }
 }
@@ -192,6 +200,7 @@ impl Shell {
             Ok("link") => self.open_roblox_link(None, cx),
             Ok("save") => self.upload_to_roblox(PublishMode::Saved, cx),
             Ok("publish") => self.upload_to_roblox(PublishMode::Published, cx),
+            Ok("history") => self.open_version_history(cx),
             _ => {}
         }
     }
@@ -225,6 +234,7 @@ impl Shell {
             cx.notify();
             return;
         }
+        self.roblox.changes += 1;
         self.output.push(
             SOURCE,
             Feedback::Output(format!(
@@ -315,6 +325,7 @@ impl Shell {
         if let Some(warning) = warning.filter(|_| result.is_ok()) {
             self.output.push(SOURCE, Feedback::Warning(warning));
         }
+        self.roblox.changes += u64::from(result.is_ok());
         if let Err(failure) = result {
             self.roblox.dialog = Some(Dialog::Failed {
                 mode,
@@ -354,30 +365,6 @@ fn confirmed(dialog: &mut Option<Dialog>) -> Option<(Target, PublishMode)> {
             *dialog = other;
             None
         }
-    }
-}
-
-/// The ing-form and past tense each mode's messages use.
-fn verb(mode: PublishMode) -> (&'static str, &'static str) {
-    match mode {
-        PublishMode::Saved => ("Saving to Roblox", "Saved to Roblox"),
-        PublishMode::Published => ("Publishing to Roblox", "Published to Roblox"),
-    }
-}
-
-fn outcome(target: Target, mode: PublishMode, result: &Result<u64, Failure>) -> Feedback {
-    match result {
-        Ok(version) => Feedback::Output(format!(
-            "{} as version {version} of place {}",
-            verb(mode).1,
-            target.place_id
-        )),
-        Err(failure) => Feedback::Error(format!(
-            "{} failed for place {}: {}",
-            verb(mode).0,
-            target.place_id,
-            failure.message
-        )),
     }
 }
 
