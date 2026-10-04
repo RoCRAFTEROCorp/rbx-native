@@ -340,3 +340,13 @@ fn the_instance_tree_comes_along() {
     );
     assert_eq!(document["nodes"][3]["extras"]["Material"], Value::Null);
 }
+
+/// A union with no tree, asset or baked mesh anywhere (Studio writes these
+/// with a `TriangleCount` of 0) is drawn as nothing, so exports as nothing.
+#[test]
+fn a_union_with_no_geometry_anywhere_exports_nothing() {
+    let mut dom = WeakDom::new();
+    let union = part(&mut dom, "UnionOperation", [1.0, 1.0, 1.0]);
+
+    assert!(export(&dom, &Meshes::default(), union).meshes.is_empty());
+}
