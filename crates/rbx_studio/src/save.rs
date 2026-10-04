@@ -48,7 +48,7 @@ impl Format {
         }
     }
 
-    fn encode(self, dom: &WeakDom) -> Result<Vec<u8>, String> {
+    pub(crate) fn encode(self, dom: &WeakDom) -> Result<Vec<u8>, String> {
         match self {
             // The class default for whatever an instance does not hold:
             // a binary file has a value for every instance of a class, and a

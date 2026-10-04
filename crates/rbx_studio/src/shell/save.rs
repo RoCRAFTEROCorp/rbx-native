@@ -44,6 +44,9 @@ impl Shell {
         // No keyboard traps: Escape closes whichever menu is open, from
         // anywhere, and this handler sits on the window's own root so it
         // cannot be out of reach of one (WCAG 2.1.2).
+        if keystroke.key == "escape" && self.close_roblox_dialog() {
+            cx.notify();
+        }
         if keystroke.key == "escape" && self.open_menu.take().is_some() {
             cx.notify();
         }
