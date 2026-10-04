@@ -1,6 +1,9 @@
-use gpui_kit::{Action as _, OwnedMenuItem};
+use gpui_kit::{Action, OwnedMenuItem};
 
-use super::{menus, MenuInsertTemplate, MenuOpenAutoSaves, MenuPlaceholder};
+use super::{
+    menus, MenuInsertTemplate, MenuLinkRobloxPlace, MenuOpenAutoSaves, MenuPlaceholder,
+    MenuPublishToRoblox, MenuSaveToRoblox,
+};
 use crate::script_templates::Template;
 
 /// Every item in the bar either does something or is visibly greyed out.
@@ -80,6 +83,28 @@ fn file_opens_the_auto_saves_folder() {
         )
     });
     assert!(found);
+}
+
+/// Save and Publish to Roblox are two live, distinct commands — not one
+/// placeholder, and not the local Save under another name.
+#[test]
+fn file_saves_and_publishes_to_roblox_as_two_live_commands() {
+    let file = menus(&[])
+        .into_iter()
+        .find(|menu| menu.name == "File")
+        .expect("a File menu");
+    let live = |label: &str, wanted: &dyn Action| {
+        file.items.iter().any(|item| {
+            matches!(
+                item,
+                OwnedMenuItem::Action { name, action, disabled: false, .. }
+                    if name == label && action.partial_eq(wanted)
+            )
+        })
+    };
+    assert!(live("Save to Roblox", &MenuSaveToRoblox));
+    assert!(live("Publish to Roblox", &MenuPublishToRoblox));
+    assert!(live("Link to Roblox Place\u{2026}", &MenuLinkRobloxPlace));
 }
 
 /// The templates window opens from File, last, right under Studio

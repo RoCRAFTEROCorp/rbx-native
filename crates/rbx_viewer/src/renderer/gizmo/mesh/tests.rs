@@ -1,7 +1,7 @@
 use glam::{Mat4, Quat, Vec3};
 
 use super::*;
-use crate::gizmo::basis;
+use crate::gizmo::{basis, ORIGIN_RADIUS};
 use crate::Pose;
 
 fn handles() -> Handles {

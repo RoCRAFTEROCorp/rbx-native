@@ -92,7 +92,10 @@ fn meshes_are_empty_by_default_and_shared_once_built() {
     assert!(Meshes::default().get(&asset).is_none());
 
     let mesh = Arc::new(corner_tetrahedron());
-    let meshes = Meshes::new(HashMap::from([(asset.clone(), mesh.clone())]));
+    let meshes = Meshes::new(
+        HashMap::from([(asset.clone(), mesh.clone())]),
+        HashMap::new(),
+    );
     let found = meshes.get(&asset).expect("the mesh that was put in");
     assert!(Arc::ptr_eq(found, &mesh), "no copy was made");
     // A clone of the handle still reads the same map.
@@ -109,4 +112,101 @@ fn a_surface_hit_on_the_slanted_face_faces_back_up_the_ray() {
     let (point, normal) = surface(&corner_tetrahedron(), Mat4::IDENTITY, ray).unwrap();
     assert!((point - Vec3::new(-0.4, -0.4, 0.3)).length() < 1e-4);
     assert!((normal - Vec3::ONE.normalize()).length() < 1e-4, "{normal}");
+}
+
+/// A mesh of `triangles`, given by their corners, every one with vertices of
+/// its own — split, as an exported mesh's are
+/// at every UV seam, so the walk has to join them by position.
+fn soup(triangles: &[[[f32; 3]; 3]]) -> Mesh {
+    let vertices: Vec<Vertex> = triangles
+        .iter()
+        .flatten()
+        .map(|&position| Vertex {
+            position,
+            normal: [0.0; 3],
+            uv: [0.0; 2],
+            color: [255; 4],
+        })
+        .collect();
+    Mesh {
+        version: (4, 1),
+        indices: (0..vertices.len() as u32).collect(),
+        vertices,
+        lods: Vec::new(),
+        bounds: Aabb {
+            min: [-0.5; 3],
+            max: [0.5; 3],
+        },
+    }
+}
+
+#[track_caller]
+fn assert_same_points(mut actual: Vec<Vec3>, expected: &[[f32; 2]]) {
+    let key = |p: &Vec3| (p.x.to_bits(), p.y.to_bits());
+    actual.sort_by_key(key);
+    let mut expected: Vec<Vec3> = expected
+        .iter()
+        .map(|&[x, y]| Vec3::new(x, y, 0.5))
+        .collect();
+    expected.sort_by_key(key);
+    assert_eq!(actual, expected);
+}
+
+#[test]
+fn a_flat_quad_of_two_triangles_is_outlined_without_its_diagonal() {
+    // The top of a box, z = 0.5, split along its diagonal, and a side of it
+    // standing up from one edge so the walk has a neighbour to turn down.
+    let mesh = soup(&[
+        [[-0.5, -0.5, 0.5], [0.5, -0.5, 0.5], [0.5, 0.5, 0.5]],
+        [[-0.5, -0.5, 0.5], [0.5, 0.5, 0.5], [-0.5, 0.5, 0.5]],
+        [[-0.5, -0.5, 0.5], [0.5, -0.5, 0.5], [0.5, -0.5, -0.5]],
+    ]);
+    let face = flat_face(&mesh, Mat4::IDENTITY, toward_neg_z(0.3, -0.2)).unwrap();
+    let corners = [[-0.5, -0.5], [0.5, -0.5], [0.5, 0.5], [-0.5, 0.5]];
+    assert_same_points(face.corners, &corners);
+    assert_eq!(face.sides.len(), 4);
+    for [a, b] in face.sides {
+        let middle = (a + b) / 2.0;
+        assert!(middle.truncate().length() > 0.4, "a diagonal: {a} {b}");
+    }
+}
+
+#[test]
+fn a_vertex_splitting_a_straight_side_is_no_corner() {
+    // The same top as a fan out of the middle of its bottom side.
+    let m = [0.0, -0.5, 0.5];
+    let mesh = soup(&[
+        [m, [0.5, -0.5, 0.5], [0.5, 0.5, 0.5]],
+        [m, [0.5, 0.5, 0.5], [-0.5, 0.5, 0.5]],
+        [m, [-0.5, 0.5, 0.5], [-0.5, -0.5, 0.5]],
+    ]);
+    let face = flat_face(&mesh, Mat4::IDENTITY, toward_neg_z(-0.3, 0.3)).unwrap();
+    let corners = [[-0.5, -0.5], [0.5, -0.5], [0.5, 0.5], [-0.5, 0.5]];
+    assert_same_points(face.corners, &corners);
+    assert_eq!(face.sides.len(), 5);
+}
+
+#[test]
+fn a_curved_region_falls_back_to_the_hit_triangle() {
+    // No face of the tetrahedron lies flat with another: the slanted face's
+    // outline is its own triangle.
+    let face = flat_face(
+        &corner_tetrahedron(),
+        Mat4::IDENTITY,
+        toward_neg_z(-0.4, -0.4),
+    )
+    .unwrap();
+    assert_eq!(face.corners.len(), 3);
+    assert_eq!(face.sides.len(), 3);
+}
+
+#[test]
+fn a_flat_face_follows_its_model_matrix() {
+    let mesh = soup(&[
+        [[-0.5, -0.5, 0.5], [0.5, -0.5, 0.5], [0.5, 0.5, 0.5]],
+        [[-0.5, -0.5, 0.5], [0.5, 0.5, 0.5], [-0.5, 0.5, 0.5]],
+    ]);
+    let model = Mat4::from_scale(Vec3::new(4.0, 2.0, 1.0));
+    let face = flat_face(&mesh, model, toward_neg_z(1.0, 0.5)).unwrap();
+    assert!(face.corners.contains(&Vec3::new(2.0, 1.0, 0.5)));
 }

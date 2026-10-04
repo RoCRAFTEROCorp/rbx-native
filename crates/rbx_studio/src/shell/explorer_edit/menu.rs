@@ -32,6 +32,7 @@ use gpui_kit::*;
 use rbx_dom::{Ref, WeakDom};
 use rbx_reflection::ReflectionDatabase;
 
+use super::super::export::{self, Export};
 use super::super::roving::Move;
 use super::super::{clipboard, group, keys, menu};
 use super::rename::renameable;
@@ -54,6 +55,8 @@ pub(super) struct Availability {
     /// Live while any of the selection can change class; the command
     /// converts those and names the rest (see `shell::change_class`).
     pub(super) change_class: bool,
+    /// Export Selection and Export as glTF: some part to write.
+    pub(super) export_mesh: bool,
 }
 
 pub(super) fn availability(
@@ -73,6 +76,7 @@ pub(super) fn availability(
         change_class: selected
             .iter()
             .any(|&referent| change_class::changeable(dom, database, referent)),
+        export_mesh: export::has_geometry(dom, database, selected),
     }
 }
 
@@ -303,6 +307,27 @@ impl Shell {
                 "Delete",
                 live.delete,
                 |shell, _, cx| shell.delete_selected(cx),
+            ),
+            row(
+                "save-to-file",
+                IconName::Save,
+                "Save to File…",
+                true,
+                |shell, _, cx| shell.export_selected(Export::Model, cx),
+            ),
+            row(
+                "export-obj",
+                IconName::FileAxis3d,
+                "Export Selection…",
+                live.export_mesh,
+                |shell, _, cx| shell.export_selected(Export::Obj, cx),
+            ),
+            row(
+                "export-gltf",
+                IconName::FileBox,
+                "Export as glTF…",
+                live.export_mesh,
+                |shell, _, cx| shell.export_selected(Export::Gltf, cx),
             ),
         ];
         let actions: Vec<Option<RowAction>> = rows

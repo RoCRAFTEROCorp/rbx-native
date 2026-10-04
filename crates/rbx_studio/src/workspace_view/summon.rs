@@ -13,7 +13,8 @@
 //!   around the point that you summoned them to" — Rotate's rings turn the
 //!   selection about wherever they stand, so that comes for free.
 //! - "if you place your cursor close to an edge or vertex when summoning,
-//!   the handles will snap to that edge or vertex" — see [`onto_edges`].
+//!   the handles will snap to that edge or vertex" — said of Rotate, and
+//!   kept to the tools with Rotate's rings here; see [`onto_edges`].
 //! - Scale's balls are kept "within the bounds of [the] selected object" —
 //!   see `rbx_viewer::gizmo::Faces::summoned` for how that is read here.
 //!
@@ -26,12 +27,14 @@
 //! gizmo's origin, which is what still lets a summoned Move gizmo carry the
 //! selection freely when the part itself is nowhere near the cursor.
 
-use glam::Vec3;
+use glam::{Mat4, Vec3};
 use gpui_kit::{Context, Window};
 use rbx_viewer::gizmo::{self, Gizmo};
-use rbx_viewer::pick::{self, Ray};
+use rbx_viewer::pick::{self, FlatFace, Ray, Solid};
 
 use crate::dragger::surface::{SurfaceFrame, TargetKind};
+use crate::dragger::target;
+use crate::dragger::{handle_scale, pixel_size, Dot};
 use crate::transform::Tool;
 
 use super::gizmo::Drag;
@@ -56,10 +59,10 @@ pub(crate) fn install(cx: &mut gpui_kit::App) {
 }
 
 /// How close to a face's edge or corner the cursor has to be for the
-/// summoned handles to snap onto it, in gizmo arm lengths — so the same
-/// distance on screen however far away the face is. Roblox does not publish
-/// Studio's; this is the Move arrows' own pick radius.
-const EDGE_SNAP: f32 = 0.15;
+/// summoned handles to snap onto it, in (logical) pixels on screen. Roblox
+/// published Studio's in the same topic (staff replies #9 and #14): "within
+/// 16 pixels of an edge or vertex".
+const EDGE_SNAP: f32 = 16.0;
 
 /// The summoning state the view keeps between events.
 #[derive(Debug, Default, Clone, Copy)]
@@ -67,6 +70,9 @@ pub(super) struct Summon {
     /// Where the handles were summoned to, or `None` to stand them at the
     /// selection's own pivot.
     point: Option<Vec3>,
+    /// Where the summon snapped onto an edge or vertex, marked by
+    /// [`snap_marker`] for as long as the handles stand there.
+    snapped: Option<Vec3>,
     /// Whether `Tab` is down: the handles stay summoned through a drag that
     /// began with it held, and go home at the end of it if it was let go.
     tab: bool,
@@ -100,8 +106,30 @@ impl WorkspaceView {
         if std::mem::replace(&mut self.summon.tab, true) || self.drag.is_some() {
             return;
         }
-        self.summon.point = self.summon_point(window.scale_factor());
+        // `Shell`'s last hover answer is where the cursor met the scene when
+        // the mouse last moved: a camera flown with the keys since has
+        // carried the scene out from under it. Ask again where the cursor
+        // stands now, and place the handles once that answer is in — the
+        // hover event is handled before the deferred placement runs, GPUI
+        // flushing its effects in order (see the test beside this).
+        if let Some(at) = self.cursor.filter(|_| !self.looking) {
+            self.hover_pending = None;
+            self.hover_moved(at, self.guides.modifiers, window.scale_factor(), cx);
+        }
+        cx.defer_in(window, |view, window, cx| view.place_summon(window, cx));
+    }
+
+    /// The second half of [`WorkspaceView::summon_handles`], once the hover
+    /// is fresh.
+    fn place_summon(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.summon.tab || self.drag.is_some() {
+            return;
+        }
+        let (point, snapped) = self.summon_point(window.scale_factor()).unzip();
+        self.summon.point = point;
+        self.summon.snapped = snapped.flatten();
         self.refresh_gizmo();
+        self.refresh_guides();
         cx.notify();
     }
 
@@ -111,6 +139,7 @@ impl WorkspaceView {
         self.summon.tab = false;
         if self.drag.is_none() && self.summon.point.take().is_some() {
             self.refresh_gizmo();
+            self.refresh_guides();
         }
     }
 
@@ -133,6 +162,21 @@ impl WorkspaceView {
             _ => Vec3::ZERO,
         };
         Some(point + carried)
+    }
+
+    /// Studio's magenta indicator on the edge or vertex the handles
+    /// snapped to (staff reply #14: "you'll get a magenta colored indicator
+    /// letting you know that the handles snapped") — shown while they stand
+    /// there and no drag is under way. Its size is not published; it is the
+    /// hover ruler's dot's.
+    pub(super) fn snap_marker(&self) -> Option<Dot> {
+        let snapped = self.summon.snapped?;
+        let pose = self.view?;
+        (self.drag.is_none() && self.summon.point == Some(snapped)).then(|| Dot {
+            centre: snapped,
+            radius: 0.15 * handle_scale(snapped, pose, self.orthographic),
+            color: [1.0, 0.0, 1.0],
+        })
     }
 
     /// Asks the renderer to draw `gizmo`, summoned wherever the handles are.
@@ -162,21 +206,55 @@ impl WorkspaceView {
     }
 
     /// Where the cursor puts the handles: the point under it on whatever
-    /// part it is over (`Shell`'s last hover answer), snapped onto that
-    /// face's edge or corner when it is close to one; over nothing, the
-    /// point under the cursor level with the selection's centre.
-    fn summon_point(&self, scale: f32) -> Option<Vec3> {
+    /// part it is over (`Shell`'s last hover answer) — snapped onto that
+    /// face's edge or corner when it is close to one, for the tools with
+    /// Rotate's rings only; over nothing, the point under the cursor level
+    /// with the selection's centre.
+    ///
+    /// Roblox describes the snap for Rotate alone, and says why (staff reply
+    /// #9): "it doesn't matter precisely where the handles are summoned to
+    /// for Move -- the result is the same regardless." Transform snaps too,
+    /// carrying Rotate's very rings; Scale and Move do not.
+    ///
+    /// The second half of the answer is the point again when it snapped.
+    fn summon_point(&self, scale: f32) -> Option<(Vec3, Option<Vec3>)> {
         let (inside, hover) = self.cursor_over();
         if !inside {
             return None;
         }
         let pose = self.view?;
         if let Some((frame, hit)) = hover {
-            let reach = EDGE_SNAP * gizmo::arm_length(hit, pose, self.orthographic);
-            return Some(onto_edges(&frame, hit, reach));
+            if !matches!(self.transform.tool, Tool::Rotate | Tool::Transform) {
+                return Some((hit, None));
+            }
+            let height = self.viewport.get().size.1 as f32;
+            let reach =
+                |at| EDGE_SNAP * scale * pixel_size(at, pose, self.orthographic, height.max(1.0));
+            if let Some((face, hit)) = self.mesh_face(&frame, scale) {
+                let snapped = onto_sides(&face.corners, &face.sides, hit, reach(hit));
+                return Some((snapped.unwrap_or(hit), snapped));
+            }
+            let snapped = onto_edges(&frame, hit, reach(hit));
+            return Some((snapped.unwrap_or(hit), snapped));
         }
         let ray = self.cursor_ray(self.cursor?, scale)?;
-        pick::ray_hits_plane(ray, self.targets.centre()?, -ray.direction)
+        pick::ray_hits_plane(ray, self.targets.centre()?, -ray.direction).map(|point| (point, None))
+    }
+
+    /// The flat face of the mesh under the cursor (see
+    /// `PartSurface::flat_face`), and where the cursor meets it — not the
+    /// hover's own point, which sits on the grid when Studio's probes found
+    /// no edge of the face. Outlined here, on the press, rather than at every
+    /// hover: walking a mesh's triangles is more than a hover needs. `None`
+    /// off a mesh, or on one not downloaded.
+    fn mesh_face(&self, frame: &SurfaceFrame, scale: f32) -> Option<(FlatFace, Vec3)> {
+        if !matches!(frame.part, Some((Solid::Mesh, _))) {
+            return None;
+        }
+        let part = self.hover_part.as_ref()?;
+        let ray = self.cursor_ray(self.cursor?, scale)?;
+        let (distance, _) = part.raycast(ray)?;
+        Some((part.flat_face(ray)?, ray.at(distance)))
     }
 
     /// The free-drag ball at the gizmo's origin, if `ray` is on it: Move's
@@ -265,27 +343,118 @@ impl WorkspaceView {
 
 /// `hit` on `frame`'s face, moved onto the face's edge or corner when it is
 /// within `reach` of one — Studio's summoned handles "snap to that edge or
-/// vertex". Only a flat face has edges and corners to snap to; a point on a
-/// ball's or a cylinder's curve stays where it is.
+/// vertex" — or `None` when it is near neither. Only a flat face has edges
+/// and corners to snap to; a point on a ball's or a cylinder's curve has
+/// none.
 ///
-/// The frame is cornered on the face corner nearest the hit, with `x` and
-/// `z` along its two edges from there (see [`SurfaceFrame`]); either may
-/// point out of the face, which the sign of the hit's own coordinate gives
-/// away, so the far edge is at that sign times the face's size.
-pub(super) fn onto_edges(frame: &SurfaceFrame, hit: Vec3, reach: f32) -> Vec3 {
+/// The candidates are the face's real outline, out of the part it is on
+/// (`frame.part`): a box's or a wedge's face is the polygon of the solid's
+/// corners lying in the face's plane — a wedge's side a triangle, not the
+/// rectangle round it the frame's `size` measures — a cylinder's cap is its
+/// rim, and a mesh face only the edge its frame was probed from — the one
+/// edge of it known for sure until the mesh has downloaded, after which
+/// [`WorkspaceView::summon_point`] outlines the face from its triangles
+/// instead. A frame with no part is its own rectangle.
+pub(super) fn onto_edges(frame: &SurfaceFrame, hit: Vec3, reach: f32) -> Option<Vec3> {
     if frame.kind != TargetKind::Polygon {
-        return hit;
+        return None;
     }
-    let mut local = frame.local(hit);
-    for (value, size) in [(&mut local.x, frame.size.x), (&mut local.z, frame.size.y)] {
-        let far = size.copysign(*value);
-        if value.abs() <= reach {
-            *value = 0.0;
-        } else if (*value - far).abs() <= reach {
-            *value = far;
+    let local = frame.local(hit);
+    let (sx, sz) = (1f32.copysign(local.x), 1f32.copysign(local.z));
+    let Some((solid, model)) = frame.part else {
+        // Cornered on the face corner nearest the hit, with `x` and `z` along
+        // its two edges; either may point out of the face, which the sign of
+        // the hit's own coordinate gives away.
+        let (across, along) = (frame.x * sx * frame.size.x, frame.z * sz * frame.size.y);
+        let at = frame.corner;
+        return onto_outline(
+            &[at, at + across, at + across + along, at + along],
+            true,
+            hit,
+            reach,
+        );
+    };
+    match solid {
+        Solid::Ball => None,
+        Solid::Cylinder => onto_rim(model, hit, reach),
+        Solid::Mesh => {
+            let edge = [frame.corner, frame.corner + frame.z * sz * frame.size.y];
+            onto_outline(&edge, false, hit, reach)
+        }
+        Solid::Box | Solid::Wedge | Solid::CornerWedge => {
+            onto_outline(&face_outline(frame, solid, model, hit)?, true, hit, reach)
         }
     }
-    frame.world(local)
+}
+
+/// The corners of `solid`'s face through `hit` (the plane of `frame`), in
+/// order round it.
+fn face_outline(frame: &SurfaceFrame, solid: Solid, model: Mat4, hit: Vec3) -> Option<Vec<Vec3>> {
+    let size = (model.x_axis + model.y_axis + model.z_axis)
+        .truncate()
+        .length();
+    let tolerance = 1e-4 * size.max(1.0);
+    let mut face: Vec<Vec3> = target::corners(solid)?
+        .iter()
+        .map(|&corner| model.transform_point3(corner))
+        .filter(|&corner| (corner - hit).dot(frame.y).abs() <= tolerance)
+        .collect();
+    if face.len() < 3 {
+        return None;
+    }
+    let centre = face.iter().sum::<Vec3>() / face.len() as f32;
+    let angle = |corner: &Vec3| {
+        let offset = *corner - centre;
+        offset.dot(frame.z).atan2(offset.dot(frame.x))
+    };
+    face.sort_by(|a, b| angle(a).total_cmp(&angle(b)));
+    Some(face)
+}
+
+/// `hit` on a cylinder's cap moved onto its rim, when within `reach` of it.
+fn onto_rim(model: Mat4, hit: Vec3, reach: f32) -> Option<Vec3> {
+    let (rotation, centre, size) = target::placement(model)?;
+    let axis = rotation.x_axis;
+    let cap = centre + axis * axis.dot(hit - centre);
+    let radial = hit - cap;
+    let radius = 0.5 * size.y.min(size.z);
+    let out = radial.try_normalize()?;
+    ((radial.length() - radius).abs() <= reach).then(|| cap + out * radius)
+}
+
+/// `hit` moved onto the nearest corner of `outline` within `reach`, else onto
+/// the nearest point of its sides within `reach` — the last corner joined
+/// back to the first when `closed`.
+fn onto_outline(outline: &[Vec3], closed: bool, hit: Vec3, reach: f32) -> Option<Vec3> {
+    let closing = closed.then(|| [outline[outline.len() - 1], outline[0]]);
+    let sides: Vec<[Vec3; 2]> = outline
+        .windows(2)
+        .map(|pair| [pair[0], pair[1]])
+        .chain(closing)
+        .collect();
+    onto_sides(outline, &sides, hit, reach)
+}
+
+/// `hit` moved onto the nearest of `corners` within `reach`, else onto the
+/// nearest point of `sides` within `reach`.
+pub(super) fn onto_sides(
+    corners: &[Vec3],
+    sides: &[[Vec3; 2]],
+    hit: Vec3,
+    reach: f32,
+) -> Option<Vec3> {
+    let nearest = |points: &mut dyn Iterator<Item = Vec3>| {
+        points
+            .filter(|point| point.distance(hit) <= reach)
+            .min_by(|a, b| a.distance(hit).total_cmp(&b.distance(hit)))
+    };
+    nearest(&mut corners.iter().copied()).or_else(|| {
+        nearest(&mut sides.iter().map(|&[a, b]| {
+            let side = b - a;
+            let t = (hit - a).dot(side) / side.length_squared().max(f32::MIN_POSITIVE);
+            a + side * t.clamp(0.0, 1.0)
+        }))
+    })
 }
 
 #[cfg(test)]

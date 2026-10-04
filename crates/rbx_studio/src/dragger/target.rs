@@ -36,10 +36,8 @@ pub(crate) fn target_frame(
             None => round(part.model, hit, normal, grid)?,
         },
     };
-    let round_part =
-        matches!(part.solid, Solid::Ball | Solid::Cylinder).then_some((part.solid, part.model));
     Some(SurfaceFrame {
-        part: round_part,
+        part: Some((part.solid, part.model)),
         ..frame
     })
 }
@@ -60,7 +58,7 @@ pub(crate) fn under(part: &PartSurface, ray: Ray, grid: f32) -> Option<(SurfaceF
 }
 
 /// A part's rigid placement and its size, out of the box it is drawn in.
-pub(super) fn placement(model: Mat4) -> Option<(Mat3, Vec3, Vec3)> {
+pub(crate) fn placement(model: Mat4) -> Option<(Mat3, Vec3, Vec3)> {
     let columns = [model.x_axis, model.y_axis, model.z_axis].map(|column| column.truncate());
     let size = Vec3::from(columns.map(|column| column.length()));
     let rotation = Mat3::from_cols(
@@ -103,6 +101,28 @@ fn size_in(model: Mat4, x: Vec3, z: Vec3) -> Vec2 {
     };
     Vec2::new(reach(x), reach(z))
 }
+
+/// The corners of `solid`, in the part's unit box, for the solids with flat
+/// faces only.
+pub(crate) fn corners(solid: Solid) -> Option<&'static [Vec3]> {
+    match solid {
+        Solid::Box => Some(&BOX),
+        Solid::Wedge => Some(&WEDGE),
+        Solid::CornerWedge => Some(&CORNER_WEDGE),
+        Solid::Ball | Solid::Cylinder | Solid::Mesh => None,
+    }
+}
+
+const BOX: [Vec3; 8] = [
+    Vec3::new(-0.5, -0.5, -0.5),
+    Vec3::new(0.5, -0.5, -0.5),
+    Vec3::new(-0.5, 0.5, -0.5),
+    Vec3::new(0.5, 0.5, -0.5),
+    Vec3::new(-0.5, -0.5, 0.5),
+    Vec3::new(0.5, -0.5, 0.5),
+    Vec3::new(-0.5, 0.5, 0.5),
+    Vec3::new(0.5, 0.5, 0.5),
+];
 
 // `getGeometry`'s vertex and edge tables, in the part's unit box.
 const WEDGE: [Vec3; 6] = [

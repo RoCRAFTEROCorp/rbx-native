@@ -15,7 +15,7 @@ use std::time::Instant;
 use glam::{Mat3, Vec3};
 use gpui_kit::*;
 use rbx_viewer::gizmo::Axis;
-use rbx_viewer::pick::Ray;
+use rbx_viewer::pick::{PartSurface, Ray};
 use rbx_viewer::Segment;
 
 use super::WorkspaceView;
@@ -44,7 +44,7 @@ pub(super) struct State {
     hover: Option<(SurfaceFrame, Vec3)>,
     /// The modifiers at that hover, and whether a Move arrow was under the
     /// cursor — Studio shows no hover ruler over a handle.
-    modifiers: Modifiers,
+    pub(super) modifiers: Modifiers,
     over_handle: bool,
     /// Whether the cursor is over the view at all, so a hover asked for
     /// again (see [`WorkspaceView::rehover`]) is never resolved at a cursor
@@ -91,13 +91,17 @@ impl WorkspaceView {
     }
 
     /// `Shell`'s answer to a hover: the face under the cursor, framed on its
-    /// corner nearest the cursor, and where the cursor meets it — `None`
-    /// over nothing selectable.
-    pub(crate) fn set_hover_target(&mut self, target: Option<(SurfaceFrame, Vec3)>) {
+    /// corner nearest the cursor, where the cursor meets it, and the part
+    /// it is on — `None` over nothing selectable.
+    pub(crate) fn set_hover_target(&mut self, target: Option<(SurfaceFrame, Vec3, PartSurface)>) {
         if self.drag.is_some() {
             return;
         }
-        self.guides.hover = target;
+        let (hover, part) = target
+            .map(|(frame, hit, part)| ((frame, hit), part))
+            .unzip();
+        self.guides.hover = hover;
+        self.hover_part = part;
         self.show_guides(self.hover_guides(false));
     }
 
@@ -251,7 +255,8 @@ impl WorkspaceView {
     }
 
     /// Replaces what the dragger guides draw.
-    fn show_guides(&mut self, guides: Guides) {
+    fn show_guides(&mut self, mut guides: Guides) {
+        guides.dots.extend(self.snap_marker());
         self.guides.drawn = guides;
         self.send_lines();
     }

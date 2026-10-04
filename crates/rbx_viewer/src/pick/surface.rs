@@ -12,7 +12,7 @@ use rbx_mesh::Mesh;
 use rbx_reflection::ReflectionDatabase;
 
 use super::shape;
-use super::{mesh, Meshes, Ray};
+use super::{mesh, FlatFace, Meshes, Ray};
 use crate::scene::{cframe_matrix, file_mesh_fit, resolve_shape, ShapeKind};
 
 /// The kinds of solid Studio's draggers tell apart: by class and by
@@ -110,6 +110,16 @@ impl PartSurface {
             Drawn::Mesh(mesh, model) => mesh::surface(mesh, *model, ray)?,
         };
         Some((point.distance(ray.origin), normal))
+    }
+
+    /// The flat face of a downloaded mesh `ray` meets, outlined from its
+    /// triangles (see [`FlatFace`]); `None` for a part drawn as a solid, or
+    /// a ray that misses.
+    pub fn flat_face(&self, ray: Ray) -> Option<FlatFace> {
+        match &self.drawn {
+            Drawn::Mesh(mesh, model) => mesh::flat_face(mesh, *model, ray),
+            Drawn::Shape(..) => None,
+        }
     }
 }
 

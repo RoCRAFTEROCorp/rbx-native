@@ -3,8 +3,10 @@
 //! that ends in the editor. State and flows live here; the pages are drawn
 //! in `view`.
 
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 use std::sync::Arc;
 
 use gpui_kit::component::input::{InputEvent, InputState};
@@ -110,8 +112,17 @@ pub(crate) struct HomeWindow {
     /// The rows changed; handed to the dropdown on the next render, which
     /// is where a window to do it with is at hand.
     pub(super) owner_options_dirty: bool,
+    /// Set when this is the editor's game picker rather than Home: My Games
+    /// alone, and a card or an added link hands its experience here instead
+    /// of opening it.
+    pub(super) pick: Option<Pick>,
     _subscriptions: Vec<Subscription>,
 }
+
+/// Where the game picker hands the picked experience. For an experience
+/// added by place ID or link, `root_place_id` is that place (see
+/// `rbx_cloud::Client::experience_of_place`).
+pub(crate) type Pick = Rc<dyn Fn(Experience, &mut App)>;
 
 /// `RBX_STUDIO_LAUNCHER_PAGE=home|recent|games` and
 /// `RBX_STUDIO_LAUNCHER_DIALOG=localcopy|downloading|error` (with
@@ -200,10 +211,20 @@ impl HomeWindow {
             owner_select,
             owner_options: vec![(None, "You".into())],
             owner_options_dirty: true,
+            pick: None,
             _subscriptions: subscriptions,
         };
         this.reload(cx);
         this.apply_capture_state(window, cx);
+        this
+    }
+
+    /// The editor's game picker: Home's My Games page, listing, cache and
+    /// add-by-link, with no editor to boot from it.
+    pub(super) fn picker(pick: Pick, window: &mut Window, cx: &mut Context<Self>) -> Self {
+        let mut this = Self::new(Rc::new(RefCell::new(None)), window, cx);
+        this.page = Page::MyGames;
+        this.pick = Some(pick);
         this
     }
 

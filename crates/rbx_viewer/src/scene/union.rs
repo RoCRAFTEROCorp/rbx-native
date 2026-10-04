@@ -26,6 +26,7 @@ use crate::textures::asset_uri;
 use super::material::{Catalog, Slot};
 use super::{Part, ResolvedInstance};
 
+pub(crate) use csg::unit_mesh;
 pub(super) use patch::replan;
 
 const PART_OPERATION: &str = "PartOperation";
@@ -127,6 +128,35 @@ fn from_operation(
     referent: Ref,
     materials: &mut Catalog,
 ) -> Option<Entry> {
+    let (asset, cframe, size, initial_size) = frame(dom, database, referent)?;
+    let properties = dom.get(referent)?.properties();
+    let use_part_color = matches!(properties.get("UsePartColor"), Some(Variant::Bool(true)));
+    let color = match properties.get("Color3uint8") {
+        Some(&Variant::Color3uint8 { r, g, b }) if use_part_color => Some([r, g, b]),
+        _ => None,
+    };
+
+    Some(Entry {
+        referent,
+        asset,
+        cframe,
+        size,
+        initial_size,
+        material: materials.slot_for(properties, database),
+        color,
+        alpha: 1.0 - super::number(properties.get("Transparency")).clamp(0.0, 1.0),
+        reflectance: super::number(properties.get("Reflectance")).clamp(0.0, 1.0),
+        casts_shadow: super::casts_shadow(properties),
+    })
+}
+
+/// A legacy union's asset, world `CFrame`, `size` and `InitialSize`: all its
+/// computed mesh needs to be placed where it is drawn.
+fn frame(
+    dom: &WeakDom,
+    database: &ReflectionDatabase,
+    referent: Ref,
+) -> Option<(AssetRef, Mat4, Vec3, Vec3)> {
     let instance = dom.get(referent)?;
     if !database.is_subclass_of(instance.class(), PART_OPERATION) {
         return None;
@@ -149,24 +179,20 @@ fn from_operation(
         _ => size,
     }
     .max(Vec3::splat(f32::EPSILON));
-    let use_part_color = matches!(properties.get("UsePartColor"), Some(Variant::Bool(true)));
-    let color = match properties.get("Color3uint8") {
-        Some(&Variant::Color3uint8 { r, g, b }) if use_part_color => Some([r, g, b]),
-        _ => None,
-    };
+    Some((asset, super::cframe_matrix(cframe), size, initial_size))
+}
 
-    Some(Entry {
-        referent,
-        asset,
-        cframe: super::cframe_matrix(cframe),
-        size,
-        initial_size,
-        material: materials.slot_for(properties, database),
-        color,
-        alpha: 1.0 - super::number(properties.get("Transparency")).clamp(0.0, 1.0),
-        reflectance: super::number(properties.get("Reflectance")).clamp(0.0, 1.0),
-        casts_shadow: super::casts_shadow(properties),
-    })
+/// The asset a legacy union's computed boolean is keyed by, and the unit-mesh
+/// to world transform it is drawn with ([`Entry::placement`]), read off the
+/// DOM as it stands now. Whether that mesh exists is the caller's lookup: a
+/// union whose boolean failed or has not downloaded has none.
+pub(crate) fn fit(
+    dom: &WeakDom,
+    database: &ReflectionDatabase,
+    referent: Ref,
+) -> Option<(AssetRef, Mat4)> {
+    let (asset, cframe, size, initial_size) = frame(dom, database, referent)?;
+    Some((asset, cframe * Mat4::from_scale(size / initial_size)))
 }
 
 /// What [`resolve`] hands back for `Scene::resolve_unions` to merge in.

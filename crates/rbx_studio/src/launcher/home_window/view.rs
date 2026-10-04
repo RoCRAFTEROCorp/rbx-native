@@ -14,6 +14,7 @@ use chrono::{Datelike, Local, TimeZone};
 use gpui_kit::component::select::SearchableVec;
 use gpui_kit::component::IndexPath;
 use gpui_kit::component::{h_flex, v_flex};
+use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::*;
 use rbx_cloud::Visibility;
 
@@ -39,8 +40,8 @@ pub(super) fn columns(content: f32) -> usize {
 }
 
 impl Grid {
-    fn new(window: &Window) -> Self {
-        let content = (f32::from(window.viewport_size().width) - SIDEBAR - 64.).max(300.);
+    fn new(window: &Window, sidebar: f32) -> Self {
+        let content = (f32::from(window.viewport_size().width) - sidebar - 64.).max(300.);
         let columns = columns(content);
         let card = (content - GAP * (columns as f32 - 1.)) / columns as f32;
         Grid {
@@ -74,8 +75,10 @@ impl HomeWindow {
                 select.set_selected_index(Some(IndexPath::new(selected)), window, cx);
             });
         }
-        let grid = Grid::new(window);
+        let picker = self.pick.is_some();
+        let grid = Grid::new(window, if picker { 0. } else { SIDEBAR });
         let crumb = match self.page {
+            _ if picker => "Link to a Roblox place",
             Page::Home => "Home",
             Page::Recent => "Recent",
             Page::MyGames => "My Games",
@@ -98,14 +101,22 @@ impl HomeWindow {
             .child(crate::shell::chrome::window_topbar(
                 crumb.into(),
                 true,
-                |_, cx| cx.quit(),
+                // Home is the app's only window; the picker sits over the
+                // editor.
+                move |window, cx| {
+                    if picker {
+                        window.remove_window()
+                    } else {
+                        cx.quit()
+                    }
+                },
             ))
             .child(
                 h_flex()
                     .flex_1()
                     .min_h_0()
                     .items_stretch()
-                    .child(self.sidebar(cx))
+                    .when(!picker, |this| this.child(self.sidebar(cx)))
                     .child(
                         div()
                             .id("home-main")

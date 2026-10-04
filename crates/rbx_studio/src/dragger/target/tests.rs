@@ -62,7 +62,7 @@ fn a_box_is_its_face_cornered_nearest_the_cursor() {
     let frame = from_above(&block, 3.0, 1.5, 1.0);
     assert_eq!(frame.kind, TargetKind::Polygon);
     assert!(close(frame.corner, Vec3::new(4.0, 0.5, 2.0)));
-    assert!(frame.part.is_none());
+    assert!(matches!(frame.part, Some((Solid::Box, _))));
 }
 
 #[test]

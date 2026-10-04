@@ -36,7 +36,13 @@ impl WorkspaceView {
                 self.guides.arrow = Some((axis, if along < 0.0 { -1.0 } else { 1.0 }, along.abs()));
                 let basis = Axis::ALL.map(|axis| handles.direction(axis));
                 let models: Vec<Mat4> = self.targets.iter().map(|target| target.model).collect();
-                let slab = selection_slab(handles.origin(), basis, axis as usize, &models);
+                // The selection's own centre, not the handles': summoned
+                // arrows stand wherever `Tab` put them, but what the sweep
+                // lands on a snap plane is the selection.
+                let Some(centre) = self.targets.centre() else {
+                    return;
+                };
+                let slab = selection_slab(centre, basis, axis as usize, &models);
                 let offsets = sweep::offsets(&slab, &models);
                 (slab, offsets)
             }
