@@ -11,7 +11,7 @@
 use std::collections::HashMap;
 
 use super::super::texture;
-use crate::scene::{eval_color, eval_number, GuiGradient};
+use crate::scene::{eval_color, eval_number, linear_to_srgb, GuiGradient};
 
 /// Texels per row: plenty for the "at most 6 colour stops" the docs advise.
 pub(super) const WIDTH: u32 = 256;
@@ -54,17 +54,6 @@ pub(super) fn bake(gradient: &GuiGradient) -> Vec<u8> {
         ramp.extend([r, g, b, alpha].map(byte));
     }
     ramp
-}
-
-/// The inverse of `scene::srgb_to_linear`: `eval_color` linearizes at the
-/// end, and the texture wants the sRGB encoding back to store 8 bits of it
-/// without banding in the darks.
-fn linear_to_srgb(value: f32) -> f32 {
-    if value <= 0.003_130_8 {
-        value * 12.92
-    } else {
-        1.055 * value.powf(1.0 / 2.4) - 0.055
-    }
 }
 
 fn byte(value: f32) -> u8 {

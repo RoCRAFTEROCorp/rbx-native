@@ -38,7 +38,8 @@ impl DraggedInstances {
     /// What dragging the row for `reference` picks up, given what is currently
     /// selected. A row outside the selection drags only itself — pressing it
     /// replaced the selection anyway, and carrying the old one would move
-    /// instances the user never touched.
+    /// instances the user never touched. Pressing any row inside it keeps the
+    /// selection whole (see `defers_press`), so any of them carries it all.
     pub(super) fn new(selected: &[Ref], reference: Ref, name: &SharedString) -> Self {
         let references = if selected.contains(&reference) {
             selected.to_vec()
@@ -52,6 +53,41 @@ impl DraggedInstances {
 
         DraggedInstances { references, label }
     }
+}
+
+/// Whether a plain press on `target` leaves the selection alone until the
+/// release, the way a desktop file manager does: on a row of a
+/// multi-selection the press may grow into a drag of all of it, so only a
+/// release that never became a drag (`on_click`) narrows the selection to
+/// that row. Anywhere else the press selects at once, as before.
+fn defers_press(selected: &[Ref], target: Ref) -> bool {
+    selected.len() > 1 && selected.contains(&target)
+}
+
+/// The modifiers held when a click's button went *down*. GPUI's own
+/// `ClickEvent::modifiers` reports the release's, but the press is what
+/// decided whether to defer (see `defers_press`): a `Ctrl`-press whose `Ctrl`
+/// lets go before the button would otherwise read as a plain click and undo
+/// its own add.
+fn press_modifiers(event: &ClickEvent) -> Modifiers {
+    match event {
+        ClickEvent::Mouse(click) => click.down.modifiers,
+        _ => event.modifiers(),
+    }
+}
+
+/// Whether a click on `target` should narrow the selection down to it before
+/// whatever its click count does next. This is the other half of
+/// `defers_press`: the plain press it deferred fires no `on_click` of its own
+/// once it grows into a drag, so a plain click that still finds `target`
+/// inside a multi-selection is that deferred press's release, landing here
+/// instead. On a double-click inside the selection this only holds for the
+/// first click — by the second, the first has already narrowed the
+/// selection down to one row, so `defers_press` no longer applies and the
+/// click is free to open it instead.
+fn narrows_on_click(selected: &[Ref], target: Ref, modifiers: Modifiers) -> bool {
+    let plain = !(modifiers.shift || modifiers.control || modifiers.platform);
+    plain && defers_press(selected, target)
 }
 
 /// The ghost that follows the cursor while a drag is in flight. GPUI paints it
@@ -113,20 +149,26 @@ pub(super) fn draggable_row(
         // `Ctrl`+`Shift` adds that range. The tree widget's own row reads no
         // modifiers and would replace the selection, so the press stops here
         // before it bubbles up to that row; the tree is focused by hand, the
-        // way a plain click on it would have.
+        // way a plain click on it would have. A plain press on a row of a
+        // multi-selection stops here too (see `defers_press`); GPUI has
+        // already noted it as a pending drag by then, so it can still grow
+        // into one.
         .on_mouse_down(MouseButton::Left, {
             let shell = shell.clone();
             move |event: &MouseDownEvent, window, cx| {
                 let modifiers = event.modifiers;
                 let toggle = modifiers.control || modifiers.platform;
-                if !(modifiers.shift || toggle) {
+                let plain = !(modifiers.shift || toggle);
+                if plain && !defers_press(shell.read(cx).selection.all(), target) {
                     // The tree's row selects it next; see `range_cursor`.
                     shell.update(cx, |shell, _| shell.range_cursor = None);
                     return;
                 }
                 cx.stop_propagation();
                 shell.update(cx, |shell, cx| {
-                    if modifiers.shift {
+                    if plain {
+                        shell.range_cursor = None;
+                    } else if modifiers.shift {
                         shell.select_range(target, toggle, cx);
                     } else {
                         shell.extend_selection(target, cx);
@@ -160,14 +202,22 @@ pub(super) fn draggable_row(
         // selecting do not compete. A row that is not a script ignores this
         // (see `Shell::open_script`), which is why no class check happens
         // here — the DOM is the thing that knows.
+        //
+        // A single click is also where a deferred plain press lands (GPUI
+        // fires no click once the press became a drag): it narrows the
+        // multi-selection to this row. A modifier click already did its own
+        // selecting on the press.
         .on_click({
             let shell = shell.clone();
             move |event: &ClickEvent, window, cx| {
-                if event.click_count() < 2 {
-                    return;
-                }
+                let modifiers = press_modifiers(event);
                 shell.update(cx, |shell, cx| {
-                    shell.open_script(target, window, cx);
+                    if narrows_on_click(shell.selection.all(), target, modifiers) {
+                        shell.select_row(target, cx);
+                    }
+                    if event.click_count() >= 2 {
+                        shell.open_script(target, window, cx);
+                    }
                 });
             }
         })
@@ -205,6 +255,21 @@ pub(super) fn draggable_row(
 }
 
 impl Shell {
+    /// What a plain press on a row would have done had it not been deferred
+    /// to the release: selects the row alone, synchronously like
+    /// [`Shell::select`] (the tree may already point at it, so its observer
+    /// would see no change), without `select`'s reveal — the row is under
+    /// the pointer, and scrolling it to the centre would move it away.
+    fn select_row(&mut self, target: Ref, cx: &mut Context<Self>) {
+        let item = self.explorer.item(target);
+        let tree = self.tree.clone();
+        tree.update(cx, |tree, cx| tree.set_selected_item(item.as_ref(), cx));
+        self.range_anchor = Some(target);
+        if self.selection.set(Some(target)) {
+            self.selection_changed(cx);
+        }
+    }
+
     /// Whether dropping `dragged` onto `target` would move anything — asked
     /// once per visible row per frame while a drag is in flight, which is why
     /// `explorer::reparent` walks parents rather than subtrees.

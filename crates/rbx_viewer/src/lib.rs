@@ -32,6 +32,7 @@ mod capture;
 mod changes;
 mod cli;
 mod controller;
+pub mod export;
 mod fonts;
 mod fps;
 pub mod gizmo;

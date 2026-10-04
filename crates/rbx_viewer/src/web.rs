@@ -391,7 +391,7 @@ impl Viewer {
         let size = Vec2::new(self.config.width as f32, self.config.height as f32);
         let projection = self.renderer.view_projection(self.from, size.x / size.y);
         let ray = pick::ray_through(projection, pick::ndc_of(Vec2::new(x, y), size));
-        let meshes = pick::Meshes::new(self.loaded.scene().resolved_file_meshes().meshes.clone());
+        let meshes = pick::Meshes::of(self.loaded.scene());
         let hits = pick::parts_along(&self.dom, &self.database, &meshes, ray);
         let current = self.selected.last().copied();
         let picked = pick::from_click(&self.dom, &self.database, &hits, current, cycle);

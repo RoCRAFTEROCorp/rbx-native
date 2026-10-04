@@ -18,6 +18,7 @@ mod docks;
 mod drag;
 mod edit;
 mod explorer_edit;
+mod export;
 mod folder_color;
 mod group;
 mod guides;

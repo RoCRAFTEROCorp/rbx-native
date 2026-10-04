@@ -189,6 +189,49 @@ fn materialize(dom: &mut WeakDom, node: &Clipped, parent: Option<Ref>) -> Ref {
     root
 }
 
+/// `roots`' subtrees copied into a DOM of their own, as top-level instances:
+/// what Save to File writes as a model file. A root under another root comes
+/// along with that one rather than twice.
+///
+/// A reference between copied instances follows them, as on paste. One to
+/// anything left behind is dropped — read back as nil, which is what a
+/// model file can say about an instance it does not hold. Left as it was,
+/// its raw id could name an unrelated instance of the new DOM.
+pub(super) fn detached(source: &WeakDom, roots: &[Ref]) -> WeakDom {
+    let covered = |reference: Ref| {
+        std::iter::successors(source.parent(reference), |&up| source.parent(up))
+            .any(|ancestor| roots.contains(&ancestor))
+    };
+    let nodes: Vec<Clipped> = roots
+        .iter()
+        .filter(|&&root| !covered(root))
+        .filter_map(|&root| snapshot(source, root))
+        .collect();
+    let mut dom = WeakDom::new();
+    let mut map = HashMap::new();
+    for node in &nodes {
+        create(&mut dom, node, None, &mut map);
+    }
+    for node in &nodes {
+        write_properties(&mut dom, node, &map);
+        drop_outside(&mut dom, node, &map);
+    }
+    dom
+}
+
+fn drop_outside(dom: &mut WeakDom, node: &Clipped, map: &HashMap<Ref, Ref>) {
+    for (name, value) in &node.properties {
+        if let Variant::Ref(r) | Variant::Content(Content::Object(r)) = value {
+            if !map.contains_key(r) {
+                let _ = dom.remove_property(map[&node.origin], name);
+            }
+        }
+    }
+    for child in &node.children {
+        drop_outside(dom, child, map);
+    }
+}
+
 /// One Duplicate of `reference`: a copy under the same parent, placed right
 /// after the original among its siblings — where real Studio's Explorer
 /// shows it (Studio lists same-class siblings by name, so `Lobby1` follows
