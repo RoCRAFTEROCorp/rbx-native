@@ -488,7 +488,7 @@ fn describe(err: &CloudError) -> String {
     let reason = match err {
         CloudError::Http { status: 400, .. } => "Roblox rejected the place file.",
         CloudError::Http { status: 401, .. } => {
-            "The API key isn\u{2019}t valid for this place: it needs universe-places:write on this experience."
+            "The API key isn\u{2019}t valid for this place: it needs universe-places:write on this experience, or it may have expired or been revoked \u{2014} Home \u{203a} Manage key."
         }
         CloudError::Http { status: 403, .. } => "Publishing isn\u{2019}t allowed on this place.",
         CloudError::Http { status: 404, .. } => "The place or its experience doesn\u{2019}t exist.",
