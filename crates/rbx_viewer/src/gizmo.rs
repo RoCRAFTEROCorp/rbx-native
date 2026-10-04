@@ -20,9 +20,11 @@ use glam::{Mat3, Mat4, Vec3};
 use crate::pick::Ray;
 use crate::Pose;
 
+mod bounds;
 mod faces;
 mod origin;
 
+pub use bounds::{bounds_along, bounds_of, box_along, centre_of, scale_box};
 pub use faces::{Faces, Hotspots, HOTSPOTS, HOTSPOT_PARTS, PART_HOTSPOTS};
 pub(crate) use origin::ORIGIN_RADIUS;
 
@@ -337,90 +339,6 @@ pub fn along_axis(origin: Vec3, axis: Vec3, ray: Ray) -> Option<f32> {
 pub fn angle_step(from: f32, to: f32) -> f32 {
     use std::f32::consts::{PI, TAU};
     (to - from + PI).rem_euclid(TAU) - PI
-}
-
-/// Where one gizmo goes for a whole selection: the centre of the world-axis
-/// -aligned box that contains every one of `models`, the oriented boxes its
-/// parts occupy. `None` for an empty selection.
-///
-/// The centre of the *bounds*, not the mean of the parts' own centres — those
-/// differ as soon as the selection is lopsided (three small parts at one end
-/// and one large at the other), and the bounds are what the user sees the
-/// selection occupying. `creator-docs` never states where the gizmo sits for a
-/// multi-object selection, but it is explicit that this is what Studio means
-/// by the centre of an aggregate: the pivot tool's **Reset** "moves the pivot
-/// point to the **center** of an object or model's bounding box"
-/// (`studio/pivot-tools.md`).
-///
-/// One part is the same answer as before — its own bounding box is centred on
-/// it — so this needs no special case for a single selection.
-pub fn centre_of(models: impl IntoIterator<Item = Mat4>) -> Option<Vec3> {
-    bounds_of(models).map(|(min, max)| (min + max) * 0.5)
-}
-
-/// The world-axis-aligned box containing every one of `models`, as its minimum
-/// and maximum corner. `None` for an empty selection.
-///
-/// Split out of [`centre_of`] because a selected `Model` needs the whole box
-/// and not just its middle: the outline drawn around a container is exactly
-/// this extent, and deriving it a second time somewhere else is how the box
-/// the user sees and the point the gizmo stands on start to disagree.
-/// The box the Scale tool's handles stand on: a single part's own oriented
-/// box, or — for more than one — the world-axis-aligned box round all of
-/// them, as the `Mat4` `part_model` would give a box-shaped part of that
-/// size at that centre. Shared by the renderer and the editor's hit test for
-/// the same reason [`centre_of`] is: two derivations of "where the handles
-/// are" are two things that can disagree.
-///
-/// `creator-docs` (`parts/models.md#transform-models`): "a model transforms
-/// based on the center of its bounding box" — and the bounding box it means
-/// is the world-aligned one `bounds_of` computes.
-pub fn scale_box(models: impl IntoIterator<Item = Mat4>) -> Option<Mat4> {
-    box_along(models, Mat3::IDENTITY)
-}
-
-/// [`scale_box`] with a group's box squared to `axes` (a rotation) rather
-/// than to the world's — how `Model:GetBoundingBox` squares a model's box to
-/// its pivot, and `rbx_lua::pivot::reset` with it. What Edit Pivot's
-/// hotspots stand on, so they turn with the pivot.
-pub fn box_along(models: impl IntoIterator<Item = Mat4>, axes: Mat3) -> Option<Mat4> {
-    let models: Vec<Mat4> = models.into_iter().collect();
-    match models.as_slice() {
-        [only] => Some(*only),
-        many => bounds_along(many.iter().copied(), axes),
-    }
-}
-
-/// The box round every one of `models` squared to `axes`, even for just one
-/// — `Model:GetBoundingBox`, which the selection outline of a model is
-/// ("matches the selection box rendered in Studio when the model is
-/// selected"). `None` for none.
-pub fn bounds_along(models: impl IntoIterator<Item = Mat4>, axes: Mat3) -> Option<Mat4> {
-    let turn = Mat4::from_mat3(axes);
-    let into = turn.transpose();
-    let (min, max) = bounds_of(models.into_iter().map(|model| into * model))?;
-    Some(turn * Mat4::from_translation((min + max) * 0.5) * Mat4::from_scale(max - min))
-}
-
-pub fn bounds_of(models: impl IntoIterator<Item = Mat4>) -> Option<(Vec3, Vec3)> {
-    let mut bounds: Option<(Vec3, Vec3)> = None;
-    for model in models {
-        let centre = model.w_axis.truncate();
-        // A box turned off the world axes still has to be contained by them:
-        // each world-axis half-extent is the sum of the absolute projections
-        // of the three (already `Size`-scaled) columns onto that axis.
-        let half = 0.5
-            * Vec3::new(
-                model.x_axis.x.abs() + model.y_axis.x.abs() + model.z_axis.x.abs(),
-                model.x_axis.y.abs() + model.y_axis.y.abs() + model.z_axis.y.abs(),
-                model.x_axis.z.abs() + model.y_axis.z.abs() + model.z_axis.z.abs(),
-            );
-        bounds = Some(match bounds {
-            None => (centre - half, centre + half),
-            Some((min, max)) => (min.min(centre - half), max.max(centre + half)),
-        });
-    }
-    bounds
 }
 
 /// The rotation Move's and Rotate's handles take, or `None` for the

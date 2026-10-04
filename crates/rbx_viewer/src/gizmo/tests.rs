@@ -471,14 +471,14 @@ fn one_part_scales_on_its_own_box_and_a_group_on_the_box_round_them() {
         * Mat4::from_rotation_y(0.7)
         * Mat4::from_scale(Vec3::new(2.0, 4.0, 6.0));
     assert_eq!(
-        scale_box([only]),
+        scale_box([only], None, false),
         Some(only),
         "a lone part keeps its own frame"
     );
 
     let a = Mat4::from_translation(Vec3::new(-2.0, 0.0, 0.0)) * Mat4::from_scale(Vec3::splat(2.0));
     let b = Mat4::from_translation(Vec3::new(4.0, 1.0, 0.0)) * Mat4::from_scale(Vec3::splat(2.0));
-    let group = scale_box([a, b]).expect("two parts");
+    let group = scale_box([a, b], None, false).expect("two parts");
     // From x=-3 to x=5, y=-1 to y=2, z=-1 to z=1: centred at (1, 0.5, 0),
     // 8 by 3 by 2, and standing square to the world.
     assert!((group.w_axis.truncate() - Vec3::new(1.0, 0.5, 0.0)).length() < 1e-5);
@@ -486,7 +486,7 @@ fn one_part_scales_on_its_own_box_and_a_group_on_the_box_round_them() {
     assert!((group.y_axis.truncate() - Vec3::new(0.0, 3.0, 0.0)).length() < 1e-5);
     assert!((group.z_axis.truncate() - Vec3::new(0.0, 0.0, 2.0)).length() < 1e-5);
 
-    assert_eq!(scale_box([]), None);
+    assert_eq!(scale_box([], None, false), None);
 }
 
 /// Two unit-ish cubes along a diagonal, boxed square to a pivot turned an
@@ -507,7 +507,7 @@ fn a_group_box_squared_to_a_turned_pivot_turns_with_it() {
     assert!((group.x_axis.truncate() - along * 8.0).length() < 1e-4);
     assert!((group.z_axis.truncate() - eighth * Vec3::Z * 2.0).length() < 1e-4);
     // Square to the world, the same pair needs a box 7 deep, not 2.
-    let world = scale_box([cube(Vec3::ZERO), cube(along * 6.0)]).unwrap();
+    let world = scale_box([cube(Vec3::ZERO), cube(along * 6.0)], None, false).unwrap();
     assert!(world.z_axis.length() > 7.0);
     assert_eq!(box_along([], eighth), None);
 }

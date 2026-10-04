@@ -385,8 +385,9 @@ Roblox's own engine.
   same `transform::Targets` machinery multi-select already used, and
   `Alt`/`⌥`-click still reaches one specific part inside the model and
   gizmos it with its own oriented box. One derivation
-  (`rbx_viewer::gizmo::bounds_of`) feeds the outline, the gizmo's centre
-  and the Scale handles' box alike, and the Align tool's own **Selection
+  (`rbx_viewer::gizmo::bounds_of`) feeds the outline and the gizmo's
+  centre alike (the Scale handles stand on the pivot's own box instead,
+  see "Pivot tools follow-ups" under Renderer), and the Align tool's own **Selection
   Bounds** agrees with it on the world axes. The outline itself is
   squared to the model's pivot (the `PrimaryPart`'s, or the `WorldPivot`)
   the way `Model:GetBoundingBox` orients Studio's box, so it turns with
@@ -504,8 +505,23 @@ Roblox's own engine.
   does and moves the instance the way `PivotTo` does (see Editor), and
   Luau — the Command Bar and scripts — has `PVInstance:GetPivot()` and
   `PVInstance:PivotTo()` through the same pivot (`rbx_lua::pivot`), with
-  `BasePart.PivotOffset` readable and writable like any property. What is
-  still open is "What's planned" → Renderer's Pivot tools follow-ups.
+  `BasePart.PivotOffset` readable and writable like any property. Scale's
+  side of it is the next bullet.
+- [x] **Pivot tools follow-ups**, the part of Studio's pivot behaviour
+  (`studio/pivot-tools.md`) the Edit Pivot tool did not bring: Scale's
+  handles stand on the pivot and scale about it, matching Studio's own
+  `ScaleDragger` (its `ExtrudeHandles` and `DraggerSchemaCore`, read from
+  the client's disassembled built-in plugin). A model's balls stand on its
+  box squared to its pivot in Local space, or on the world axes anchored
+  at the pivot in World space, grown to hold the pivot
+  (`rbx_viewer::gizmo::scale_box`); a lone part keeps its own box, its
+  `PivotOffset` left out. A pull scales the whole model by one factor from
+  the opposite face, its pivot moving as one more scaled point; `Ctrl`
+  scales about the pivot instead, the pull doubled as Studio doubles it,
+  and is re-read on every move, the drag measured afresh when it changes
+  so the model never jumps. A model of one part scales as a model, and a
+  resized part's `PivotOffset` stretches with its `Size`, as Studio's
+  fix-up does.
 
 ### Editor (`rbx_studio`, binary `rbxstudio`)
 - [x] Explorer: this project's own flat, from-scratch class icon kit
@@ -1875,10 +1891,6 @@ Roblox's own engine.
   above existing first regardless of which direction it takes.
 
 ### Renderer
-- [ ] 📋 **Pivot tools follow-ups**, the part of Studio's pivot behaviour
-  (`studio/pivot-tools.md`) the Edit Pivot tool and its follow-up passes
-  did not bring: Scale's handles still stand on the world-aligned box and
-  scale about it rather than about the pivot.
 - [ ] 📋 **Whole-place and fuller Explorer export.** Left open by the
   Explorer row's Save / Export rows (see "What's been implemented" →
   Editor): the whole place to a local file under a name of its choosing

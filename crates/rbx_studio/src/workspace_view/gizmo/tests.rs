@@ -2,6 +2,7 @@ use glam::{Mat3, Mat4, Quat, Vec3};
 use rbx_dom::Ref;
 use rbx_viewer::Pose;
 
+use super::scale::grab_face;
 use super::*;
 use crate::dragger::sweep::SoftSnap;
 
@@ -304,6 +305,7 @@ fn grabbed_x_face() -> Drag {
         component: 0,
         sphere: false,
         cylinder: false,
+        centred: false,
     }
 }
 
@@ -312,7 +314,8 @@ fn grabbing_a_ball_opens_a_resize_of_the_face_it_stands_on() {
     // The block is 2 studs wide, so its +X ball stands at x = 1, and that is
     // where the drag is grabbed.
     let target = block();
-    let drag = grab_face(&faces(target), target, looking_at(1.0, 0.0), false).expect("the +X ball");
+    let drag =
+        grab_face(&faces(target), target, looking_at(1.0, 0.0), false, false).expect("the +X ball");
 
     assert_eq!(drag, grabbed_x_face());
 }
@@ -320,7 +323,8 @@ fn grabbing_a_ball_opens_a_resize_of_the_face_it_stands_on() {
 #[test]
 fn grabbing_a_balls_handle_with_alt_held_locks_the_drag_to_round() {
     let target = ball();
-    let drag = grab_face(&faces(target), target, looking_at(1.0, 0.0), true).expect("the +X ball");
+    let drag =
+        grab_face(&faces(target), target, looking_at(1.0, 0.0), true, false).expect("the +X ball");
 
     let Drag::Size { sphere, .. } = drag else {
         panic!("expected a resize, got {drag:?}");
@@ -331,7 +335,8 @@ fn grabbing_a_balls_handle_with_alt_held_locks_the_drag_to_round() {
 #[test]
 fn grabbing_a_balls_handle_without_alt_behaves_exactly_as_before() {
     let target = ball();
-    let drag = grab_face(&faces(target), target, looking_at(1.0, 0.0), false).expect("the +X ball");
+    let drag =
+        grab_face(&faces(target), target, looking_at(1.0, 0.0), false, false).expect("the +X ball");
 
     let Drag::Size { sphere, .. } = drag else {
         panic!("expected a resize, got {drag:?}");
@@ -344,7 +349,8 @@ fn alt_does_nothing_on_a_shape_that_is_not_a_ball() {
     // The modifier alone is not the lock -- it only ever matters together
     // with `Target::sphere`, which a plain block never sets.
     let target = block();
-    let drag = grab_face(&faces(target), target, looking_at(1.0, 0.0), true).expect("the +X ball");
+    let drag =
+        grab_face(&faces(target), target, looking_at(1.0, 0.0), true, false).expect("the +X ball");
 
     let Drag::Size { sphere, .. } = drag else {
         panic!("expected a resize, got {drag:?}");
@@ -367,6 +373,7 @@ fn a_locked_ball_grows_all_three_axes_by_the_same_amount() {
         component: 0,
         sphere: true,
         cylinder: false,
+        centred: false,
     };
     let (_, change) = advance(drag, looking_at(4.0, 0.0), free()).expect("the axis is across");
 
@@ -400,6 +407,7 @@ fn a_locked_ball_still_stops_at_the_size_ceiling() {
         component: 0,
         sphere: true,
         cylinder: false,
+        centred: false,
     };
     // Ask for far more growth than Y has room for.
     let (_, change) = advance(drag, looking_at(5000.0, 0.0), free()).expect("across the view");
@@ -415,7 +423,8 @@ fn a_locked_ball_still_stops_at_the_size_ceiling() {
 fn grabbing_a_cylinders_round_handle_with_alt_held_locks_the_drag() {
     // The +Y face of a 2x1x4 block, half of its 1-stud height out.
     let target = cylinder();
-    let drag = grab_face(&faces(target), target, looking_at(0.0, 0.5), true).expect("the +Y ball");
+    let drag =
+        grab_face(&faces(target), target, looking_at(0.0, 0.5), true, false).expect("the +Y ball");
 
     let Drag::Size {
         component,
@@ -436,7 +445,8 @@ fn grabbing_a_cylinders_round_handle_with_alt_held_locks_the_drag() {
 fn grabbing_a_cylinders_length_handle_never_locks_even_with_alt_held() {
     // The +X face -- the length axis -- has no partner to lock with.
     let target = cylinder();
-    let drag = grab_face(&faces(target), target, looking_at(1.0, 0.0), true).expect("the +X ball");
+    let drag =
+        grab_face(&faces(target), target, looking_at(1.0, 0.0), true, false).expect("the +X ball");
 
     let Drag::Size {
         component,
@@ -464,6 +474,7 @@ fn a_locked_cylinders_round_handle_grows_its_partner_axis_too() {
         component: 1,
         sphere: false,
         cylinder: true,
+        centred: false,
     };
     let (_, change) = advance(drag, looking_at(0.0, 2.5), free()).expect("the axis is across");
 
@@ -494,6 +505,7 @@ fn a_locked_cylinders_length_handle_grows_only_the_length() {
         component: 0,
         sphere: false,
         cylinder: true,
+        centred: false,
     };
     let (_, change) = advance(drag, looking_at(4.0, 0.0), free()).expect("the axis is across");
 
@@ -508,8 +520,8 @@ fn a_locked_cylinders_length_handle_grows_only_the_length() {
 #[test]
 fn grabbing_the_ball_on_the_far_face_resizes_the_part_the_other_way() {
     let target = block();
-    let drag =
-        grab_face(&faces(target), target, looking_at(-1.0, 0.0), false).expect("the -X ball");
+    let drag = grab_face(&faces(target), target, looking_at(-1.0, 0.0), false, false)
+        .expect("the -X ball");
 
     let Drag::Size {
         axis, component, ..
@@ -541,7 +553,8 @@ fn a_turned_parts_ball_resizes_the_face_it_actually_sits_on() {
         sphere: false,
         cylinder: false,
     };
-    let drag = grab_face(&faces(target), target, looking_at(0.0, 1.0), false).expect("the +X ball");
+    let drag =
+        grab_face(&faces(target), target, looking_at(0.0, 1.0), false, false).expect("the +X ball");
 
     let Drag::Size {
         axis,
@@ -570,7 +583,7 @@ fn pointing_at_no_ball_grabs_no_resize() {
         cylinder: false,
     };
     assert_eq!(
-        grab_face(&faces(target), target, looking_at(8.0, 8.0), false),
+        grab_face(&faces(target), target, looking_at(8.0, 8.0), false, false),
         None
     );
 }
@@ -580,7 +593,8 @@ fn pointing_at_no_ball_grabs_no_resize() {
 #[test]
 fn a_ball_grabbed_where_it_is_drawn_resizes_from_there() {
     let target = block();
-    let drag = grab_face(&faces(target), target, looking_at(1.0, 0.0), false).expect("the +X ball");
+    let drag =
+        grab_face(&faces(target), target, looking_at(1.0, 0.0), false, false).expect("the +X ball");
 
     let (_, change) = advance(drag, looking_at(4.0, 0.0), free()).expect("the drag has an answer");
     assert_eq!(
@@ -674,6 +688,7 @@ fn a_scale_handle_on_the_far_face_grows_the_part_the_other_way() {
         component: 0,
         sphere: false,
         cylinder: false,
+        centred: false,
     };
 
     assert_eq!(
@@ -945,7 +960,9 @@ fn grabbed_group_x_face() -> Drag {
         axis: Vec3::X,
         grabbed: 4.0,
         extent: 8.0,
-        pivot: Vec3::new(-4.0, 0.0, 0.0),
+        far: Vec3::new(-4.0, 0.0, 0.0),
+        pivot: Vec3::new(1.0, 0.0, 0.0),
+        centred: false,
     }
 }
 

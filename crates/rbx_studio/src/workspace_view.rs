@@ -125,17 +125,18 @@ pub(crate) enum ViewportAction {
     },
     /// A Scale drag resized the part. The centre travels with it: the face
     /// opposite the grabbed one holds still, so growing the part by a stud
-    /// moves its middle by half of one.
+    /// moves its middle by half of one — or, with `Ctrl` held, the middle
+    /// holds still and both faces move.
     Resized {
         /// Each part's new size and centre — one entry for a lone part's
         /// own Scale, every selected part for a group scaled as a whole (see
         /// `transform::Targets::scale_about`).
         parts: Vec<(Ref, Vec3, Vec3)>,
-        /// Where a group scaled as a whole put the selection's pivot —
-        /// scaled about the same point as its parts, which carrying it
-        /// rigidly with one part would not — written as is, so the pivot
-        /// does not jump when the drag ends and the view reads it back.
-        /// `None` for a lone part's Scale, whose pivot rides along with it.
+        /// Where the drag put the selection's pivot — scaled about the same
+        /// point as its parts, which carrying it rigidly would not (a lone
+        /// part's `PivotOffset` stretches with its `Size`) — written as is,
+        /// so the pivot does not jump when the drag ends and the view reads
+        /// it back.
         pivot: Option<Mat4>,
         first: bool,
     },

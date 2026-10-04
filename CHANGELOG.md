@@ -2,6 +2,15 @@
 
 ## 2026-10-04
 
+- **Scale works from the pivot.** A selected model's Scale balls now
+  stand on its box squared to its pivot — or, in World space, on the world
+  axes anchored at the pivot — grown to take in a pivot standing outside
+  the parts, the way Studio's own Scale tool frames it; a lone part still
+  scales on its own box. Pulling a ball scales the model from the opposite
+  face with the pivot carried along as a scaled point, holding `Ctrl`
+  scales it about the pivot instead (and can be pressed or let go
+  mid-drag without a jump), a model of one part scales as a model, and a
+  resized part's pivot offset stretches with it. — @chteau
 - **Place version history, browse and restore.** File › Version History…
   lists the linked place's saved and published versions with who saved
   them and when, a page at a time and filterable by contributor. Any
