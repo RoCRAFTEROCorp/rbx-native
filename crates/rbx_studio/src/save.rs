@@ -48,7 +48,7 @@ impl Format {
         }
     }
 
-    fn encode(self, dom: &WeakDom) -> Result<Vec<u8>, String> {
+    pub(crate) fn encode(self, dom: &WeakDom) -> Result<Vec<u8>, String> {
         match self {
             // The class default for whatever an instance does not hold:
             // a binary file has a value for every instance of a class, and a
@@ -96,7 +96,7 @@ pub(crate) fn save(dom: &WeakDom, format: Format, path: &Path) -> Result<(), Str
 /// `rbx_assets::native`'s own `write_atomic`, which is private to that crate
 /// and so duplicated here rather than shared across a crate boundary for one
 /// small helper.
-fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), String> {
+pub(crate) fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), String> {
     let parent = path.parent().unwrap_or_else(|| Path::new("."));
     let file_name = path
         .file_name()

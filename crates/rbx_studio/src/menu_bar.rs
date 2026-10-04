@@ -24,8 +24,8 @@
 //! already has for Ctrl+S/Z/Y/G/C/V/D (a command must fire no matter what
 //! currently has focus).
 //!
-//! Everything this editor cannot do yet — New, Open…, Save As…, Publish to
-//! Roblox…, Cut, Insert Object… — stays a visibly disabled item rather than
+//! Everything this editor cannot do yet — New, Open…, Save As…, Insert
+//! Object… — stays a visibly disabled item rather than
 //! a click that silently does nothing while looking live. The one live View
 //! item is Style Editor: Roblox puts that panel under `Window` ⟩ UI
 //! (`studio/ui-overview.md`), and this editor's menus are File/Edit/Model/View,
@@ -48,6 +48,9 @@ actions!(
     menu_bar,
     [
         MenuSave,
+        MenuSaveToRoblox,
+        MenuPublishToRoblox,
+        MenuLinkRobloxPlace,
         MenuOpenAutoSaves,
         MenuStudioSettings,
         MenuScriptTemplates,
@@ -159,7 +162,11 @@ fn menus(templates: &[Template]) -> Vec<OwnedMenu> {
                 MenuItem::action("Save", MenuSave),
                 MenuItem::action("Save As…", MenuPlaceholder).disabled(true),
                 MenuItem::separator(),
-                MenuItem::action("Publish to Roblox…", MenuPlaceholder).disabled(true),
+                // Uploads, not local saves: see `shell::roblox_publish`. An
+                // unlinked file asks for its place on first use.
+                MenuItem::action("Save to Roblox", MenuSaveToRoblox),
+                MenuItem::action("Publish to Roblox", MenuPublishToRoblox),
+                MenuItem::action("Link to Roblox Place…", MenuLinkRobloxPlace),
                 MenuItem::separator(),
                 // Studio files this under File › Advanced; this bar draws
                 // no submenus (`popup`), so it sits flat, under Studio's

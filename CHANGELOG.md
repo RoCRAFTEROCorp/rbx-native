@@ -2,6 +2,27 @@
 
 ## 2026-10-04
 
+- **Save and Publish to Roblox from the File menu.** File › Save to
+  Roblox and Publish to Roblox upload the open place as a new saved or
+  live version of its Roblox place, replacing the greyed-out Publish
+  placeholder — the Open Cloud client could already do it, the editor just
+  had no way to ask. A place opened from Home is already linked; any
+  other file picks its game once from Home's own My Games list (or adds a
+  place by its ID or link) and remembers it. Every upload asks first,
+  naming the experience and place and whether it goes live — an
+  overwrite on Roblox can't be taken back from the editor. A refused upload says why in Roblox's own terms, in a dialog and in
+  the Output dock, rather than failing quietly. — @chteau
+- **Save to File and mesh export from the Explorer.** An Explorer row's
+  right-click menu gains Studio's Save / Export rows: **Save to File…**
+  writes the selection as an `.rbxm` (or `.rbxmx`) model file with the
+  same serializers a save uses, services included, and **Export
+  Selection…** / **Export as glTF…** write its parts as `.obj` or a
+  single-file glTF 2.0 — the geometry the viewport draws, real downloaded
+  meshes included — for opening in Blender or any other 3D tool. A
+  part's colour, a mesh's own texture, a `SurfaceAppearance`'s four PBR
+  maps (with its tint and alpha mode) and a `Material`'s texture pack,
+  tiled the way the viewport tiles it, all travel with it, and an image
+  several parts share is written once. — @chteau
 - **The Transform tool.** The ribbon's 5th Tools button — Move's arrows,
   Scale's balls and Rotate's rings, all grabbable over the same selection
   at once — the roadmap could previously only confirm as `creator-docs`'
@@ -24,6 +45,13 @@
   F3X's `Shift`+`X`/`Shift`+`C` snap chord and `H` help overlay were
   looked at and deliberately not adopted: they are a plugin's
   conventions, not native Studio's. — @chteau
+- **Dragging a multi-selection from any of its Explorer rows.** Pressing a
+  selected row other than the selection's anchor used to narrow the
+  selection to that row before the drag could start, so only the anchor
+  row carried the whole selection. The narrowing now waits for a release
+  that never became a drag, as in a desktop file manager: press-and-drag
+  on any selected row moves all of them, and a plain click still selects
+  just that row. — @chteau
 
 ## 2026-10-03
 

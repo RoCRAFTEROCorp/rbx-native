@@ -476,7 +476,7 @@ impl Headless {
     /// is swapped in — see [`Headless::pick_meshes_changed`], which is how a
     /// host notices the second of those without a command having been applied.
     pub fn pick_meshes(&self) -> crate::pick::Meshes {
-        crate::pick::Meshes::new(self.loaded.scene().resolved_file_meshes().meshes.clone())
+        crate::pick::Meshes::of(self.loaded.scene())
     }
 
     /// Whether a landed asset has changed the geometry a click is tested

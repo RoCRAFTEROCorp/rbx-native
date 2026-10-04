@@ -10,7 +10,19 @@ use super::*;
 impl HomeWindow {
     /// A card, a Recent linked entry, or a resolved link: the LocalCopy
     /// question when a copy exists, else straight to the download.
+    /// In the game picker, the experience is handed over and the picker
+    /// closes instead; nothing is downloaded.
     pub(super) fn open_experience(&mut self, experience: Experience, cx: &mut Context<Self>) {
+        if let Some(pick) = self.pick.clone() {
+            // Deferred: the window can't be removed from inside its own
+            // event handler.
+            let handle = self.handle;
+            cx.defer(move |cx| {
+                pick(experience, cx);
+                let _ = handle.update(cx, |_, window, _| window.remove_window());
+            });
+            return;
+        }
         match home::local_copy(&experience) {
             Some(path) => {
                 self.dialog = Some(Dialog::LocalCopy {
@@ -233,7 +245,12 @@ impl HomeWindow {
     }
 
     /// Home without a key: back to the wizard, which comes back here.
+    /// The game picker has no Home to come back to, so it opens Roblox
+    /// publishing (Home › Manage key) instead.
     pub(super) fn set_up_key(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.pick.is_some() {
+            return self.manage_key(cx);
+        }
         crate::launcher::open_wizard(self.boot.clone(), cx);
         window.remove_window();
     }

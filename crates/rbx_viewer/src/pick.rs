@@ -27,6 +27,9 @@ use crate::scene::{
     workspace_descendants, ShapeKind,
 };
 
+#[cfg(test)]
+pub(crate) use mesh::Pack;
+pub(crate) use mesh::Surface;
 pub use mesh::{FlatFace, Meshes};
 pub use surface::{PartSurface, Solid};
 

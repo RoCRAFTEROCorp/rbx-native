@@ -7,7 +7,11 @@ use std::sync::Arc;
 
 use glam::{Mat4, Vec3};
 use rbx_assets::AssetRef;
+use rbx_dom::Ref;
 use rbx_mesh::Mesh;
+
+use crate::assets::Image;
+use crate::scene::{AlphaMode, Kind, Scene, Slot};
 
 use super::shape::Local;
 use super::Ray;
@@ -21,16 +25,142 @@ use super::Ray;
 /// a copy of it. Empty by default, which is also the right answer for a place
 /// whose meshes have not downloaded: a file-mesh part then picks as the
 /// fallback box it is drawn as.
+///
+/// Also carries the decoded image each textured mesh instance is drawn with,
+/// the `SurfaceAppearance` maps of each one wearing a set, and the texture
+/// pack of each part whose `Material` has one, by the part it stands for,
+/// which nothing picks against but an export writes out beside the triangles
+/// (see `crate::export`).
 #[derive(Clone, Default)]
-pub struct Meshes(Arc<HashMap<AssetRef, Arc<Mesh>>>);
+pub struct Meshes {
+    meshes: Arc<HashMap<AssetRef, Arc<Mesh>>>,
+    textures: Arc<HashMap<Ref, Arc<Image>>>,
+    surfaces: Arc<HashMap<Ref, Surface>>,
+    materials: Arc<HashMap<Ref, Arc<Pack>>>,
+}
+
+/// A textured `Material`'s maps as the renderer projects them (see
+/// `renderer/material.wgsl`): [`rbx_materials::MapKind::ALL`] order, tiled
+/// every `studs_per_tile` along the part.
+#[derive(Debug, Clone)]
+pub(crate) struct Pack {
+    pub(crate) maps: [Option<Arc<Image>>; 4],
+    pub(crate) studs_per_tile: f32,
+}
+
+/// A `SurfaceAppearance` as the renderer binds it: the maps that decoded, in
+/// [`rbx_materials::MapKind::ALL`] order, and the tint and alpha mode the
+/// shader reads beside them (see `renderer/appearance.wgsl`).
+#[derive(Debug, Clone)]
+pub(crate) struct Surface {
+    pub(crate) maps: [Option<Arc<Image>>; 4],
+    pub(crate) tint: [f32; 3],
+    pub(crate) alpha_mode: AlphaMode,
+}
 
 impl Meshes {
-    pub(crate) fn new(meshes: HashMap<AssetRef, Arc<Mesh>>) -> Self {
-        Meshes(Arc::new(meshes))
+    pub(crate) fn new(
+        meshes: HashMap<AssetRef, Arc<Mesh>>,
+        textures: HashMap<Ref, Arc<Image>>,
+    ) -> Self {
+        Meshes {
+            meshes: Arc::new(meshes),
+            textures: Arc::new(textures),
+            surfaces: Arc::default(),
+            materials: Arc::default(),
+        }
     }
 
-    pub(super) fn get(&self, asset: &AssetRef) -> Option<&Arc<Mesh>> {
-        self.0.get(asset)
+    pub(crate) fn with_materials(mut self, materials: HashMap<Ref, Arc<Pack>>) -> Self {
+        self.materials = Arc::new(materials);
+        self
+    }
+
+    pub(crate) fn with_surfaces(mut self, surfaces: HashMap<Ref, Surface>) -> Self {
+        self.surfaces = Arc::new(surfaces);
+        self
+    }
+
+    /// What the scene resolved, textures as the renderer binds them: the
+    /// `TextureID`/`TextureId` that downloaded, and none under a
+    /// `SurfaceAppearance`, whose own maps come instead; and every part's
+    /// material pack where it shades as a textured one right now.
+    pub(crate) fn of(scene: &Scene) -> Self {
+        let resolved = scene.resolved_file_meshes();
+        let mut textures = HashMap::new();
+        let mut surfaces = HashMap::new();
+        for instance in &resolved.instances {
+            if let Some(appearance) = instance
+                .appearance
+                .and_then(|index| resolved.appearances.get(index))
+            {
+                let maps = appearance
+                    .maps
+                    .clone()
+                    .map(|map| map.and_then(|map| resolved.images.get(&map).cloned()));
+                surfaces.entry(instance.referent).or_insert(Surface {
+                    maps,
+                    tint: appearance.tint,
+                    alpha_mode: appearance.alpha_mode,
+                });
+            }
+            let image = instance
+                .texture
+                .as_ref()
+                .and_then(|t| resolved.images.get(t));
+            if let Some(image) = image {
+                textures
+                    .entry(instance.referent)
+                    .or_insert_with(|| Arc::clone(image));
+            }
+        }
+        // One pack per layer, however many parts are made of it.
+        let catalog = scene.materials();
+        let mut packs: HashMap<u32, Option<Arc<Pack>>> = HashMap::new();
+        let mut materials = HashMap::new();
+        let slots = scene
+            .parts()
+            .iter()
+            .map(|part| (part.id.referent(), part.material))
+            .chain(resolved.instances.iter().map(|i| (i.referent, i.material)));
+        for (referent, Slot { layer, .. }) in slots {
+            let pack = packs.entry(layer).or_insert_with(|| {
+                // Re-read rather than trusted: the slot a part was built with
+                // is plastic until its pack lands (see `Catalog::slot`).
+                let slot = catalog.slot(layer);
+                (slot.kind == Kind::Textured).then(|| {
+                    Arc::new(Pack {
+                        maps: rbx_materials::MapKind::ALL
+                            .map(|kind| catalog.shared_image(layer as usize, kind).cloned()),
+                        studs_per_tile: slot.studs_per_tile,
+                    })
+                })
+            });
+            if let Some(pack) = pack {
+                materials
+                    .entry(referent)
+                    .or_insert_with(|| Arc::clone(pack));
+            }
+        }
+        Meshes::new(resolved.meshes.clone(), textures)
+            .with_surfaces(surfaces)
+            .with_materials(materials)
+    }
+
+    pub(crate) fn get(&self, asset: &AssetRef) -> Option<&Arc<Mesh>> {
+        self.meshes.get(asset)
+    }
+
+    pub(crate) fn texture(&self, referent: Ref) -> Option<&Arc<Image>> {
+        self.textures.get(&referent)
+    }
+
+    pub(crate) fn surface(&self, referent: Ref) -> Option<&Surface> {
+        self.surfaces.get(&referent)
+    }
+
+    pub(crate) fn material(&self, referent: Ref) -> Option<&Pack> {
+        self.materials.get(&referent).map(Arc::as_ref)
     }
 }
 

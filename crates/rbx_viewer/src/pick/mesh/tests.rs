@@ -92,7 +92,10 @@ fn meshes_are_empty_by_default_and_shared_once_built() {
     assert!(Meshes::default().get(&asset).is_none());
 
     let mesh = Arc::new(corner_tetrahedron());
-    let meshes = Meshes::new(HashMap::from([(asset.clone(), mesh.clone())]));
+    let meshes = Meshes::new(
+        HashMap::from([(asset.clone(), mesh.clone())]),
+        HashMap::new(),
+    );
     let found = meshes.get(&asset).expect("the mesh that was put in");
     assert!(Arc::ptr_eq(found, &mesh), "no copy was made");
     // A clone of the handle still reads the same map.

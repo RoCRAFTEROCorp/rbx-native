@@ -212,11 +212,21 @@ impl HomeWindow {
                             .child("Open and publish your Roblox places"),
                     )
                     .child(ui::text(12.5, 19.).max_w(px(490.)).text_color(tokens::text2()).child(
-                        "Add an Open Cloud API key once and My Games fills in with your experiences. Local .rbxl and .rbxlx files work without it.",
+                        if self.pick.is_some() {
+                            "Saving and publishing to Roblox need an Open Cloud API key. Add one from Home \u{203a} Manage key and your experiences are listed here."
+                        } else {
+                            "Add an Open Cloud API key once and My Games fills in with your experiences. Local .rbxl and .rbxlx files work without it."
+                        },
                     ))
                     .child(
                         h_flex().gap(px(8.)).mt(px(6.)).child(
-                            ui::icon_button("banner-set-up", "key-round", "Set up a key", Weight::Primary, false)
+                            ui::icon_button(
+                                "banner-set-up",
+                                "key-round",
+                                if self.pick.is_some() { "Manage key" } else { "Set up a key" },
+                                Weight::Primary,
+                                false,
+                            )
                                 .on_click(cx.listener(|this, _, window, cx| this.set_up_key(window, cx))),
                         ),
                     ),

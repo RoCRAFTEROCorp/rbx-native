@@ -13,14 +13,19 @@ use crate::tokens;
 
 impl HomeWindow {
     pub(super) fn games_page(&mut self, grid: &Grid, cx: &mut Context<Self>) -> AnyElement {
+        let title = if self.pick.is_some() {
+            "Pick a game"
+        } else {
+            "My Games"
+        };
         if !self.has_key() {
             return v_flex()
                 .gap(px(20.))
-                .child(self.page_head("My Games", grid, false, cx))
+                .child(self.page_head(title, grid, false, cx))
                 .child(self.no_key_banner(cx))
                 .into_any_element();
         }
-        let head = self.page_head("My Games", grid, true, cx);
+        let head = self.page_head(title, grid, true, cx);
         let body: AnyElement = match &self.games {
             Games::Loading => v_flex()
                 .gap(px(12.))
@@ -112,6 +117,9 @@ impl HomeWindow {
                 };
                 v_flex()
                     .gap(px(20.))
+                    .when(self.pick.is_some(), |this| {
+                        this.child(starting_place_note())
+                    })
                     .when(self.note_visible(), |this| {
                         this.child(self.partial_note(cx))
                     })
@@ -332,4 +340,18 @@ impl HomeWindow {
                     )
             }))
     }
+}
+
+/// Roblox's listings only carry an experience's starting place, so that is
+/// the one a card links to; another place is reached by its own ID.
+fn starting_place_note() -> impl IntoElement {
+    h_flex()
+        .gap(px(8.))
+        .text_size(px(12.))
+        .line_height(px(17.))
+        .text_color(tokens::text2())
+        .child(ui::icon("info", 14.).text_color(tokens::text3()))
+        .child(
+            "A game links this file to its starting place. To link another place of the same experience, add it by its place ID or link.",
+        )
 }

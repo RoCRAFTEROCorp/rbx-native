@@ -60,16 +60,103 @@ pub(crate) fn recent() -> Vec<RecentPlace> {
 }
 
 /// Moves `place` to the top of Recent. A plain file open keeps whatever
-/// Roblox link the same path was recorded with before.
+/// Roblox link the same path was recorded with before, even one that fell
+/// off Recent long ago: links are also kept in [`Links`], which forgets
+/// nothing.
 pub(crate) fn remember(place: RecentPlace) -> Result<(), SettingsError> {
     let path = recent_path().ok_or(SettingsError::NoConfigDir)?;
-    let list = with_remembered(read_recent(&path), place);
+    let links_file = links_path().ok_or(SettingsError::NoConfigDir)?;
+    let list = read_recent(&path);
+    let mut links = read_links(&links_file);
+    let before = links.clone();
+    // Recent was the only home of links before links.json existed.
+    for old in &list {
+        if let Some(link) = Link::of(old) {
+            links.entry(link_key(&old.path)).or_insert(link);
+        }
+    }
+    let place = with_link(&mut links, place);
+    if links != before {
+        let bytes = serde_json::to_vec_pretty(&links).expect("Links serialize");
+        write_atomic(&links_file, &bytes)?;
+    }
+    let list = with_remembered(list, place);
     let bytes = serde_json::to_vec_pretty(&list).expect("RecentPlace serializes");
     write_atomic(&path, &bytes)
 }
 
 fn recent_path() -> Option<PathBuf> {
     default_config_dir().map(|dir| dir.join("recent.json"))
+}
+
+/// A file's Roblox place: what Save/Publish to Roblox targets.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct Link {
+    pub(crate) universe_id: u64,
+    pub(crate) place_id: u64,
+    /// The experience's name, for Recent's linked pill.
+    #[serde(default)]
+    pub(crate) name: Option<String>,
+}
+
+impl Link {
+    fn of(place: &RecentPlace) -> Option<Link> {
+        Some(Link {
+            universe_id: place.universe_id?,
+            place_id: place.place_id?,
+            name: place.name.clone(),
+        })
+    }
+}
+
+/// Every file's link, by canonical path, in `links.json`. Unlike Recent it
+/// has no cap; an entry goes only when its file is relinked.
+type Links = std::collections::BTreeMap<PathBuf, Link>;
+
+fn links_path() -> Option<PathBuf> {
+    default_config_dir().map(|dir| dir.join("links.json"))
+}
+
+fn read_links(path: &Path) -> Links {
+    std::fs::read(path)
+        .ok()
+        .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+        .unwrap_or_default()
+}
+
+/// Paths are compared canonicalized: the editor records its file that way,
+/// Home records the download path as it built it.
+fn link_key(path: &Path) -> PathBuf {
+    std::fs::canonicalize(path).unwrap_or(path.to_path_buf())
+}
+
+/// The Roblox place `path` is linked to, if any.
+pub(crate) fn link_of(path: &Path) -> Option<Link> {
+    read_links(&links_path()?).remove(&link_key(path))
+}
+
+/// Records `place`'s link in `links` when it carries one, or fills its ids
+/// in from `links` when it doesn't. A link to the same place keeps the name
+/// it had when the new one comes without.
+fn with_link(links: &mut Links, mut place: RecentPlace) -> RecentPlace {
+    let key = link_key(&place.path);
+    match Link::of(&place) {
+        Some(mut link) => {
+            if let Some(old) = links.get(&key).filter(|old| old.place_id == link.place_id) {
+                link.name = link.name.or(old.name.clone());
+            }
+            place.name = link.name.clone();
+            links.insert(key, link);
+        }
+        None => {
+            if let Some(link) = links.get(&key) {
+                place.universe_id = Some(link.universe_id);
+                place.place_id = Some(link.place_id);
+                place.name = link.name.clone();
+            }
+        }
+    }
+    place
 }
 
 fn read_recent(path: &Path) -> Vec<RecentPlace> {
@@ -351,6 +438,47 @@ mod tests {
         let list = with_remembered(full, place("new", None));
         assert_eq!(list.len(), RECENT_LIMIT);
         assert_eq!(list[0].path, PathBuf::from("new"));
+    }
+
+    #[test]
+    fn a_link_outlives_its_file_falling_off_recent() {
+        let mut links = Links::new();
+        let mut linked = place("linked", Some(7));
+        linked.name = Some("Pebbles".to_string());
+        let mut list = with_remembered(Vec::new(), with_link(&mut links, linked));
+        for i in 0..RECENT_LIMIT {
+            list = with_remembered(list, with_link(&mut links, place(&i.to_string(), None)));
+        }
+        assert!(list.iter().all(|p| p.path != Path::new("linked")));
+
+        // Opened again as a plain file: the link and its name come back.
+        let back = with_link(&mut links, place("linked", None));
+        assert_eq!(
+            (back.universe_id, back.place_id, back.name.as_deref()),
+            (Some(1007), Some(7), Some("Pebbles"))
+        );
+    }
+
+    #[test]
+    fn relinking_keeps_the_name_only_for_the_same_place() {
+        let mut links = Links::new();
+        let mut first = place("a", Some(7));
+        first.name = Some("Pebbles".to_string());
+        with_link(&mut links, first);
+
+        // Same place, no name this time: the name stays.
+        let same = with_link(&mut links, place("a", Some(7)));
+        assert_eq!(same.name.as_deref(), Some("Pebbles"));
+
+        // Another place without a name: the old one would be wrong.
+        let other = with_link(&mut links, place("a", Some(8)));
+        assert_eq!(other.name, None);
+        assert_eq!(links[&PathBuf::from("a")].place_id, 8);
+
+        let mut named = place("a", Some(9));
+        named.name = Some("Liminal".to_string());
+        with_link(&mut links, named);
+        assert_eq!(links[&PathBuf::from("a")].name.as_deref(), Some("Liminal"));
     }
 
     #[test]

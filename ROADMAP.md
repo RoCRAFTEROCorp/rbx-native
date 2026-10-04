@@ -1165,6 +1165,30 @@ Roblox's own engine.
   `Instance:Clone()` does (the root itself is always copied, and the copy is
   always `Archivable`). Still open: the right-click **Paste Options** ⟩
   **Paste Into At Original Location** the docs mention.
+- [x] **Explorer export** — Save / Export rows on the Explorer row's
+  right-click menu, named as Studio's own are (`creator-docs`):
+  **Save to File…** writes the selection's subtrees as a model file,
+  `.rbxm` (or `.rbxmx` when that is the name picked), through the same
+  serializers Ctrl+S uses — a service included, so `Lighting` saves with
+  its sky and effects; a reference to anything left out of the file is
+  written as nil. **Export Selection…** writes a Wavefront `.obj` (what
+  Studio's own Export Selection writes, per the `MeshPart` reference), and
+  **Export as glTF…** a single self-contained glTF 2.0 file, its buffer
+  inline. Both export every part in the selection as the viewport draws
+  it — procedural shapes and downloaded `MeshPart`/`SpecialMesh` triangles
+  alike, in world space, in studs, and a legacy `UnionOperation` as the
+  boolean this project carves from its original parts — and are greyed
+  when the selection holds no part. Each part's colour goes along as its
+  material (a `.mtl` beside the `.obj`), and a mesh drawn with a
+  `TextureID`/`TextureId` image takes it too: a `.png` the `.mtl` maps,
+  or a PNG data URI inside the glTF. A `MeshPart` wearing a
+  `SurfaceAppearance` takes its four maps (glTF base colour, normal and a
+  packed metallic-roughness texture; `map_Kd`/`map_Bump`/`map_Pm`/`map_Pr`
+  in the `.mtl`), its `Color` tint and its `AlphaMode` as the viewport
+  shades them, an `Overlay` colour map baked over the part's colour since
+  neither format can mix one by its alpha. A part whose `Material` has a
+  texture pack takes the pack, with UVs projected per face the way the
+  viewport tiles it. An image several parts share is written once.
 - [x] Drag-and-drop reparenting in the Explorer tree. Dragging a row
   onto another reparents onto it, the way creator-docs describes
   ("simply drag and drop them onto the new parent") — with a ghost under
@@ -1176,6 +1200,17 @@ Roblox's own engine.
   window-level key handler), so nothing drops and no undo step is pushed —
   exercised in the running window, not just compiled. There is no drop
   *between* rows, which Studio does not offer either.
+- [x] **Multi-instance drag from any row of the selection.** Pressing a
+  row of a multi-selection used to collapse the selection to that row
+  before the drag started, so the whole selection only came along when
+  grabbed by its anchor row. A plain press on any selected row now leaves
+  the selection alone (`shell::reparent`'s row wrapper stops it before the
+  tree widget's own row sees it), so a drag from it carries all of it; a
+  release that never became a drag still narrows the selection to that
+  row, the way a desktop file manager does. A row outside the selection
+  still selects on press and drags only itself. Exercised in the running
+  window: a three-part selection dragged by its second and its last row
+  both landed whole.
 - [x] `Rect`, `PhysicalProperties`, `Font` — all three edit now, where all
   three used to be read-only text. `Rect` is four labeled fields; `Font`
   turned out to already be editable before this item was picked up (the
@@ -1646,6 +1681,28 @@ Roblox's own engine.
   by a narrow field — went with the panel's rework: hairline seams between
   rows, and a numeric value shown whole on its own row with its components
   behind an expander.
+- [x] **Save/Publish to Roblox from the editor UI.** File › Save to Roblox
+  (`versionType=Saved`) and Publish to Roblox (`versionType=Published`)
+  upload the open place through `rbx_cloud::Client::publish_place` as a new
+  version of its linked place; re-running either is simply the next
+  version. A file opened from Home already carries its universe/place ids;
+  any other file picks its game once from a window listing Home's own My
+  Games (the same listing, cache and owner dropdown, the user's and their
+  groups' experiences), which links it to the experience's starting place —
+  Roblox's listings carry no other place — while Home's add-by-place-ID-or-
+  link row links any other place, listed or not (File › Link to Roblox
+  Place… changes it). Every upload is confirmed first in a dialog naming the
+  experience and place and saying what will happen: Publish saves a new
+  version and makes it the one players join, Save saves one without
+  publishing it. Success and failure are rows in the Output dock, and
+  a failure also opens a dialog with Roblox's documented reason for the
+  status. Browsing and restoring older versions is its own item under
+  "What's planned". Roblox's own limit, from `creator-docs`
+  (`cloud/guides/usage-place-publishing.md`): this API does **not** update
+  `EditableImage`, `EditableMesh`, `PartOperation` (unions),
+  `SurfaceAppearance` or `BaseWrap` instances — edits to those only go live
+  when published from Roblox Studio. A successful upload of a place holding
+  any of them adds a warning row to the Output dock saying so.
 
 ### Platform
 - [x] Linux (X11) — the daily-driven target.
@@ -1790,42 +1847,28 @@ Roblox's own engine.
   Luau — the Command Bar and scripts — has `PVInstance:GetPivot()` and
   `PVInstance:PivotTo()` through the same pivot (`rbx_lua::pivot`), with
   `BasePart.PivotOffset` readable and writable like any property.
-- [ ] 📋 **Explorer export**, the half of Explorer DOM editing that did not
-  land with the row affordances above or the search (see "What's been
-  implemented" → Editor).
-  Export from the row's menu: services and the whole place to Roblox
-  (Save/Publish, see below), to a local file; individual instances to
-  `.obj` and `.gltf` — genuinely useful native additions since Studio
-  itself has no built-in mesh export today. Roblox's own roadmap does
-  list glTF export, pushed from Late 2025 to Late 2026 in its
-  [fall 2026 update](https://devforum.roblox.com/t/creator-roadmap-2026-fall-update/4880208),
-  so `.gltf` may become Studio parity rather than an addition. Check what
-  it actually exports once it ships.
-- [ ] 📋 **Multi-instance drag from a row outside the selection.** Pressing
-  such a row collapses the selection to it before the drag starts, so a
-  multi-instance drag only carries the whole selection when grabbed by its
-  anchor row. The Explorer tree tracks one selected row and already
-  behaves this way for a plain click, so this belongs with the fuller
-  Explorer editing item above rather than being patched at the drag.
-- [ ] 📋 **Save/Publish to Roblox from the editor UI.** The Open Cloud
-  client side of this already exists and works —
-  `rbx_cloud::Client::publish_place`
-  (`POST /universes/v1/{universe}/places/{place}/versions?versionType=Saved|Published`)
-  already distinguishes **Save** (`versionType=Saved`) from **Publish**
-  (`versionType=Published`), which is exactly the Roblox-side distinction
-  between saving a version and publishing a new live version of an already
-  -published place. What's missing is wiring it into `rbxstudio`'s own
-  File menu: prompting for (or remembering) a universe/place id, offering
-  "Save" vs. "Publish" as separate actions once a place is linked to one,
-  and "publish as a new version" being the natural behaviour once a place
-  already has an associated `placeId` — no new API work, this is an editor
-  -UI task on top of an existing, working client. **Version history**
-  (browsing and restoring an older saved/published version, not just
-  writing a new one) is a separate, real Open Cloud surface —
+- [ ] 📋 **Place version history (browse and restore).** Browsing and
+  restoring an older saved/published version of a place, not just writing
+  a new one (File › Save/Publish to Roblox, above, already does that). A
+  separate Open Cloud surface from the publish endpoint —
   `GET /place-version-history-api/v1/{placeId}/history` and
-  `.../contributors` — distinct from the publish endpoint above and not
-  yet wired into `rbx_cloud` at all; worth treating as its own follow-up
-  rather than assuming the existing client already covers it.
+  `.../contributors` — and not yet wired into `rbx_cloud` at all.
+- [ ] 📋 **Whole-place and fuller Explorer export.** Left open by the
+  Explorer row's Save / Export rows (see "What's been implemented" →
+  Editor): the whole place to a local file under a name of its choosing
+  (Studio's File › Save to File / File › Export as glTF, both File-menu
+  items rather than row ones; uploading the place to Roblox is File ›
+  Save/Publish to Roblox, see "What's been implemented"). In the mesh exports a union whose boolean
+  failed, or one baked only as `MeshData` (never decoded here), still
+  exports as its box; a textured mesh whose `Material` also has a pack
+  takes its own image alone (one UV set per part), a material projected
+  across a facet tilted off every axis takes one axis's projection where
+  the viewport blends three, and the procedural materials (Neon, Glass,
+  ForceField) export as their colour.
+  Roblox's own roadmap lists glTF export, pushed from
+  Late 2025 to Late 2026 in its
+  [fall 2026 update](https://devforum.roblox.com/t/creator-roadmap-2026-fall-update/4880208);
+  check what it actually exports once it ships.
 #### Properties panel — remaining type editors
 - [ ] 📋 **"Freeze"/"Apply" a `MeshPart`'s rotation** — zero out
   `Orientation` while leaving the object's *visual* placement unchanged,

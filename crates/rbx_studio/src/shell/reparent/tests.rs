@@ -1,7 +1,9 @@
-use gpui_kit::SharedString;
+use gpui_kit::{
+    ClickEvent, Modifiers, MouseClickEvent, MouseDownEvent, MouseUpEvent, SharedString,
+};
 use rbx_dom::Ref;
 
-use super::DraggedInstances;
+use super::{defers_press, narrows_on_click, press_modifiers, DraggedInstances};
 
 fn name() -> SharedString {
     SharedString::from("Part")
@@ -39,4 +41,74 @@ fn nothing_selected_still_drags_the_pressed_row() {
     let dragged = DraggedInstances::new(&[], Ref::new(5), &name());
 
     assert_eq!(dragged.references, vec![Ref::new(5)]);
+}
+
+#[test]
+fn a_plain_press_inside_a_multi_selection_waits_for_the_release() {
+    let selected = [Ref::new(1), Ref::new(2), Ref::new(3)];
+
+    // Not only the anchor: any row of the selection can carry all of it.
+    assert!(defers_press(&selected, Ref::new(1)));
+    assert!(defers_press(&selected, Ref::new(3)));
+}
+
+#[test]
+fn a_plain_press_anywhere_else_selects_at_once() {
+    let selected = [Ref::new(1), Ref::new(2)];
+
+    assert!(!defers_press(&selected, Ref::new(3)));
+    assert!(!defers_press(&[Ref::new(1)], Ref::new(1)));
+    assert!(!defers_press(&[], Ref::new(1)));
+}
+
+#[test]
+fn a_double_click_inside_a_multi_selection_narrows_before_it_opens() {
+    let selected = [Ref::new(1), Ref::new(2), Ref::new(3)];
+    let target = Ref::new(2);
+
+    // The first click of the pair still finds the full selection, so it
+    // narrows the row down...
+    let first = ClickEvent::Mouse(MouseClickEvent {
+        down: MouseDownEvent::default(),
+        up: MouseUpEvent {
+            click_count: 1,
+            ..Default::default()
+        },
+    });
+    assert!(narrows_on_click(&selected, target, press_modifiers(&first)));
+    // ...but it is only the first click, so nothing opens yet.
+    assert!(first.click_count() < 2);
+
+    // By the second click, the first one's `select_row` has already left
+    // `target` selected on its own.
+    let narrowed = [target];
+    let second = ClickEvent::Mouse(MouseClickEvent {
+        down: MouseDownEvent::default(),
+        up: MouseUpEvent {
+            click_count: 2,
+            ..Default::default()
+        },
+    });
+    // No longer a multi-selection, so the second click leaves it alone...
+    assert!(!narrows_on_click(
+        &narrowed,
+        target,
+        press_modifiers(&second)
+    ));
+    // ...and it is the second click, so this is where it opens.
+    assert!(second.click_count() >= 2);
+}
+
+#[test]
+fn a_click_reads_the_modifiers_held_at_the_press_not_the_release() {
+    // Ctrl held on the press, let go before the button: still a Ctrl-click.
+    let click = ClickEvent::Mouse(MouseClickEvent {
+        down: MouseDownEvent {
+            modifiers: Modifiers::control(),
+            ..Default::default()
+        },
+        up: Default::default(),
+    });
+
+    assert!(press_modifiers(&click).control);
 }
