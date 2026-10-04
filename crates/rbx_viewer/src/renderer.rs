@@ -500,10 +500,14 @@ impl Renderer {
         let model = self.selection.anchor()?;
         let orthographic = self.camera.is_orthographic();
         // Scale's balls are bound to the surface of the box the selection
-        // scales on — a lone part's own, a group's world-aligned bounds — so
+        // scales on — a lone part's own, a model's framed by its pivot (see
+        // `gizmo::scale_box`) — so
         // there is no origin or arm to pick for them at all.
         if gizmo.kind == Kind::Scale {
-            let scaled = self.selection.scale_box().unwrap_or(model);
+            let scaled = self
+                .selection
+                .scale_box(gizmo.pivot, gizmo.local)
+                .unwrap_or(model);
             return Some(Shape::Scale(
                 Faces::new(scaled, pose, orthographic).summoned(gizmo.summon),
             ));
@@ -548,7 +552,10 @@ impl Renderer {
                 Shape::Pivot(handles, gizmo.hotspots.then_some((hotspots, gizmo.snapped)))
             }
             Kind::Transform => {
-                let scaled = self.selection.scale_box().unwrap_or(model);
+                let scaled = self
+                    .selection
+                    .scale_box(gizmo.pivot, gizmo.local)
+                    .unwrap_or(model);
                 let faces = Faces::new(scaled, pose, orthographic).summoned(gizmo.summon);
                 Shape::Transform(handles, faces)
             }

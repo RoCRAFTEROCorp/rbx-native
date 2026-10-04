@@ -164,7 +164,7 @@ impl WorkspaceView {
                 })
             }
             _ => {
-                let scaled = self.targets.scale_box();
+                let scaled = self.targets.scale_box(self.transform.local);
                 if let Some(scaled) = scaled {
                     drawn
                         .lines

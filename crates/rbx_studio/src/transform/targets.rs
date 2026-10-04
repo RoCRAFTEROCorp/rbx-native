@@ -141,9 +141,15 @@ impl Target {
 /// arrangement intact while only the gizmo's own travel is measured.
 ///
 /// The second field is the selection's [`pivot`](Targets::pivot), carried
-/// through every drag along with the parts.
+/// through every drag along with the parts; the third, whether the selection
+/// is one `BasePart` standing for itself, which Scale treats apart from
+/// everything else (see [`Targets::scale_box`]).
 #[derive(Debug, Clone, Default, PartialEq)]
-pub(crate) struct Targets(pub(super) Vec<Target>, pub(super) Option<Mat4>);
+pub(crate) struct Targets(
+    pub(super) Vec<Target>,
+    pub(super) Option<Mat4>,
+    pub(super) bool,
+);
 
 impl Targets {
     /// Reads every part the selection covers out of the DOM, in the order
@@ -169,12 +175,13 @@ impl Targets {
             [entry] => rbx_lua::pivot::pivot(dom, database, entry.referent()).map(|f| rigid(&f)),
             _ => None,
         };
+        let lone_part = matches!(entries.as_slice(), [entry] if entry.is_part());
         let parts = entries
             .iter()
             .flat_map(|entry| entry.parts())
             .filter_map(|&part| Target::read(dom, database, Some(part)))
             .collect();
-        Targets(parts, pivot)
+        Targets(parts, pivot, lone_part)
     }
 
     /// The pivot of the one part or model selected, rigid — no `Size` in
@@ -220,15 +227,30 @@ impl Targets {
         self.0.iter()
     }
 
-    /// How many parts the selection covers.
-    pub(crate) fn len(&self) -> usize {
-        self.0.len()
+    /// The box the Scale handles stand on, `local` or square to the world —
+    /// see `rbx_viewer::gizmo::scale_box`, which the renderer draws them
+    /// from.
+    pub(crate) fn scale_box(&self, local: bool) -> Option<Mat4> {
+        let pivot = self.1.filter(|_| !self.2);
+        gizmo::scale_box(self.0.iter().map(|target| target.model), pivot, local)
     }
 
-    /// The box the Scale handles stand on — see `rbx_viewer::gizmo::scale_box`,
-    /// which the renderer draws them from.
-    pub(crate) fn scale_box(&self) -> Option<Mat4> {
-        gizmo::scale_box(self.0.iter().map(|target| target.model))
+    /// What a Scale drag with `Ctrl` held scales about: a model's pivot, or
+    /// the middle of the box — a lone part's, whose `PivotOffset` Studio's
+    /// `ScaleDragger` leaves out of it, or several things', on whose middle
+    /// it stands their shared basis.
+    pub(crate) fn scale_centre(&self, local: bool) -> Option<Vec3> {
+        match self.1.filter(|_| !self.2) {
+            Some(pivot) => Some(pivot.w_axis.truncate()),
+            None => self.scale_box(local).map(|boxed| boxed.w_axis.truncate()),
+        }
+    }
+
+    /// Whether Scale resizes the anchor's own `Size` — a lone part — rather
+    /// than scaling the whole selection by one factor, the way Studio's
+    /// `ScaleDragger` takes a model even of one part (`Model:ScaleTo`).
+    pub(crate) fn lone_part(&self) -> bool {
+        self.2
     }
 
     /// The same box squared to the pivot, as the renderer draws Edit
@@ -356,6 +378,7 @@ impl Targets {
                 })
                 .collect(),
             self.1.map(|pivot| carry * pivot),
+            self.2,
         )
     }
 
@@ -366,10 +389,17 @@ impl Targets {
     pub(crate) fn set_anchor(&mut self, target: Target) {
         if let Some(anchor) = self.0.first_mut() {
             // A lone part's pivot is an offset in its own frame, so it rides
-            // along with whatever the resize did to the part's placement.
+            // along with whatever the resize did to the part's placement —
+            // and, as Studio's `ScaleDragger` fixes a resized part's
+            // `PivotOffset` up, its position stretches with the part's size,
+            // axis by axis, so the pivot moves as a point of the part would.
             if let Some(pivot) = &mut self.1 {
                 let frame = |target: &Target| placement(target.orientation(), target.position());
-                *pivot = frame(&target) * frame(anchor).inverse() * *pivot;
+                let mut offset = frame(anchor).inverse() * *pivot;
+                let was = anchor.size();
+                let stretch = Vec3::select(was.cmpeq(Vec3::ZERO), Vec3::ONE, target.size() / was);
+                offset.w_axis = (offset.w_axis.truncate() * stretch).extend(1.0);
+                *pivot = frame(&target) * offset;
             }
             *anchor = target;
         }
