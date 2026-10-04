@@ -209,7 +209,9 @@ impl WorkspaceView {
     /// part it is over (`Shell`'s last hover answer) — snapped onto that
     /// face's edge or corner when it is close to one, for the tools with
     /// Rotate's rings only; over nothing, the point under the cursor level
-    /// with the selection's centre.
+    /// with the selection's centre. A curved region of a mesh has no real
+    /// edges (see `FlatFace`), so the handles land on the hit itself there
+    /// rather than on some tiny triangle's edge.
     ///
     /// Roblox describes the snap for Rotate alone, and says why (staff reply
     /// #9): "it doesn't matter precisely where the handles are summoned to
