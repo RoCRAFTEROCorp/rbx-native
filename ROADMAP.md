@@ -1140,6 +1140,17 @@ Roblox's own engine.
   window-level key handler), so nothing drops and no undo step is pushed —
   exercised in the running window, not just compiled. There is no drop
   *between* rows, which Studio does not offer either.
+- [x] **Multi-instance drag from any row of the selection.** Pressing a
+  row of a multi-selection used to collapse the selection to that row
+  before the drag started, so the whole selection only came along when
+  grabbed by its anchor row. A plain press on any selected row now leaves
+  the selection alone (`shell::reparent`'s row wrapper stops it before the
+  tree widget's own row sees it), so a drag from it carries all of it; a
+  release that never became a drag still narrows the selection to that
+  row, the way a desktop file manager does. A row outside the selection
+  still selects on press and drags only itself. Exercised in the running
+  window: a three-part selection dragged by its second and its last row
+  both landed whole.
 - [x] `Rect`, `PhysicalProperties`, `Font` — all three edit now, where all
   three used to be read-only text. `Rect` is four labeled fields; `Font`
   turned out to already be editable before this item was picked up (the
@@ -1790,12 +1801,6 @@ Roblox's own engine.
   [fall 2026 update](https://devforum.roblox.com/t/creator-roadmap-2026-fall-update/4880208),
   so `.gltf` may become Studio parity rather than an addition. Check what
   it actually exports once it ships.
-- [ ] 📋 **Multi-instance drag from a row outside the selection.** Pressing
-  such a row collapses the selection to it before the drag starts, so a
-  multi-instance drag only carries the whole selection when grabbed by its
-  anchor row. The Explorer tree tracks one selected row and already
-  behaves this way for a plain click, so this belongs with the fuller
-  Explorer editing item above rather than being patched at the drag.
 - [ ] 📋 **Save/Publish to Roblox from the editor UI.** The Open Cloud
   client side of this already exists and works —
   `rbx_cloud::Client::publish_place`
