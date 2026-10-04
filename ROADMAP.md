@@ -1794,23 +1794,18 @@ Roblox's own engine.
 
 ### Renderer
 - [ ] 📋 **Pivot tools follow-ups**, the parts of Studio's pivot behaviour
-  (`studio/pivot-tools.md`) the Edit Pivot tool and Reset above did not
-  bring: unassigning/clearing a `Class.Model.PrimaryPart` should reset the
-  pivot to the **center** of the model's bounding box (it falls back on
-  whatever `WorldPivot` is stored); the selection box, and so the snap
-  hotspots on it, should turn with a model's pivot as `Model:GetBoundingBox`
-  does (they stay world-aligned for a model); Scale's handles do not scale
-  *about* the pivot (a lone part's pivot rides along as an offset, and a
-  dragged model's `WorldPivot` follows its first part rigidly rather than
-  scaling with the group); Studio's per-part hotspots on a model (only the
-  model's box has them); and the Snap checkbox is not persisted. Scaling
-  a multi-part model shows its pivot jump on release: the live view scales
-  the pivot one way and the DOM-side carry (`rbx_lua::pivot::follow`,
-  rigid only) another, so re-reading the DOM on drag-end moves it (Reset
-  puts it right). With Local space on, Move's and Rotate's handles stand on
-  a model's pivot but take the anchor part's orientation rather than the
-  pivot's own, as Studio does
-  (`rbx_studio::workspace_view::gizmo`).
+  (`studio/pivot-tools.md`) the Edit Pivot tool and its follow-up pass did
+  not bring. The selection *outline* round a model is still world-aligned
+  while the hotspots on it turn with the pivot (`gizmo::box_along`): the
+  renderer's `pick::Selected` carries no pivot, and the outline is not
+  re-sent when a selected model's `WorldPivot` changes, so turning it means
+  plumbing the pivot's rotation into the outline and refreshing it on a
+  pivot edit. Scale's handles still stand on the world-aligned box and
+  scale about it rather than about the pivot. Studio's per-part hotspots
+  on a model are missing (only the model's box has them): the gizmo's
+  vertex buffer is sized for one box's 27 dots (`renderer::gizmo::mesh`),
+  so a lattice per part needs a dynamically sized buffer, and a cap for
+  models of hundreds of parts.
 
 - [ ] 📋 **Explorer export**, the half of Explorer DOM editing that did not
   land with the row affordances above or the search (see "What's been
