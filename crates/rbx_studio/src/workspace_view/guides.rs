@@ -44,7 +44,7 @@ pub(super) struct State {
     hover: Option<(SurfaceFrame, Vec3)>,
     /// The modifiers at that hover, and whether a Move arrow was under the
     /// cursor — Studio shows no hover ruler over a handle.
-    modifiers: Modifiers,
+    pub(super) modifiers: Modifiers,
     over_handle: bool,
     /// Whether the cursor is over the view at all, so a hover asked for
     /// again (see [`WorkspaceView::rehover`]) is never resolved at a cursor

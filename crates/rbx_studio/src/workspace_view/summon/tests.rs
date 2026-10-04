@@ -171,3 +171,38 @@ fn a_moved_ray_measures_against_the_part_as_the_real_one_against_the_handle() {
     assert!((on_handle - measured).abs() < 1e-4);
     assert!((on_handle - naive).abs() > 0.1);
 }
+
+/// What `summon_handles` relies on to place the handles on a fresh hover: an
+/// event emitted, then a callback deferred, from the same handler — the
+/// subscriber (`Shell` answering the hover) runs before the deferred
+/// placement does, so the placement reads the new answer, not the stale one.
+#[gpui_kit::test]
+fn a_hover_asked_for_is_answered_before_the_deferred_placement(cx: &mut gpui_kit::TestAppContext) {
+    use gpui_kit::AppContext as _;
+
+    struct View {
+        hover: u32,
+        placed_on: Option<u32>,
+    }
+    struct Hover;
+    impl gpui_kit::EventEmitter<Hover> for View {}
+
+    let cx = cx.add_empty_window();
+    let view = cx.update(|window, cx| {
+        let view = cx.new(|_| View {
+            hover: 0,
+            placed_on: None,
+        });
+        cx.subscribe(&view, |view, _: &Hover, cx| {
+            view.update(cx, |view, _| view.hover += 1);
+        })
+        .detach();
+        view.update(cx, |_, cx| {
+            cx.emit(Hover);
+            cx.defer_in(window, |view, _, _| view.placed_on = Some(view.hover));
+        });
+        view
+    });
+    cx.run_until_parked();
+    assert_eq!(cx.update(|_, cx| view.read(cx).placed_on), Some(1));
+}

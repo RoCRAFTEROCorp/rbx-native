@@ -101,6 +101,25 @@ impl WorkspaceView {
         if std::mem::replace(&mut self.summon.tab, true) || self.drag.is_some() {
             return;
         }
+        // `Shell`'s last hover answer is where the cursor met the scene when
+        // the mouse last moved: a camera flown with the keys since has
+        // carried the scene out from under it. Ask again where the cursor
+        // stands now, and place the handles once that answer is in — the
+        // hover event is handled before the deferred placement runs, GPUI
+        // flushing its effects in order (see the test beside this).
+        if let Some(at) = self.cursor.filter(|_| !self.looking) {
+            self.hover_pending = None;
+            self.hover_moved(at, self.guides.modifiers, window.scale_factor(), cx);
+        }
+        cx.defer_in(window, |view, window, cx| view.place_summon(window, cx));
+    }
+
+    /// The second half of [`WorkspaceView::summon_handles`], once the hover
+    /// is fresh.
+    fn place_summon(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.summon.tab || self.drag.is_some() {
+            return;
+        }
         let (point, snapped) = self.summon_point(window.scale_factor()).unzip();
         self.summon.point = point;
         self.summon.snapped = snapped.flatten();
