@@ -221,10 +221,22 @@ impl WorkspaceView {
         // *basis* always comes from the anchor — a selection has no
         // aggregate rotation to take. Summoned with `Tab`, they stand
         // wherever the cursor put them instead (see `super::summon`).
-        let origin = self.summoned().or_else(|| self.targets.centre())?;
+        // A lone part's or model's pivot stands in for the centre, so a
+        // turn goes round it (see `Targets::pivot`) — and Edit Pivot's
+        // handles take the pivot's own axes, which is what turning them
+        // turns.
+        let pivot = self.targets.pivot();
+        let origin = self
+            .summoned()
+            .or(pivot.map(|pivot| pivot.w_axis.truncate()))
+            .or_else(|| self.targets.centre())?;
+        let axes = match self.transform.tool {
+            Tool::Pivot => Some(Mat3::from_mat4(pivot?)),
+            _ => self.transform.local.then(|| anchor.rotation()),
+        };
         Some(Handles::new(
             origin,
-            gizmo::basis(self.transform.local.then(|| anchor.rotation())),
+            gizmo::basis(axes),
             gizmo::arm_length(origin, pose, self.orthographic),
         ))
     }
@@ -268,7 +280,12 @@ impl WorkspaceView {
         let cycling = modifiers.alt;
         let extend = extends_selection(modifiers);
         self.measure_from_part();
-        if self.transform.drags() {
+        if self.transform.tool == Tool::Pivot {
+            if let Some(drag) = self.grab_pivot(ray) {
+                self.begin(drag, cx);
+                return;
+            }
+        } else if self.transform.drags() {
             // The free-drag ball sits innermost of all, at the origin.
             if let Some(drag) = self.grab_origin(ray) {
                 self.begin(drag, cx);
@@ -312,14 +329,15 @@ impl WorkspaceView {
     /// a hover box for the whole gesture — nothing moves the cursor off it,
     /// since `render`'s `on_mouse_move` routes every move into `drag_to`
     /// instead of `hover_pending` once `dragging()` is true.
-    fn begin(&mut self, drag: Drag, cx: &mut gpui_kit::Context<Self>) {
+    pub(super) fn begin(&mut self, drag: Drag, cx: &mut gpui_kit::Context<Self>) {
         self.drag = Some(drag);
         self.held = self.targets.clone();
         self.dragged = false;
         self.drag_readout = None;
         self.hover_pending = None;
         self.clear_guides();
-        if let Drag::Plane { .. } = drag {
+        // A body drag's guides; Edit Pivot's ball moves a point, not a part.
+        if matches!(drag, Drag::Plane { .. }) && self.transform.tool != Tool::Pivot {
             self.pend_guides();
         }
         cx.emit(ViewportAction::Hover {
@@ -372,7 +390,7 @@ impl WorkspaceView {
             // arm's tag, so Transform never isolates at all: every handle of
             // every kind stays drawn through the whole drag, the same choice
             // already made for Rotate below.
-            Tool::Select | Tool::Rotate | Tool::Transform | Tool::Sun => None,
+            Tool::Select | Tool::Rotate | Tool::Transform | Tool::Sun | Tool::Pivot => None,
         };
         if let Some(end) = end {
             let held = self.transform.gizmo().map(|gizmo| Gizmo {
@@ -390,7 +408,8 @@ impl WorkspaceView {
         let handles = self.handles()?;
         let anchor = self.targets.anchor()?;
         match self.transform.tool {
-            Tool::Select | Tool::Sun => None,
+            // Edit Pivot's handles are `grab_pivot`'s.
+            Tool::Select | Tool::Sun | Tool::Pivot => None,
             Tool::Move => self.grab_axis(&handles, ray),
             Tool::Scale if self.targets.len() > 1 => grab_box(&self.faces()?, ray),
             Tool::Scale => grab_face(&self.faces()?, anchor, ray, lock_shape),
@@ -527,6 +546,10 @@ impl WorkspaceView {
             return;
         };
         let ray = self.measured(ray);
+        if self.transform.tool == Tool::Pivot {
+            self.pivot_step(drag, ray, modifiers, cx);
+            return;
+        }
         let Some(anchor) = self.targets.anchor() else {
             return;
         };
@@ -624,6 +647,7 @@ impl WorkspaceView {
                     return;
                 };
                 self.targets.set_anchor(moved);
+                self.follow_summon();
                 self.step_guides(drag, ray, modifiers.shift, scale);
                 cx.emit(ViewportAction::Resized {
                     parts: vec![(referent, size, position)],
@@ -639,6 +663,7 @@ impl WorkspaceView {
                 };
                 let held = self.held.clone();
                 let parts = self.targets.scale_about(&held, pivot, factor);
+                self.follow_summon();
                 self.step_guides(drag, ray, modifiers.shift, scale);
                 cx.emit(ViewportAction::Resized { parts, first });
             }
@@ -663,6 +688,7 @@ impl WorkspaceView {
                 let rotation = orientation * was.transpose();
                 let held = self.held.clone();
                 let parts = self.targets.rotate_about(&held, origin, rotation);
+                self.follow_summon();
                 cx.emit(ViewportAction::Rotated { parts, first });
             }
         }
@@ -738,6 +764,7 @@ impl WorkspaceView {
         let summoned = self.summoned();
         if let Some(drag) = self.drop_drag() {
             self.end_summon(summoned);
+            self.snapped = None;
             // Every handle back on, wherever the handles now stand.
             self.show_gizmo(self.transform.gizmo());
             let arrow = self.guides.arrow;

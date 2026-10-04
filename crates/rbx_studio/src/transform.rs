@@ -17,7 +17,7 @@
 
 use glam::{Mat3, Mat4, Vec3};
 use gpui_kit::Modifiers;
-use rbx_dom::{Ref, WeakDom};
+use rbx_dom::{CFrameData, Ref, Vector3Data, WeakDom};
 use rbx_reflection::ReflectionDatabase;
 use rbx_viewer::gizmo::{self, Kind};
 use rbx_viewer::pick;
@@ -46,6 +46,11 @@ pub(crate) enum Tool {
     /// Point at the scene to place the sun or the moon — see `crate::sun`.
     /// Not a transform: it has no handles and never touches the selection.
     Sun,
+    /// Studio's Edit Pivot, on the Model tab (`studio/pivot-tools.md`):
+    /// handles on the selected part's or model's pivot that move and turn
+    /// the pivot alone, the geometry staying where it is. One part or one
+    /// model at a time — a selection of several has no one pivot to edit.
+    Pivot,
 }
 
 impl Tool {
@@ -67,13 +72,15 @@ impl Tool {
             Tool::Rotate => "Rotate",
             Tool::Transform => "Transform",
             Tool::Sun => "Sun",
+            Tool::Pivot => "Edit Pivot",
         }
     }
 
     /// The key that picks this tool, for the toolbar button's own label.
     ///
-    /// The Sun tool has none: any key over the 3D view past `5` is a camera
-    /// key or an arbitrary pick nobody would guess.
+    /// The Sun and Edit Pivot tools have none: any key over the 3D view past
+    /// `5` is a camera key or an arbitrary pick nobody would guess, and
+    /// `creator-docs` gives Edit Pivot no shortcut of its own.
     pub(crate) fn shortcut(self) -> Option<&'static str> {
         match self {
             Tool::Select => Some("1"),
@@ -81,7 +88,7 @@ impl Tool {
             Tool::Scale => Some("3"),
             Tool::Rotate => Some("4"),
             Tool::Transform => Some("5"),
-            Tool::Sun => None,
+            Tool::Sun | Tool::Pivot => None,
         }
     }
 
@@ -94,6 +101,7 @@ impl Tool {
             Tool::Scale => Some(Kind::Scale),
             Tool::Rotate => Some(Kind::Rotate),
             Tool::Transform => Some(Kind::Transform),
+            Tool::Pivot => Some(Kind::Pivot),
         }
     }
 }
@@ -185,6 +193,10 @@ pub(crate) struct Transform {
     pub(crate) translate: Snap,
     /// The rotate increment, in degrees.
     pub(crate) rotate: Snap,
+    /// Edit Pivot's Snap checkbox: whether a dragged pivot jumps onto the
+    /// selection's corners, edges and centres (see
+    /// `rbx_viewer::gizmo::Faces::hotspots`).
+    pub(crate) pivot_snap: bool,
 }
 
 impl Default for Transform {
@@ -200,6 +212,8 @@ impl Default for Transform {
                 increment: 45.0,
                 ..Snap::default()
             },
+            // The docs give no default; on, like the increments beside it.
+            pivot_snap: true,
         }
     }
 }
@@ -210,8 +224,8 @@ impl Transform {
         self.tool.kind().map(|kind| Gizmo {
             kind,
             local: self.local,
-            held: None,
-            summon: None,
+            hotspots: self.tool == Tool::Pivot && self.pivot_snap,
+            ..Gizmo::default()
         })
     }
 
@@ -232,6 +246,8 @@ pub(crate) enum Action {
     SetIncrement(SnapKind, f32),
     /// Put the caret in one of the increment fields — Studio's `Shift`+`2`.
     FocusIncrement(SnapKind),
+    /// Edit Pivot's Snap checkbox.
+    TogglePivotSnap,
 }
 
 /// Resolves a keystroke to a toolbar action, or `None` for anything else.
@@ -408,8 +424,11 @@ impl Target {
 /// [`Targets::translate`] is what a group drag uses to move every other part
 /// by the same offset, which is what keeps the whole selection's relative
 /// arrangement intact while only the gizmo's own travel is measured.
+///
+/// The second field is the selection's [`pivot`](Targets::pivot), carried
+/// through every drag along with the parts.
 #[derive(Debug, Clone, Default, PartialEq)]
-pub(crate) struct Targets(Vec<Target>);
+pub(crate) struct Targets(Vec<Target>, Option<Mat4>);
 
 impl Targets {
     /// Reads every part the selection covers out of the DOM, in the order
@@ -430,13 +449,33 @@ impl Targets {
     /// alike — the dedup belongs to both of them, so neither holds a copy of
     /// it that could drift from the other's.
     pub(crate) fn read(dom: &WeakDom, database: &ReflectionDatabase, referents: &[Ref]) -> Self {
-        Targets(
-            pick::selection(dom, database, referents)
-                .iter()
-                .flat_map(|entry| entry.parts())
-                .filter_map(|&part| Target::read(dom, database, Some(part)))
-                .collect(),
-        )
+        let entries = pick::selection(dom, database, referents);
+        let pivot = match entries.as_slice() {
+            [entry] => rbx_lua::pivot::pivot(dom, database, entry.referent()).map(|f| rigid(&f)),
+            _ => None,
+        };
+        let parts = entries
+            .iter()
+            .flat_map(|entry| entry.parts())
+            .filter_map(|&part| Target::read(dom, database, Some(part)))
+            .collect();
+        Targets(parts, pivot)
+    }
+
+    /// The pivot of the one part or model selected, rigid — no `Size` in
+    /// its columns — or `None` for a selection of several (or of nothing
+    /// with a pivot). Move's and Rotate's handles stand on it, so a turn goes
+    /// round it (`studio/pivot-tools.md`: "Once set, rotation and scaling
+    /// occur around the pivot point"), and Edit Pivot moves it.
+    pub(crate) fn pivot(&self) -> Option<Mat4> {
+        self.1
+    }
+
+    /// The pivot put somewhere else — an Edit Pivot drag's running answer.
+    pub(crate) fn set_pivot(&mut self, pivot: Mat4) {
+        if self.1.is_some() {
+            self.1 = Some(pivot);
+        }
     }
 
     /// The first part the selection covers: what Scale and Rotate transform,
@@ -500,6 +539,15 @@ impl Targets {
                 target.placed(target.orientation(), size, position)
             })
             .collect();
+        self.1 = held.1.map(|own| {
+            let position = own.w_axis.truncate();
+            Mat4::from_cols(
+                own.x_axis,
+                own.y_axis,
+                own.z_axis,
+                (pivot + (position - pivot) * factor).extend(1.0),
+            )
+        });
         self.0
             .iter()
             .map(|target| (target.referent, target.size(), target.position()))
@@ -543,6 +591,10 @@ impl Targets {
                 target.placed(orientation, target.size(), position)
             })
             .collect();
+        let turn = Mat4::from_translation(centre)
+            * Mat4::from_mat3(rotation)
+            * Mat4::from_translation(-centre);
+        self.1 = held.1.map(|own| turn * own);
         self.0
             .iter()
             .map(|target| (target.referent, target.orientation(), target.position()))
@@ -564,6 +616,9 @@ impl Targets {
         for target in &mut self.0 {
             *target = target.moved_to(target.position() + delta);
         }
+        if let Some(pivot) = &mut self.1 {
+            pivot.w_axis += delta.extend(0.0);
+        }
         moves
     }
 
@@ -578,6 +633,7 @@ impl Targets {
                     ..*target
                 })
                 .collect(),
+            self.1.map(|pivot| carry * pivot),
         )
     }
 
@@ -587,9 +643,45 @@ impl Targets {
     /// the way a Move's position offset does).
     pub(crate) fn set_anchor(&mut self, target: Target) {
         if let Some(anchor) = self.0.first_mut() {
+            // A lone part's pivot is an offset in its own frame, so it rides
+            // along with whatever the resize did to the part's placement.
+            if let Some(pivot) = &mut self.1 {
+                let frame = |target: &Target| placement(target.orientation(), target.position());
+                *pivot = frame(&target) * frame(anchor).inverse() * *pivot;
+            }
             *anchor = target;
         }
     }
+}
+
+/// A `CFrame` as the matrix glam turns points with — `CFrameData` keeps its
+/// rotation row by row, glam column by column.
+pub(crate) fn rigid(frame: &CFrameData) -> Mat4 {
+    let position = Vec3::new(frame.position.x, frame.position.y, frame.position.z);
+    placement(Mat3::from_cols_array(&frame.rotation).transpose(), position)
+}
+
+/// [`rigid`] the other way round, for a pivot written back into the DOM.
+pub(crate) fn cframe(pivot: Mat4) -> CFrameData {
+    let position = pivot.w_axis;
+    CFrameData {
+        position: Vector3Data {
+            x: position.x,
+            y: position.y,
+            z: position.z,
+        },
+        rotation: Mat3::from_mat4(pivot).transpose().to_cols_array(),
+    }
+}
+
+/// A rigid placement: `rotation`, standing at `position`.
+fn placement(rotation: Mat3, position: Vec3) -> Mat4 {
+    Mat4::from_cols(
+        rotation.x_axis.extend(0.0),
+        rotation.y_axis.extend(0.0),
+        rotation.z_axis.extend(0.0),
+        position.extend(1.0),
+    )
 }
 
 #[cfg(test)]

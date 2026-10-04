@@ -30,6 +30,7 @@ mod menu;
 mod output;
 mod panel_window;
 mod panels;
+mod pivot;
 mod property_element;
 mod quality;
 mod recovery;

@@ -72,6 +72,7 @@ impl Shell {
             }
             Action::SetIncrement(kind, increment) => self.snap_mut(kind).increment = increment,
             Action::FocusIncrement(_) => {}
+            Action::TogglePivotSnap => self.transform.pivot_snap = !self.transform.pivot_snap,
         }
 
         let transform = self.transform;

@@ -19,6 +19,7 @@ mod input;
 mod label;
 mod measure;
 mod orientation;
+mod pivot;
 mod presence;
 mod pump;
 mod quality;
@@ -142,6 +143,10 @@ pub(crate) enum ViewportAction {
         parts: Vec<(Ref, Mat3, Vec3)>,
         first: bool,
     },
+    /// An Edit Pivot drag put the selection's pivot on `to` (rigid — no
+    /// `Size` in its columns), the geometry left where it is. `first` opens
+    /// the gesture's one undo step, as for every other drag.
+    Pivot { to: Mat4, first: bool },
     /// The Sun tool's gesture: the ray under the cursor at the press
     /// (`first`) and at every drag step after it. `Shell` works out what it
     /// points at and writes `Lighting` (see `shell::sun`), and answers with
@@ -329,6 +334,8 @@ pub(crate) struct WorkspaceView {
     guides: guides::State,
     /// `Tab`'s summoned handles — see [`summon`].
     summon: summon::Summon,
+    /// The hotspot an Edit Pivot drag has snapped onto — see [`pivot`].
+    snapped: Option<Vec3>,
     /// The UI editor's canvas: the request last forwarded, and the last
     /// frame drawn for it — see [`canvas`].
     canvas_request: Option<CanvasRequest>,
@@ -458,6 +465,7 @@ impl WorkspaceView {
             drag_readout: None,
             guides: guides::State::default(),
             summon: summon::Summon::default(),
+            snapped: None,
             canvas_request: None,
             canvas: None,
             _subscriptions: [blur, deactivated],
@@ -765,6 +773,8 @@ impl WorkspaceView {
         // one would snap the parts back a frame.
         if self.drag.is_none() {
             self.targets = targets;
+            // The handles stand on the pivot, which may have moved with it.
+            self.refresh_gizmo();
         }
     }
 

@@ -57,6 +57,7 @@ impl Shell {
             ViewportAction::Resized { parts, first } => self.resize_parts(parts, *first, cx),
             ViewportAction::Rotated { parts, first } => self.rotate_parts(parts, *first, cx),
             ViewportAction::Sun { ray, first } => self.sun_step(*ray, *first, cx),
+            ViewportAction::Pivot { to, first } => self.pivot_step(*to, *first, cx),
             // The one toolbar action that moves the caret instead of changing
             // state, which is why this path carries a `Window` at all.
             ViewportAction::Tool(transform::Action::FocusIncrement(kind)) => {
@@ -315,9 +316,16 @@ impl Shell {
         }
 
         let mut dom = std::mem::replace(&mut self.dom, WeakDom::new());
-        let written = writes.iter().try_for_each(|(referent, name, text)| {
-            properties::edit::commit(&mut dom, &self.database, *referent, name, text).map(|_| ())
-        });
+        // Studio carries a dragged model's pivot with it; the writes below
+        // only move its parts.
+        let followers = rbx_lua::pivot::followers(&dom, &self.database, self.selection.all());
+        let written = writes
+            .iter()
+            .try_for_each(|(referent, name, text)| {
+                properties::edit::commit(&mut dom, &self.database, *referent, name, text)
+                    .map(|_| ())
+            })
+            .and_then(|()| rbx_lua::pivot::follow(&mut dom, &self.database, &followers));
         self.dom = dom;
         // Same reasoning as `move_parts`: overwrites the entry's log with
         // just this step's writes — one `CFrame` per part for a Rotate,

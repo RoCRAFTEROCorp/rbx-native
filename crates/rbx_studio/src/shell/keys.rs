@@ -170,6 +170,10 @@ impl Shell {
         // See `shell::history`: snapshotted before the removals below.
         self.push_history();
         let mut dom = std::mem::replace(&mut self.dom, WeakDom::new());
+        // A model losing its `PrimaryPart` keeps the pivot it had.
+        if let Err(err) = rbx_lua::pivot::keep_pivots(&mut dom, &self.database, &doomed) {
+            self.output.push_warning(&format!("delete: {err}"));
+        }
         let removed: Vec<Ref> = doomed
             .iter()
             .flat_map(|&reference| dom.remove(reference))
