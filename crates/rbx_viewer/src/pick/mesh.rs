@@ -17,8 +17,8 @@ use super::shape::Local;
 use super::Ray;
 
 mod face;
-pub use face::FlatFace;
 pub(super) use face::flat_face;
+pub use face::FlatFace;
 
 /// Every file mesh a loaded place resolved, shared with whoever hit-tests
 /// against it.
