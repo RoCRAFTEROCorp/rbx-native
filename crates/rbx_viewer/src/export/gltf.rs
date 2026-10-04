@@ -3,13 +3,17 @@
 //! around rather than a `.gltf` and a `.bin` that break apart.
 //!
 //! One node, mesh and material per part; a part drawn with an image carries
-//! it, inline as a PNG data URI, as its material's base colour texture. Vertices are already in world space
+//! it, inline as a PNG data URI, as its material's base colour texture. An
+//! image several parts share is embedded once, as one `images` entry every
+//! one of their materials points at. Vertices are already in world space
 //! (see [`super::meshes_of`]), so no node carries a transform.
+
+use std::collections::HashMap;
 
 use base64::Engine as _;
 use serde_json::{json, Value};
 
-use super::ExportMesh;
+use super::{Export, ExportMesh};
 
 // glTF's enumerations, from the 2.0 specification.
 const ARRAY_BUFFER: u32 = 34962;
@@ -18,7 +22,8 @@ const FLOAT: u32 = 5126;
 const UNSIGNED_INT: u32 = 5125;
 const TRIANGLES: u32 = 4;
 
-pub fn gltf(meshes: &[ExportMesh]) -> String {
+pub fn gltf(export: &Export) -> String {
+    let meshes = &export.meshes;
     let mut buffer: Vec<u8> = Vec::new();
     let mut views = Vec::new();
     let mut accessors = Vec::new();
@@ -114,21 +119,28 @@ pub fn gltf(meshes: &[ExportMesh]) -> String {
             })
         })
         .collect();
-    // Texture `n` is image `n`; both in the order the parts carrying one come.
+    // Texture `n` is image `n`, in the order materials first name them; an
+    // `Export::textures` entry nothing here names is left out.
     let mut images = Vec::new();
+    let mut image_of = HashMap::new();
+    let mut texture = |index: usize| {
+        *image_of.entry(index).or_insert_with(|| {
+            images.push(json!({
+                "uri": format!(
+                    "data:image/png;base64,{}",
+                    base64::engine::general_purpose::STANDARD.encode(&export.textures[index])
+                ),
+            }));
+            images.len() - 1
+        })
+    };
     let materials: Vec<Value> = meshes
         .iter()
         .map(|mesh| {
             let mut material = material(mesh);
-            if let Some(png) = &mesh.texture {
+            if let Some(index) = mesh.texture {
                 material["pbrMetallicRoughness"]["baseColorTexture"] =
-                    json!({ "index": images.len() });
-                images.push(json!({
-                    "uri": format!(
-                        "data:image/png;base64,{}",
-                        base64::engine::general_purpose::STANDARD.encode(png)
-                    ),
-                }));
+                    json!({ "index": texture(index) });
             }
             material
         })

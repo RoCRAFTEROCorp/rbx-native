@@ -31,7 +31,7 @@ fn part(dom: &mut WeakDom, class: &str, name: &str, parent: Option<Ref>, at: [f3
     referent
 }
 
-fn export(dom: &WeakDom, meshes: &Meshes, roots: &[Ref]) -> Vec<ExportMesh> {
+fn export(dom: &WeakDom, meshes: &Meshes, roots: &[Ref]) -> Export {
     meshes_of(dom, &ReflectionDatabase::embedded(), meshes, roots)
 }
 
@@ -70,15 +70,15 @@ fn a_unit_cube_is_twelve_triangles_around_its_position() {
 
     let exported = export(&dom, &Meshes::default(), &[cube]);
 
-    assert_eq!(exported.len(), 1);
-    let mesh = &exported[0];
+    assert_eq!(exported.meshes.len(), 1);
+    let mesh = &exported.meshes[0];
     assert_eq!(mesh.name, "Cube");
     assert_eq!(mesh.indices.len(), 36);
     for [x, y, z] in &mesh.positions {
         assert!((x - 10.0).abs() <= 0.5 + 1e-5 && y.abs() <= 0.5 + 1e-5 && z.abs() <= 0.5 + 1e-5);
     }
 
-    let text = obj(&exported, "x");
+    let text = obj(&exported.meshes, "x");
     assert_eq!(count(&text, "o "), 1);
     assert_eq!(count(&text, "v "), mesh.positions.len());
     assert_eq!(count(&text, "vn "), mesh.normals.len());
@@ -95,12 +95,12 @@ fn obj_face_indices_continue_across_objects() {
     part(&mut dom, "Part", "B", Some(model), [5.0, 0.0, 0.0]);
 
     let exported = export(&dom, &Meshes::default(), &[model]);
-    let text = obj(&exported, "x");
+    let text = obj(&exported.meshes, "x");
 
     assert_eq!(count(&text, "o "), 2);
     assert!(text.contains("o Red_Brick\n"));
-    let first = exported.iter().position(|m| m.name == "Red Brick").unwrap();
-    let offset = exported[first].positions.len();
+    let first = exported.meshes.iter().position(|m| m.name == "Red Brick").unwrap();
+    let offset = exported.meshes[first].positions.len();
     let second_object = text.split("\no ").nth(2).unwrap();
     let smallest = second_object
         .lines()
@@ -124,7 +124,7 @@ fn a_subtree_exports_every_part_in_it_once() {
 
     let exported = export(&dom, &Meshes::default(), &[model, outer]);
 
-    let mut names: Vec<_> = exported.iter().map(|m| m.name.as_str()).collect();
+    let mut names: Vec<_> = exported.meshes.iter().map(|m| m.name.as_str()).collect();
     names.sort();
     assert_eq!(names, ["Inner", "Outer"]);
 }
@@ -148,15 +148,15 @@ fn a_mesh_part_exports_its_own_triangles_scaled_to_its_size() {
 
     let exported = export(&dom, &meshes, &[rock]);
 
-    assert_eq!(exported.len(), 1);
-    assert_eq!(exported[0].indices, [0, 1, 2]);
+    assert_eq!(exported.meshes.len(), 1);
+    assert_eq!(exported.meshes[0].indices, [0, 1, 2]);
     assert_eq!(
-        exported[0].positions,
+        exported.meshes[0].positions,
         [[-2.0, 1.0, 0.0], [2.0, 1.0, 0.0], [0.0, 5.0, 0.0]]
     );
-    assert_eq!(exported[0].normals, [[0.0, 0.0, 1.0]; 3]);
+    assert_eq!(exported.meshes[0].normals, [[0.0, 0.0, 1.0]; 3]);
 
-    let text = obj(&exported, "x");
+    let text = obj(&exported.meshes, "x");
     assert_eq!(count(&text, "v "), 3);
     assert!(text.contains("f 1/1/1 2/2/2 3/3/3"));
 }
@@ -171,7 +171,7 @@ fn a_mesh_part_that_has_not_downloaded_exports_its_box() {
 
     let exported = export(&dom, &Meshes::default(), &[rock]);
 
-    assert_eq!(exported[0].indices.len(), 36);
+    assert_eq!(exported.meshes[0].indices.len(), 36);
 }
 
 /// The document's shape against the glTF 2.0 schema's required members, and
@@ -203,7 +203,7 @@ fn gltf_is_a_valid_two_point_oh_document_with_the_vertices_inline() {
         .unwrap();
     assert_eq!(document["buffers"][0]["byteLength"], buffer.len());
 
-    for (index, mesh) in exported.iter().enumerate() {
+    for (index, mesh) in exported.meshes.iter().enumerate() {
         let primitive = &document["meshes"][index]["primitives"][0];
         assert_eq!(primitive["mode"], 4);
         let position =
@@ -225,7 +225,7 @@ fn gltf_is_a_valid_two_point_oh_document_with_the_vertices_inline() {
         assert_eq!(first, mesh.positions[0]);
     }
 
-    let blended = exported.iter().position(|m| m.name == "A").unwrap();
+    let blended = exported.meshes.iter().position(|m| m.name == "A").unwrap();
     assert_eq!(document["materials"][blended]["alphaMode"], "BLEND");
     assert!(document["materials"][1 - blended]
         .get("alphaMode")
@@ -253,14 +253,14 @@ fn a_textured_mesh_part_brings_its_image_to_both_formats() {
     );
 
     let exported = export(&dom, &meshes, &[rock]);
-    let png = exported[0].texture.clone().unwrap();
+    let png = exported.textures[exported.meshes[0].texture.unwrap()].clone();
     let mut decoder = png::Decoder::new(std::io::Cursor::new(&png))
         .read_info()
         .unwrap();
     let mut pixels = vec![0; decoder.output_buffer_size().unwrap()];
     decoder.next_frame(&mut pixels).unwrap();
     assert_eq!(pixels, image.pixels);
-    assert_eq!(exported[0].uvs, [[0.0, 1.0], [1.0, 1.0], [0.5, 0.0]]);
+    assert_eq!(exported.meshes[0].uvs, [[0.0, 1.0], [1.0, 1.0], [0.5, 0.0]]);
 
     let files = obj_files(&exported, "Mossy Rock");
     let names: Vec<&str> = files.iter().map(|(name, _)| name.as_str()).collect();
@@ -297,6 +297,61 @@ fn a_textured_mesh_part_brings_its_image_to_both_formats() {
             .unwrap(),
         png
     );
+}
+
+/// Three parts wearing one image: it is encoded once, written as one `.png`
+/// all three `.mtl` materials name, and embedded as one glTF image all three
+/// materials sample.
+#[test]
+fn a_texture_shared_by_several_parts_is_written_once() {
+    let mut dom = WeakDom::new();
+    let model = dom.new_instance("Model", "Rocks", None);
+    let image = Arc::new(Image {
+        width: 1,
+        height: 1,
+        pixels: vec![0, 128, 255, 255],
+    });
+    let mut textures = HashMap::new();
+    for x in [0.0, 5.0, 10.0] {
+        let rock = part(&mut dom, "MeshPart", "Rock", Some(model), [x, 0.0, 0.0]);
+        dom.set_property(rock, "MeshId", Variant::String("rbxassetid://42".into()))
+            .unwrap();
+        textures.insert(rock, Arc::clone(&image));
+    }
+    let meshes = Meshes::new(
+        HashMap::from([(AssetRef::Id(42), Arc::new(triangle()))]),
+        textures,
+    );
+
+    let exported = export(&dom, &meshes, &[model]);
+
+    assert_eq!(exported.meshes.len(), 3);
+    assert_eq!(exported.textures.len(), 1);
+    assert!(exported.meshes.iter().all(|m| m.texture == Some(0)));
+
+    let files = obj_files(&exported, "Rocks");
+    let pngs: Vec<_> = files.iter().filter(|(n, _)| n.ends_with(".png")).collect();
+    assert_eq!(pngs.len(), 1);
+    assert_eq!(pngs[0].0, "Rocks_0.png");
+    let material = std::str::from_utf8(&files[1].1).unwrap();
+    assert_eq!(count(material, "map_Kd Rocks_0.png"), 3);
+
+    let document: Value = serde_json::from_str(&gltf(&exported)).unwrap();
+    assert_eq!(document["images"].as_array().unwrap().len(), 1);
+    assert_eq!(document["textures"].as_array().unwrap().len(), 1);
+    for material in document["materials"].as_array().unwrap() {
+        assert_eq!(material["pbrMetallicRoughness"]["baseColorTexture"]["index"], 0);
+    }
+    let uri = document["images"][0]["uri"].as_str().unwrap();
+    let png = base64::engine::general_purpose::STANDARD
+        .decode(uri.strip_prefix("data:image/png;base64,").unwrap())
+        .unwrap();
+    let mut decoder = png::Decoder::new(std::io::Cursor::new(&png))
+        .read_info()
+        .unwrap();
+    let mut pixels = vec![0; decoder.output_buffer_size().unwrap()];
+    decoder.next_frame(&mut pixels).unwrap();
+    assert_eq!(pixels, image.pixels);
 }
 
 /// Without an image, the `.mtl` still carries the part's colour, and the
@@ -349,14 +404,14 @@ fn a_union_exports_its_computed_boolean() {
 
     let exported = export(&dom, &meshes, &[union]);
 
-    assert_eq!(exported[0].indices, [0, 1, 2]);
+    assert_eq!(exported.meshes[0].indices, [0, 1, 2]);
     assert_eq!(
-        exported[0].positions,
+        exported.meshes[0].positions,
         [[-2.0, 1.0, 0.0], [2.0, 1.0, 0.0], [0.0, 5.0, 0.0]]
     );
     // Before its boolean resolves, the box it is drawn as.
     assert_eq!(
-        export(&dom, &Meshes::default(), &[union])[0].indices.len(),
+        export(&dom, &Meshes::default(), &[union]).meshes[0].indices.len(),
         36
     );
 }
@@ -389,7 +444,7 @@ fn a_real_place_exports_its_textures_and_unions() {
     let database = ReflectionDatabase::embedded();
     let exported = meshes_of(&dom, &database, &viewer.pick_meshes(), dom.root_refs());
 
-    let textured = exported.iter().filter(|m| m.texture.is_some()).count();
+    let textured = exported.meshes.iter().filter(|m| m.texture.is_some()).count();
     let unions: Vec<_> = dom
         .root_refs()
         .iter()
@@ -403,7 +458,7 @@ fn a_real_place_exports_its_textures_and_unions() {
         .count();
     eprintln!(
         "{} parts, {textured} textured, {carved}/{} legacy unions carved",
-        exported.len(),
+        exported.meshes.len(),
         unions.len()
     );
     assert!(textured > 0);

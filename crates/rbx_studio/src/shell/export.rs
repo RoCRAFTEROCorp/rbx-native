@@ -62,7 +62,7 @@ fn encode(
 ) -> Result<Vec<(PathBuf, Vec<u8>)>, String> {
     let solids = || {
         let solids = export::meshes_of(dom, database, meshes, roots);
-        match solids.is_empty() {
+        match solids.meshes.is_empty() {
             true => Err("nothing to export: the selection holds no parts".to_string()),
             false => Ok(solids),
         }

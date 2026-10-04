@@ -13,7 +13,9 @@
 //!
 //! A mesh drawn with an image (`MeshPart.TextureID`, a FileMesh's
 //! `TextureId`) carries that image, PNG-encoded, and its UVs, for the writer
-//! to put beside the triangles.
+//! to put beside the triangles. Images are pooled in [`Export::textures`]:
+//! one the whole place shares is encoded and written once, and every part
+//! wearing it names the same entry.
 //!
 //! Units are studs, unscaled, in Roblox's own right-handed Y-up frame, which
 //! is also glTF's.
@@ -21,7 +23,8 @@
 mod gltf;
 mod obj;
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 
 use glam::{Mat4, Vec3};
 use rbx_dom::{Ref, Variant, WeakDom};
@@ -37,6 +40,14 @@ use crate::scene::{
 pub use gltf::gltf;
 pub use obj::{mtl, obj, obj_files};
 
+/// Everything an export writes: each part's surface, and the PNGs their
+/// materials point into by index, each image once however many parts wear it.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Export {
+    pub meshes: Vec<ExportMesh>,
+    pub textures: Vec<Vec<u8>>,
+}
+
 /// One part's surface in world space, ready to write.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ExportMesh {
@@ -50,8 +61,9 @@ pub struct ExportMesh {
     /// One per position, top-left origin as Roblox and glTF have it; empty
     /// for a procedural solid, which has no image to map.
     pub uvs: Vec<[f32; 2]>,
-    /// The image the mesh is drawn with, as a PNG file's bytes.
-    pub texture: Option<Vec<u8>>,
+    /// The image the mesh is drawn with, as an index into
+    /// [`Export::textures`].
+    pub texture: Option<usize>,
 }
 
 /// Every drawable part in `roots`' subtrees, each once even where one root
@@ -63,20 +75,44 @@ pub fn meshes_of(
     database: &ReflectionDatabase,
     meshes: &Meshes,
     roots: &[Ref],
-) -> Vec<ExportMesh> {
+) -> Export {
     let mut seen = HashSet::new();
-    roots
+    let mut textures = Textures::default();
+    let meshes = roots
         .iter()
         .flat_map(|&root| descendants_of(dom, root))
         .filter(|&referent| seen.insert(referent) && is_drawable(dom, database, referent))
-        .filter_map(|referent| export_part(dom, database, meshes, referent))
-        .collect()
+        .filter_map(|referent| export_part(dom, database, meshes, &mut textures, referent))
+        .collect();
+    Export {
+        meshes,
+        textures: textures.pngs,
+    }
+}
+
+/// The PNGs encoded so far, by the decoded image they were made from: every
+/// part wearing one asset holds the very same `Arc` (see
+/// [`crate::pick::Meshes`]), so its address is the asset's identity here.
+#[derive(Default)]
+struct Textures {
+    pngs: Vec<Vec<u8>>,
+    by_image: HashMap<*const Image, Option<usize>>,
+}
+
+impl Textures {
+    fn of(&mut self, image: &Arc<Image>) -> Option<usize> {
+        *self.by_image.entry(Arc::as_ptr(image)).or_insert_with(|| {
+            self.pngs.push(png(image)?);
+            Some(self.pngs.len() - 1)
+        })
+    }
 }
 
 fn export_part(
     dom: &WeakDom,
     database: &ReflectionDatabase,
     meshes: &Meshes,
+    textures: &mut Textures,
     referent: Ref,
 ) -> Option<ExportMesh> {
     let instance = dom.get(referent)?;
@@ -138,13 +174,11 @@ fn export_part(
         texture: meshes
             .texture(referent)
             .filter(|_| !uvs.is_empty())
-            .and_then(|image| png(image)),
+            .and_then(|image| textures.of(image)),
         uvs,
     })
 }
 
-// ponytail: encodes once per part, so a texture shared by many parts is
-// encoded (and written) once each; dedupe by image if exports get large.
 fn png(image: &Image) -> Option<Vec<u8>> {
     let mut bytes = Vec::new();
     let mut encoder = png::Encoder::new(&mut bytes, image.width, image.height);

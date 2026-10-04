@@ -2,28 +2,33 @@
 //! has an image, and normals, faces indexed 1-based across the whole file.
 //! Its materials go in a companion `.mtl`, one per part: the part's colour,
 //! and its image as a `.png` beside both when it is drawn with one — the
-//! three files [`obj_files`] names together.
+//! three files [`obj_files`] names together. An image several parts share
+//! is one `.png` that each of their materials names.
 
+use std::collections::BTreeSet;
 use std::fmt::Write as _;
 
-use super::ExportMesh;
+use super::{Export, ExportMesh};
 
 /// Every file an `.obj` export is, named for `stem` (the `.obj`'s own file
 /// name without its extension): the `.obj` itself, its `.mtl`, and one
-/// `.png` per textured part, all meant for the same directory. Only the
-/// `.obj` keeps a space in `stem`: the others are named from inside it.
-pub fn obj_files(meshes: &[ExportMesh], stem: &str) -> Vec<(String, Vec<u8>)> {
+/// `.png` per distinct image the parts are drawn with, all meant for the
+/// same directory. Only the `.obj` keeps a space in `stem`: the others are
+/// named from inside it.
+pub fn obj_files(export: &Export, stem: &str) -> Vec<(String, Vec<u8>)> {
     let mut files = vec![
-        (format!("{stem}.obj"), obj(meshes, stem).into_bytes()),
+        (format!("{stem}.obj"), obj(&export.meshes, stem).into_bytes()),
         (
             format!("{}.mtl", no_spaces(stem)),
-            mtl(meshes, stem).into_bytes(),
+            mtl(&export.meshes, stem).into_bytes(),
         ),
     ];
-    for (index, mesh) in meshes.iter().enumerate() {
-        if let Some(png) = &mesh.texture {
-            files.push((texture_file(&no_spaces(stem), index), png.clone()));
-        }
+    let used: BTreeSet<usize> = export.meshes.iter().filter_map(|m| m.texture).collect();
+    for index in used {
+        files.push((
+            texture_file(&no_spaces(stem), index),
+            export.textures[index].clone(),
+        ));
     }
     files
 }
@@ -72,8 +77,8 @@ pub fn mtl(meshes: &[ExportMesh], stem: &str) -> String {
         let _ = writeln!(out, "\nnewmtl {}", material_name(mesh, index));
         let _ = writeln!(out, "Kd {r} {g} {b}");
         let _ = writeln!(out, "d {alpha}");
-        if mesh.texture.is_some() {
-            let _ = writeln!(out, "map_Kd {}", texture_file(&stem, index));
+        if let Some(texture) = mesh.texture {
+            let _ = writeln!(out, "map_Kd {}", texture_file(&stem, texture));
         }
     }
     out
