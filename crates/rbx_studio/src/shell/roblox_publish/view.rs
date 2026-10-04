@@ -1,8 +1,7 @@
-//! The link and failure dialogs, in the launcher's own dialog chrome.
+//! The upload confirmation and the failure dialog, in the launcher's own
+//! dialog chrome.
 
-use gpui_kit::component::input::Input;
-use gpui_kit::component::v_flex;
-use gpui_kit::prelude::FluentBuilder as _;
+use gpui_kit::component::{h_flex, v_flex};
 use gpui_kit::*;
 use rbx_cloud::PublishMode;
 
@@ -14,60 +13,76 @@ use super::{verb, Dialog, Shell};
 impl Shell {
     pub(in crate::shell) fn roblox_dialog(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
         Some(match self.roblox.dialog.as_ref()? {
-            Dialog::Link {
-                then,
-                error,
-                resolving,
-            } => {
-                let border = if error.is_some() {
-                    ui::red_line()
-                } else {
-                    tokens::border2()
+            Dialog::Confirm { mode, target, name } => {
+                let (title, go, what) = match mode {
+                    PublishMode::Published => (
+                        "Publish to Roblox?",
+                        "Publish",
+                        "This file is uploaded as a new version of the place and published: it becomes the version players join.",
+                    ),
+                    PublishMode::Saved => (
+                        "Save to Roblox?",
+                        "Save",
+                        "This file is uploaded as a new saved version of the place, without publishing it: players keep joining the version published now.",
+                    ),
+                };
+                let row = |label: &'static str, value: String| {
+                    h_flex()
+                        .gap(px(12.))
+                        .child(
+                            ui::text(12., 18.)
+                                .w(px(84.))
+                                .flex_none()
+                                .text_color(tokens::text2())
+                                .child(label),
+                        )
+                        .child(
+                            ui::text(12., 18.)
+                                .min_w_0()
+                                .truncate()
+                                .text_color(tokens::text())
+                                .child(value),
+                        )
                 };
                 let body = v_flex()
-                    .gap(px(6.))
-                    .pt(px(16.))
-                    .px(px(20.))
-                    .pl(px(78.))
-                    .child(
-                        ui::field_frame(None, ui::panel2(), border, "link").child(
-                            Input::new(&self.roblox.input)
-                                .appearance(false)
-                                .disabled(resolving.is_some())
-                                .flex_1()
-                                .h_full()
-                                .px(px(0.))
-                                .font_family(tokens::FONT_FAMILY_MONO)
-                                .text_size(px(11.5))
-                                .text_color(tokens::text()),
-                        ),
-                    )
-                    .when_some(error.clone(), |this, error| {
-                        this.child(ui::text(12., 17.).text_color(ui::red()).child(error))
-                    })
+                    .mt(px(14.))
+                    .mx(px(20.))
+                    .ml(px(78.))
+                    .p(px(10.))
+                    .gap(px(4.))
+                    .rounded(px(6.))
+                    .border_1()
+                    .border_color(tokens::border())
+                    .bg(ui::panel2())
+                    .child(row(
+                        "Experience",
+                        name.clone()
+                            .unwrap_or_else(|| format!("Universe {}", target.universe_id)),
+                    ))
+                    .child(row("Place", target.place_id.to_string()))
                     .into_any_element();
-                let go = match then {
-                    Some(PublishMode::Saved) => "Link and save",
-                    Some(PublishMode::Published) => "Link and publish",
-                    None => "Link",
-                };
-                let confirm = if resolving.is_some() {
-                    ui::disabled_button("roblox-link-go", "Looking up place\u{2026}")
-                        .into_any_element()
-                } else {
-                    ui::button("roblox-link-go", go, Weight::Primary, false)
-                        .on_click(cx.listener(|shell, _, _, cx| shell.confirm_roblox_link(cx)))
-                        .into_any_element()
-                };
-                ui::dialog(
-                    520.,
-                    ui::dialog_glyph("link", ui::accent(), ui::wash()),
-                    "Link this file to a Roblox place",
-                    "Save to Roblox and Publish to Roblox upload it as a new version of this place. Paste its ID, its game page link, or its Creator Dashboard link.",
-                    Some(body),
-                    vec![cancel(cx), confirm],
-                )
-                .into_any_element()
+                // Covers the window like the veil inside it, so the dialog
+                // is placed as it would be without the focus wrapper.
+                div()
+                    .absolute()
+                    .inset_0()
+                    .track_focus(&self.roblox.focus)
+                    .child(ui::dialog(
+                        520.,
+                        ui::dialog_glyph("cloud-upload", ui::accent(), ui::wash()),
+                        title,
+                        format!("{what} Your local file isn\u{2019}t changed."),
+                        Some(body),
+                        vec![
+                            cancel(cx),
+                            ui::button("roblox-confirm", go, Weight::Primary, false)
+                                .on_click(
+                                    cx.listener(|shell, _, _, cx| shell.confirm_roblox_upload(cx)),
+                                )
+                                .into_any_element(),
+                        ],
+                    ))
+                    .into_any_element()
             }
             Dialog::Failed {
                 mode,

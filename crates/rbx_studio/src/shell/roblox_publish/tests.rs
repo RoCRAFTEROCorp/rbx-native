@@ -1,8 +1,8 @@
-use rbx_cloud::{CloudError, PublishMode};
+use rbx_cloud::{CloudError, Experience, Owner, PublishMode, Visibility};
 
+use super::upload::{describe, mocked, not_updated, refused, upload_with};
 use super::{
-    describe, lookup_finished, mocked, not_updated, outcome, refused, upload_with, Dialog, Failure,
-    Target,
+    after_pick, confirm, confirmed, outcome, pick_landed, Dialog, Failure, Picking, Target,
 };
 use crate::command_bar::Feedback;
 
@@ -84,79 +84,104 @@ fn the_capture_mock_answers_each_case() {
     assert!(matches!(mocked("network"), Err(CloudError::Transport(_))));
 }
 
-/// What `open_roblox_link` puts up, then what `confirm_roblox_link` does to
-/// it before the lookup leaves for the network.
-fn opened(then: Option<PublishMode>) -> Option<Dialog> {
-    Some(Dialog::Link {
-        then,
-        error: None,
-        resolving: None,
-    })
-}
-
-fn confirm(dialog: &mut Option<Dialog>, token: u64) {
-    let Some(Dialog::Link { resolving, .. }) = dialog else {
-        panic!("no link dialog to confirm");
-    };
-    *resolving = Some(token);
-}
-
-fn resolving(dialog: &Option<Dialog>) -> Option<u64> {
-    match dialog {
-        Some(Dialog::Link { resolving, .. }) => *resolving,
-        _ => None,
+fn experience(universe_id: u64, root_place_id: u64) -> Experience {
+    Experience {
+        universe_id,
+        root_place_id,
+        name: "Fragment - Demo".to_string(),
+        visibility: Visibility::Public,
+        owner: Owner::User(1),
     }
 }
 
 #[test]
-fn a_lookup_that_lands_after_cancel_neither_links_nor_publishes() {
-    // "Link and publish", then Cancel while it says "Looking up place…".
-    let mut dialog = opened(Some(PublishMode::Published));
-    confirm(&mut dialog, 1);
-    assert!(
-        dialog.take().is_some(),
-        "Cancel closes it, as close_roblox_dialog does"
-    );
-    assert!(lookup_finished(&mut dialog, 1, Ok(TARGET)).is_none());
-    assert!(dialog.is_none(), "a cancelled dialog stays closed");
-}
-
-#[test]
-fn only_the_lookup_the_reopened_dialog_waits_on_links_and_publishes() {
-    // Confirm, Cancel, reopen, confirm again: two lookups in flight.
-    let mut dialog = opened(Some(PublishMode::Published));
-    confirm(&mut dialog, 1);
-    assert!(dialog.take().is_some());
-    dialog = opened(Some(PublishMode::Saved));
-    confirm(&mut dialog, 2);
-
-    // The first one lands — success or failure — and changes nothing.
-    assert!(lookup_finished(&mut dialog, 1, Ok(TARGET)).is_none());
-    assert!(lookup_finished::<Target>(&mut dialog, 1, Err("boom".to_string())).is_none());
-    assert_eq!(resolving(&dialog), Some(2));
-    assert!(matches!(&dialog, Some(Dialog::Link { error: None, .. })));
-
-    // The second one is the one acted on, with the reopened dialog's mode.
+fn a_picked_game_links_its_starting_place_and_an_added_place_links_itself() {
+    // A card: Roblox's listing carries the starting place only.
     assert_eq!(
-        lookup_finished(&mut dialog, 2, Ok(TARGET)),
-        Some((TARGET, Some(PublishMode::Saved)))
+        Target::of(&experience(9828239630, 12840211733)),
+        Target {
+            universe_id: 9828239630,
+            place_id: 12840211733
+        }
     );
-    assert!(dialog.is_none());
-    // And a late duplicate of it can't run a second upload.
-    assert!(lookup_finished(&mut dialog, 2, Ok(TARGET)).is_none());
+    // Added by the ID of another place in the same experience:
+    // `experience_of_place` puts that place where the starting one goes.
+    let added = experience(9828239630, 13000000001);
+    assert_eq!(Target::of(&added).place_id, 13000000001);
+    assert_eq!(Target::of(&added).universe_id, 9828239630);
 }
 
 #[test]
-fn a_failed_lookup_shows_its_reason_and_lets_the_user_confirm_again() {
-    let mut dialog = opened(None);
-    confirm(&mut dialog, 3);
-    assert!(
-        lookup_finished::<Target>(&mut dialog, 3, Err("No place with ID 9.".to_string())).is_none()
-    );
-    assert!(matches!(
-        &dialog,
-        Some(Dialog::Link { error: Some(e), resolving: None, .. }) if e == "No place with ID 9."
-    ));
+fn a_pick_for_an_upload_asks_to_confirm_it_and_a_relink_asks_nothing() {
+    let name = || "Fragment - Demo".to_string();
+    for mode in [PublishMode::Saved, PublishMode::Published] {
+        assert_eq!(
+            after_pick(Some(mode), TARGET, name()),
+            Some(Dialog::Confirm {
+                mode,
+                target: TARGET,
+                name: Some(name())
+            })
+        );
+    }
+    assert_eq!(after_pick(None, TARGET, name()), None);
+}
+
+#[test]
+fn cancelling_the_confirmation_uploads_nothing() {
+    // Cancel and Escape both close it (`close_roblox_dialog`).
+    let mut dialog = Some(confirm(PublishMode::Published, TARGET, None));
+    assert!(dialog.take().is_some());
+    assert_eq!(confirmed(&mut dialog), None);
+
+    // Enter over a failure dialog isn't a confirmation either.
+    let failed = Dialog::Failed {
+        mode: PublishMode::Saved,
+        target: TARGET,
+        failure: Failure::before_sending("nope".to_string()),
+    };
+    let mut dialog = Some(failed);
+    assert_eq!(confirmed(&mut dialog), None);
+    assert!(matches!(dialog, Some(Dialog::Failed { .. })));
+}
+
+#[test]
+fn confirming_sends_that_mode_to_that_place_once() {
+    for mode in [PublishMode::Saved, PublishMode::Published] {
+        let mut dialog = Some(confirm(mode, TARGET, Some("A".to_string())));
+        let (target, sent) = confirmed(&mut dialog).expect("a confirmation was open");
+        assert!(dialog.is_none());
+        assert_eq!(confirmed(&mut dialog), None, "a second Enter does nothing");
+        let mut seen = None;
+        upload_with(target, b"", sent, |universe, place, _, mode| {
+            seen = Some((universe, place, mode));
+            Ok(1)
+        })
+        .unwrap();
+        assert_eq!(seen, Some((TARGET.universe_id, TARGET.place_id, mode)));
+    }
+}
+
+#[test]
+fn a_pick_from_a_replaced_picker_neither_links_nor_publishes() {
+    // Picker 1 opened for Publish, then replaced by picker 2 for Save.
+    let mut picking = Some(Picking {
+        token: 2,
+        then: Some(PublishMode::Saved),
+    });
+    assert_eq!(pick_landed(&mut picking, 1), None);
+    assert!(picking.is_some(), "picker 2 still waits");
+
+    // Picker 2's pick is the one acted on, with its own mode.
+    assert_eq!(pick_landed(&mut picking, 2), Some(Some(PublishMode::Saved)));
+    // And a late duplicate of it can't run a second upload.
+    assert_eq!(pick_landed(&mut picking, 2), None);
+}
+
+#[test]
+fn a_pick_after_the_picker_stopped_waiting_changes_nothing() {
+    let mut picking = None;
+    assert_eq!(pick_landed(&mut picking, 1), None);
 }
 
 #[test]

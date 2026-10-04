@@ -1,42 +1,49 @@
 //! File › Save to Roblox / Publish to Roblox: uploads the open place as a new
-//! version of a Roblox place through `rbx_cloud::Client::publish_place`
-//! (`versionType=Saved` keeps it as a saved version, `Published` makes it
-//! the live one).
+//! version of a Roblox place through `rbx_cloud::Client::publish_place`.
+//! Roblox's `versionType=Saved` saves the version without publishing it;
+//! `Published` saves it and publishes it (`creator-docs`,
+//! `reference/cloud/universes-api/v1.json`).
 //!
-//! The endpoint needs both the universe and the place id. Only the place id
-//! is asked for — a bare id or any link `rbx_cloud::place_id_from_link`
-//! reads — and the universe is looked up from it, anonymously. The pair is
-//! remembered as the file's link (`home::Link`, recorded through
-//! `home::remember` like a place opened from Home), so a place downloaded
-//! from Roblox publishes back without being asked at all.
+//! The place comes from the game picker — Home's My Games reopened over the
+//! editor (`launcher::open_game_picker`), with its listing, cache, owner
+//! dropdown and add-by-link — and is remembered as the file's link
+//! (`home::Link`, recorded through `home::remember` like a place opened from
+//! Home), so a place downloaded from Roblox needs no picking at all.
 //!
-//! Every outcome is a row in the Output dock and the Command Bar's label,
-//! like a local save; a failure also opens a dialog with Roblox's answer,
-//! because a publish the user believes went through is the costly mistake.
+//! Every upload is confirmed first, in a dialog naming the experience and
+//! place and saying what the mode does: an overwrite on Roblox can't be
+//! undone from here. Every outcome is a row in the Output dock and the
+//! Command Bar's label, like a local save; a failure also opens a dialog
+//! with Roblox's answer, because a publish the user believes went through
+//! is the costly mistake.
 //!
 //! Roblox's API doesn't update every class (unions, SurfaceAppearance,
 //! wraps, Editable*; see [`NOT_UPDATED_BY_PUBLISH`]), so a successful upload
 //! of a place holding any adds a warning row naming them.
 //!
-//! `RBX_STUDIO_PUBLISH_MOCK=ok|<HTTP status>|network` answers both calls
-//! with a canned result instead of the network, for scripted captures.
+//! `RBX_STUDIO_PUBLISH_MOCK=ok|<HTTP status>|network` answers the upload
+//! with a canned result instead of the network, and
+//! `RBX_STUDIO_ROBLOX=link|save|publish` runs that File menu command at
+//! open, for scripted captures.
 
-use std::collections::BTreeSet;
 use std::path::Path;
 
-use gpui_kit::component::input::{InputEvent, InputState};
+use gpui_kit::component::Root;
 use gpui_kit::*;
-use rbx_cloud::{ApiKey, Client, CloudError, PublishMode};
-use rbx_dom::WeakDom;
+use rbx_cloud::{Experience, PublishMode};
 
 use crate::command_bar::Feedback;
 use crate::home::{self, RecentPlace};
 
 use super::Shell;
 
+mod upload;
 mod view;
 
+use upload::{not_updated, upload};
+
 const MOCK_VARIABLE: &str = "RBX_STUDIO_PUBLISH_MOCK";
+pub(super) const OPEN_VARIABLE: &str = "RBX_STUDIO_ROBLOX";
 
 /// The Output dock's `source` for every row this module pushes.
 const SOURCE: &str = "Roblox";
@@ -48,16 +55,23 @@ pub(super) struct Target {
     place_id: u64,
 }
 
+impl Target {
+    /// A picked game's starting place, or the place it was added by.
+    fn of(experience: &Experience) -> Self {
+        Target {
+            universe_id: experience.universe_id,
+            place_id: experience.root_place_id,
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
 pub(super) enum Dialog {
-    /// Asking for the place. `then` is the upload the link was opened for,
-    /// run as soon as the link is stored; `None` when the user only relinks.
-    /// `resolving` is the token of the lookup in flight for this very dialog:
-    /// a lookup whose token isn't here any more (Cancel, Escape, or a fresh
-    /// dialog opened since) lands as a no-op — see [`lookup_finished`].
-    Link {
-        then: Option<PublishMode>,
-        error: Option<String>,
-        resolving: Option<u64>,
+    /// Asked before every upload; `name` is the experience's, when known.
+    Confirm {
+        mode: PublishMode,
+        target: Target,
+        name: Option<String>,
     },
     Failed {
         mode: PublishMode,
@@ -85,136 +99,154 @@ impl Failure {
     }
 }
 
+/// The game picker that is open, and the upload it was opened for (`None`
+/// when the user only relinks). A pick carries the token of the picker it
+/// came from and counts only while that picker is still this one — see
+/// [`pick_landed`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Picking {
+    token: u64,
+    then: Option<PublishMode>,
+}
+
 pub(super) struct RobloxPublish {
-    input: Entity<InputState>,
     pub(super) dialog: Option<Dialog>,
-    /// Text to put in the box and focus it with, on the next frame: both
-    /// need a `Window` the menu action that opens the dialog doesn't have.
-    prefill: Option<String>,
+    /// The confirmation's, so Enter and Escape reach it and not whatever
+    /// had the keyboard; handed over on the next frame, where a `Window` is
+    /// at hand.
+    focus: FocusHandle,
+    focus_pending: bool,
     /// An upload is in flight; a second one is refused until it answers.
     busy: bool,
-    /// The last lookup token handed out; see [`Dialog::Link`].
-    lookups: u64,
-    _subscription: Subscription,
+    picking: Option<Picking>,
+    /// The last picker token handed out.
+    picks: u64,
+    picker: Option<WindowHandle<Root>>,
 }
 
 impl RobloxPublish {
-    pub(super) fn new(window: &mut Window, cx: &mut Context<Shell>) -> Self {
-        let input = cx.new(|cx| InputState::new(window, cx).placeholder("Place ID or link"));
-        let subscription = cx.subscribe(&input, |shell, _, event: &InputEvent, cx| {
-            if let InputEvent::PressEnter { .. } = event {
-                shell.confirm_roblox_link(cx);
-            }
-        });
+    pub(super) fn new(cx: &mut Context<Shell>) -> Self {
         RobloxPublish {
-            input,
             dialog: None,
-            prefill: None,
+            focus: cx.focus_handle(),
+            focus_pending: false,
             busy: false,
-            lookups: 0,
-            _subscription: subscription,
+            picking: None,
+            picks: 0,
+            picker: None,
         }
     }
 }
 
 impl Shell {
-    /// The two File menu commands. An unlinked file asks for its place
-    /// first and then carries on with `mode`.
+    /// The two File menu commands. An unlinked file picks its game first
+    /// and then asks to confirm `mode`.
     pub(crate) fn upload_to_roblox(&mut self, mode: PublishMode, cx: &mut Context<Self>) {
-        match linked_target(&self.path) {
-            Some(target) => self.start_upload(target, mode, cx),
+        match home::link_of(&self.path) {
+            Some(link) => {
+                let target = Target {
+                    universe_id: link.universe_id,
+                    place_id: link.place_id,
+                };
+                self.ask_to_upload(confirm(mode, target, link.name), cx);
+            }
             None => self.open_roblox_link(Some(mode), cx),
         }
     }
 
-    /// File › Link to Roblox Place…, and the first step of an unlinked
-    /// upload.
+    /// File › Link to Roblox Place…, the first step of an unlinked upload,
+    /// and a failed upload's "Change place…": brings the game picker
+    /// forward, opening it if it isn't.
     pub(crate) fn open_roblox_link(&mut self, then: Option<PublishMode>, cx: &mut Context<Self>) {
-        let current = linked_target(&self.path);
-        self.roblox.prefill = Some(current.map_or(String::new(), |t| t.place_id.to_string()));
-        self.roblox.dialog = Some(Dialog::Link {
-            then,
-            error: None,
-            resolving: None,
-        });
+        self.roblox.dialog = None;
+        if let (Some(picking), Some(window)) = (&mut self.roblox.picking, self.roblox.picker) {
+            if window
+                .update(cx, |_, window, _| window.activate_window())
+                .is_ok()
+            {
+                picking.then = then;
+                return;
+            }
+        }
+        self.roblox.picks += 1;
+        let token = self.roblox.picks;
+        self.roblox.picking = Some(Picking { token, then });
         cx.notify();
+        let shell = cx.entity().downgrade();
+        // Deferred: not from inside this update, which may be a render's.
+        cx.defer(move |cx| {
+            let on_pick = {
+                let shell = shell.clone();
+                move |experience: Experience, cx: &mut App| {
+                    let _ = shell.update(cx, |shell, cx| shell.picked(token, experience, cx));
+                }
+            };
+            let opened = crate::launcher::open_game_picker(on_pick, cx);
+            let _ = shell.update(cx, |shell, _| shell.roblox.picker = opened);
+        });
     }
 
-    /// Escape's half of the dialog; returns whether one was open.
+    /// `RBX_STUDIO_ROBLOX`; see the module doc.
+    pub(super) fn apply_debug_roblox(&mut self, cx: &mut Context<Self>) {
+        match std::env::var(OPEN_VARIABLE).as_deref() {
+            Ok("link") => self.open_roblox_link(None, cx),
+            Ok("save") => self.upload_to_roblox(PublishMode::Saved, cx),
+            Ok("publish") => self.upload_to_roblox(PublishMode::Published, cx),
+            _ => {}
+        }
+    }
+
+    /// Escape's half of the dialogs; returns whether one was open.
     pub(super) fn close_roblox_dialog(&mut self) -> bool {
         self.roblox.dialog.take().is_some()
     }
 
-    /// Runs from render, where a `Window` is at hand; see [`RobloxPublish::prefill`].
-    pub(super) fn focus_roblox_link(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(text) = self.roblox.prefill.take() else {
-            return;
-        };
-        self.roblox.input.update(cx, |state, cx| {
-            state.set_value(text, window, cx);
-            state.focus(window, cx);
-            state.select_all(window, cx);
-        });
-    }
-
-    fn confirm_roblox_link(&mut self, cx: &mut Context<Self>) {
-        let Some(Dialog::Link {
-            error, resolving, ..
-        }) = &mut self.roblox.dialog
-        else {
-            return;
-        };
-        if resolving.is_some() {
-            return;
+    /// Runs from render, where a `Window` is at hand; see [`RobloxPublish::focus`].
+    pub(super) fn focus_roblox_dialog(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if std::mem::take(&mut self.roblox.focus_pending) {
+            self.roblox.focus.focus(window, cx);
         }
-        let text = self.roblox.input.read(cx).value().to_string();
-        let Some(place_id) = rbx_cloud::place_id_from_link(&text) else {
-            *error = Some("That isn\u{2019}t a place ID or a Roblox game link.".to_string());
-            cx.notify();
-            return;
-        };
-        self.roblox.lookups += 1;
-        let token = self.roblox.lookups;
-        *error = None;
-        *resolving = Some(token);
-        cx.notify();
-        cx.spawn(async move |this, cx| {
-            let found = cx
-                .background_spawn(async move { resolve_target(place_id) })
-                .await;
-            let _ = this.update(cx, |shell, cx| {
-                shell.finish_lookup(token, found, cx);
-                cx.notify();
-            });
-        })
-        .detach();
     }
 
-    /// Lands lookup `token`: stores the link and runs the upload it was
-    /// opened for, unless the dialog it belonged to is gone.
-    fn finish_lookup(
-        &mut self,
-        token: u64,
-        found: Result<(Target, Option<String>), String>,
-        cx: &mut Context<Self>,
-    ) {
-        let Some(((target, name), then)) = lookup_finished(&mut self.roblox.dialog, token, found)
-        else {
+    /// The game picker's answer: links the file, then asks to confirm the
+    /// upload the picker was opened for — a pick never uploads by itself.
+    fn picked(&mut self, token: u64, experience: Experience, cx: &mut Context<Self>) {
+        let Some(then) = pick_landed(&mut self.roblox.picking, token) else {
             return;
         };
-        if let Err(message) = link(&self.path, target, name) {
-            self.roblox.dialog = Some(Dialog::Link {
-                then,
-                error: Some(message),
-                resolving: None,
-            });
+        let target = Target::of(&experience);
+        if let Err(message) = link(&self.path, target, Some(experience.name.clone())) {
+            let feedback = Feedback::Error(format!(
+                "Linking to place {} failed: {message}",
+                target.place_id
+            ));
+            self.output.push(SOURCE, feedback.clone());
+            self.command_bar.set_feedback(feedback);
+            cx.notify();
             return;
         }
         self.output.push(
             SOURCE,
-            Feedback::Output(format!("Linked to place {}", target.place_id)),
+            Feedback::Output(format!(
+                "Linked to place {} of {}",
+                target.place_id, experience.name
+            )),
         );
-        if let Some(mode) = then {
+        if let Some(dialog) = after_pick(then, target, experience.name) {
+            self.ask_to_upload(dialog, cx);
+        }
+        cx.notify();
+    }
+
+    fn ask_to_upload(&mut self, dialog: Dialog, cx: &mut Context<Self>) {
+        self.roblox.dialog = Some(dialog);
+        self.roblox.focus_pending = true;
+        cx.notify();
+    }
+
+    /// The confirmation's Save/Publish button, and Enter while it is open.
+    pub(super) fn confirm_roblox_upload(&mut self, cx: &mut Context<Self>) {
+        if let Some((target, mode)) = confirmed(&mut self.roblox.dialog) {
             self.start_upload(target, mode, cx);
         }
     }
@@ -294,77 +326,35 @@ impl Shell {
     }
 }
 
-/// What lookup `token` coming back does to `dialog`. Only the lookup the
-/// open link dialog is still waiting on counts: it closes the dialog and
-/// hands back the place to link and the upload to run. A stale one — the
-/// dialog was cancelled, or reopened and confirmed again — changes nothing,
-/// so a cancelled "Link and publish" never links nor publishes.
-fn lookup_finished<T>(
-    dialog: &mut Option<Dialog>,
-    token: u64,
-    found: Result<T, String>,
-) -> Option<(T, Option<PublishMode>)> {
-    let Some(Dialog::Link {
-        then,
-        error,
-        resolving,
-    }) = dialog
-    else {
-        return None;
-    };
-    if *resolving != Some(token) {
-        return None;
-    }
-    match found {
-        Ok(target) => {
-            let then = *then;
-            *dialog = None;
-            Some((target, then))
-        }
-        Err(message) => {
-            *error = Some(message);
-            *resolving = None;
+/// What a pick from picker `token` does to `picking`. Only the picker still
+/// open counts: it hands back the upload it was opened for and stops
+/// waiting, so a late duplicate can't run a second upload. A pick from a
+/// picker that was since replaced changes nothing.
+fn pick_landed(picking: &mut Option<Picking>, token: u64) -> Option<Option<PublishMode>> {
+    picking.take_if(|p| p.token == token).map(|p| p.then)
+}
+
+fn confirm(mode: PublishMode, target: Target, name: Option<String>) -> Dialog {
+    Dialog::Confirm { mode, target, name }
+}
+
+/// What follows a pick: the confirmation of the upload the picker was
+/// opened for, if any — never the upload itself.
+fn after_pick(then: Option<PublishMode>, target: Target, name: String) -> Option<Dialog> {
+    then.map(|mode| confirm(mode, target, Some(name)))
+}
+
+/// The upload a confirmation agrees to: closes it and hands back its place
+/// and mode. Anything else open — a failure, or nothing because Cancel or
+/// Escape closed it — is left alone and uploads nothing.
+fn confirmed(dialog: &mut Option<Dialog>) -> Option<(Target, PublishMode)> {
+    match dialog.take() {
+        Some(Dialog::Confirm { mode, target, .. }) => Some((target, mode)),
+        other => {
+            *dialog = other;
             None
         }
     }
-}
-
-/// Classes Roblox's place-publishing API leaves as they were
-/// (`creator-docs`, `cloud/guides/usage-place-publishing.md`: EditableImage,
-/// EditableMesh, PartOperation, SurfaceAppearance, BaseWrap): edits to them
-/// only go live when published from Roblox Studio.
-const NOT_UPDATED_BY_PUBLISH: [&str; 9] = [
-    "EditableImage",
-    "EditableMesh",
-    "PartOperation",
-    "UnionOperation",
-    "NegateOperation",
-    "IntersectOperation",
-    "SurfaceAppearance",
-    "WrapLayer",
-    "WrapTarget",
-];
-
-/// The warning a successful upload adds when the place holds any of
-/// [`NOT_UPDATED_BY_PUBLISH`], naming the ones it holds.
-fn not_updated(dom: &WeakDom) -> Option<String> {
-    let mut found = BTreeSet::new();
-    let mut stack = dom.root_refs().to_vec();
-    while let Some(instance) = stack.pop().and_then(|r| dom.get(r)) {
-        if let Some(class) = NOT_UPDATED_BY_PUBLISH
-            .iter()
-            .find(|c| **c == instance.class())
-        {
-            found.insert(*class);
-        }
-        stack.extend_from_slice(instance.children());
-    }
-    (!found.is_empty()).then(|| {
-        format!(
-            "Note: Roblox doesn\u{2019}t update {} instances through this upload \u{2014} changes to them only go live when published from Roblox Studio.",
-            found.into_iter().collect::<Vec<_>>().join(", ")
-        )
-    })
 }
 
 /// The ing-form and past tense each mode's messages use.
@@ -391,13 +381,6 @@ fn outcome(target: Target, mode: PublishMode, result: &Result<u64, Failure>) -> 
     }
 }
 
-fn linked_target(path: &Path) -> Option<Target> {
-    home::link_of(path).map(|link| Target {
-        universe_id: link.universe_id,
-        place_id: link.place_id,
-    })
-}
-
 /// Stores the link, and moves the file to the top of Recent with it.
 fn link(path: &Path, target: Target, name: Option<String>) -> Result<(), String> {
     home::remember(RecentPlace {
@@ -408,107 +391,6 @@ fn link(path: &Path, target: Target, name: Option<String>) -> Result<(), String>
         opened: None,
     })
     .map_err(|err| format!("the link couldn\u{2019}t be saved: {err}"))
-}
-
-fn mock() -> Option<String> {
-    std::env::var(MOCK_VARIABLE).ok()
-}
-
-/// What a mocked call answers instead of Roblox.
-fn mocked(which: &str) -> Result<u64, CloudError> {
-    match which {
-        "ok" => Ok(7),
-        "network" => Err(CloudError::Transport("connection refused".to_string())),
-        status => Err(CloudError::Http {
-            status: status.parse().unwrap_or(500),
-            url: "https://apis.roblox.com/universes/v1/…/versions?<redacted>".to_string(),
-        }),
-    }
-}
-
-/// Blocking: the place's universe, anonymously, and its experience's name
-/// for Recent's pill. The name needs the key to reach the universe; without
-/// it the link is made all the same, unnamed.
-fn resolve_target(place_id: u64) -> Result<(Target, Option<String>), String> {
-    if mock().is_some() {
-        let target = Target {
-            universe_id: 1,
-            place_id,
-        };
-        return Ok((target, Some("Mock Experience".to_string())));
-    }
-    match Client::new(None).universe_of_place(place_id) {
-        Ok(Some(universe_id)) => {
-            let name = ApiKey::from_env_or_config()
-                .and_then(|key| Client::new(Some(key)).universe(universe_id).ok())
-                .map(|universe| universe.display_name);
-            let target = Target {
-                universe_id,
-                place_id,
-            };
-            Ok((target, name))
-        }
-        Ok(None) => Err(format!("No place with ID {place_id}.")),
-        Err(err) => Err(describe(&err)),
-    }
-}
-
-/// Blocking: one upload, through the stored key.
-fn upload(target: Target, bytes: &[u8], mode: PublishMode) -> Result<u64, Failure> {
-    if let Some(which) = mock() {
-        return upload_with(target, bytes, mode, |_, _, _, _| mocked(&which));
-    }
-    let Some(key) = ApiKey::from_env_or_config() else {
-        return Err(Failure::before_sending(describe(&CloudError::NoApiKey)));
-    };
-    let client = Client::new(Some(key));
-    upload_with(target, bytes, mode, |universe, place, bytes, mode| {
-        client.publish_place(universe, place, bytes, mode)
-    })
-}
-
-/// The seam the tests drive: `publish` stands in for `Client::publish_place`.
-fn upload_with(
-    target: Target,
-    bytes: &[u8],
-    mode: PublishMode,
-    publish: impl FnOnce(u64, u64, &[u8], PublishMode) -> Result<u64, CloudError>,
-) -> Result<u64, Failure> {
-    publish(target.universe_id, target.place_id, bytes, mode).map_err(|err| Failure {
-        message: describe(&err),
-        unchanged: refused(&err),
-    })
-}
-
-/// Whether `err` means Roblox definitely didn't take the upload: no key to
-/// send it with, or a 4xx answer. A 5xx is left out with the network
-/// errors — a gateway timing out may sit in front of a publish that landed.
-fn refused(err: &CloudError) -> bool {
-    match err {
-        CloudError::NoApiKey | CloudError::RateLimited { .. } => true,
-        CloudError::Http { status, .. } => (400..500).contains(status),
-        _ => false,
-    }
-}
-
-/// Roblox's own reasons for each status the endpoint documents
-/// (`creator-docs`, `reference/cloud/universes-api/v1.json`), ahead of the
-/// raw error, so a refusal says what to fix.
-fn describe(err: &CloudError) -> String {
-    let reason = match err {
-        CloudError::Http { status: 400, .. } => "Roblox rejected the place file.",
-        CloudError::Http { status: 401, .. } => {
-            "The API key isn\u{2019}t valid for this place: it needs universe-places:write on this experience, or it may have expired or been revoked \u{2014} Home \u{203a} Manage key."
-        }
-        CloudError::Http { status: 403, .. } => "Publishing isn\u{2019}t allowed on this place.",
-        CloudError::Http { status: 404, .. } => "The place or its experience doesn\u{2019}t exist.",
-        CloudError::Http { status: 409, .. } => "The place isn\u{2019}t part of that experience.",
-        CloudError::NoApiKey => {
-            return "No Open Cloud API key is set up. Add one from Home \u{203a} Manage key.".to_string()
-        }
-        _ => return err.to_string(),
-    };
-    format!("{reason} ({err})")
 }
 
 #[cfg(test)]
