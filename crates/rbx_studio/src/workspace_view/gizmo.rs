@@ -251,7 +251,10 @@ impl WorkspaceView {
         scale: f32,
         cx: &mut gpui_kit::Context<Self>,
     ) {
-        self.drag = None;
+        // A drag whose release never arrived is over now.
+        if self.drop_drag().is_some() {
+            self.show_gizmo(self.transform.gizmo());
+        }
         self.pending_grab = None;
         // Any press in the view takes Studio's measurement box down.
         self.close_measure();
@@ -735,9 +738,7 @@ impl WorkspaceView {
             self.drag_pending = self.drag_pending.or(self.guides.dragged_at);
         }
         self.step_drag(window, cx);
-        let summoned = self.summoned();
         if let Some(drag) = self.drop_drag() {
-            self.end_summon(summoned);
             // Every handle back on, wherever the handles now stand.
             self.show_gizmo(self.transform.gizmo());
             let arrow = self.guides.arrow;

@@ -65,9 +65,15 @@ impl WorkspaceView {
 
     /// Lets go of whatever drag is held, and returns it, taking the Sun
     /// tool's guide off screen with it: nothing else would, once its
-    /// gesture is over.
+    /// gesture is over. Summoned handles stay where the drag left them only
+    /// while `Tab` is still down — however the drag ended, a release, a
+    /// tool switch or a press that never saw one.
     pub(super) fn drop_drag(&mut self) -> Option<Drag> {
+        let summoned = self.summoned();
         let drag = self.drag.take();
+        if drag.is_some() {
+            self.end_summon(summoned);
+        }
         if drag == Some(Drag::Sun) {
             self.pump.preview(Vec::new());
         }
