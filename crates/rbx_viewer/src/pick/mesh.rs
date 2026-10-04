@@ -174,7 +174,7 @@ impl Meshes {
 /// even be closed.
 pub(super) fn hit(mesh: &Mesh, model: Mat4, ray: Ray) -> Option<f32> {
     let local = Local::of(model, ray)?;
-    let (distance, _) = nearest(mesh, &local)?;
+    let (distance, ..) = nearest(mesh, &local)?;
     Some(distance / local.per_stud)
 }
 
@@ -184,7 +184,7 @@ pub(super) fn hit(mesh: &Mesh, model: Mat4, ray: Ray) -> Option<f32> {
 /// winding is whatever its author exported.
 pub(super) fn surface(mesh: &Mesh, model: Mat4, ray: Ray) -> Option<(Vec3, Vec3)> {
     let local = Local::of(model, ray)?;
-    let (distance, normal) = nearest(mesh, &local)?;
+    let (distance, normal, _) = nearest(mesh, &local)?;
     let normal = model.inverse().transpose().transform_vector3(normal);
     let normal = if normal.dot(ray.direction) > 0.0 {
         -normal
@@ -195,8 +195,9 @@ pub(super) fn surface(mesh: &Mesh, model: Mat4, ray: Ray) -> Option<(Vec3, Vec3)
 }
 
 /// The nearest triangle `local` crosses: how far along it, in the mesh's own
-/// units, and the triangle's (unnormalized) plane normal.
-fn nearest(mesh: &Mesh, local: &Local) -> Option<(f32, Vec3)> {
+/// units, the triangle's (unnormalized) plane normal, and which triangle of
+/// [`Mesh::lod0`] it is.
+fn nearest(mesh: &Mesh, local: &Local) -> Option<(f32, Vec3, usize)> {
     let vertex = |index: u32| {
         mesh.vertices
             .get(index as usize)
@@ -206,16 +207,159 @@ fn nearest(mesh: &Mesh, local: &Local) -> Option<(f32, Vec3)> {
         .as_chunks::<3>()
         .0
         .iter()
-        .filter_map(|triangle| {
+        .enumerate()
+        .filter_map(|(index, triangle)| {
             let (a, b, c) = (
                 vertex(triangle[0])?,
                 vertex(triangle[1])?,
                 vertex(triangle[2])?,
             );
             let distance = triangle_hit(local.origin, local.direction, a, b, c)?;
-            Some((distance, (b - a).cross(c - a)))
+            Some((distance, (b - a).cross(c - a), index))
         })
-        .min_by(|(a, _), (b, _)| a.total_cmp(b))
+        .min_by(|(a, ..), (b, ..)| a.total_cmp(b))
+}
+
+/// The flat face of a mesh a ray meets: the outline of the triangles lying
+/// in one plane with the one it hits, reached from it across shared edges, in
+/// world space. A curved region, where no neighbour lies flat with the hit
+/// triangle, is that triangle alone.
+#[derive(Debug, Clone, PartialEq)]
+pub struct FlatFace {
+    /// Where the outline turns: its corners, not every vertex along it — a
+    /// vertex only splitting a straight side is left out.
+    pub corners: Vec<Vec3>,
+    /// The outline's sides: the edges only one of the face's triangles has,
+    /// which leaves out the diagonals between them.
+    pub sides: Vec<[Vec3; 2]>,
+}
+
+/// How far a neighbour's normal may turn from the hit triangle's and still
+/// count as the same flat face: about 1.8 degrees.
+const FLAT: f32 = 0.9995;
+
+/// ponytail: the walk stops after this many triangles, so a key press on a
+/// huge flat region can't stall; past it the outline is the walked part's
+/// (sides that are really inside the face). Raise it, or cache adjacency per
+/// mesh, if a real place's flat faces outgrow it.
+const FACE_CEILING: usize = 4096;
+
+/// The [`FlatFace`] `ray` first meets on `mesh` carried through `model`.
+pub(super) fn flat_face(mesh: &Mesh, model: Mat4, ray: Ray) -> Option<FlatFace> {
+    let local = Local::of(model, ray)?;
+    let (.., hit) = nearest(mesh, &local)?;
+    let triangles = mesh.lod0().as_chunks::<3>().0;
+    let corners_of = |triangle: &[u32; 3]| -> Option<[Vec3; 3]> {
+        let world = |index: u32| {
+            let vertex = mesh.vertices.get(index as usize)?;
+            Some(model.transform_point3(Vec3::from(vertex.position)))
+        };
+        Some([
+            world(triangle[0])?,
+            world(triangle[1])?,
+            world(triangle[2])?,
+        ])
+    };
+    let seed = corners_of(triangles.get(hit)?)?;
+    let normal = (seed[1] - seed[0])
+        .cross(seed[2] - seed[0])
+        .try_normalize()?;
+    let size = (model.x_axis + model.y_axis + model.z_axis)
+        .truncate()
+        .length();
+    let tolerance = 1e-4 * size.max(1.0);
+    // Vertices are told apart by where they stand, not by index: a mesh splits
+    // a vertex wherever its UVs or normals do, which says nothing about
+    // whether two triangles touch.
+    let key = |point: Vec3| (point / tolerance).round().to_array().map(|c| c as i64);
+    let edge = |a: Vec3, b: Vec3| {
+        let (a, b) = (key(a), key(b));
+        if a < b {
+            (a, b)
+        } else {
+            (b, a)
+        }
+    };
+
+    // Every triangle in the hit one's plane, and which of them share an edge.
+    let mut flat: Vec<[Vec3; 3]> = Vec::new();
+    let mut by_edge: HashMap<_, Vec<usize>> = HashMap::new();
+    for triangle in triangles {
+        let Some(points) = corners_of(triangle) else {
+            continue;
+        };
+        let Some(facing) = (points[1] - points[0])
+            .cross(points[2] - points[0])
+            .try_normalize()
+        else {
+            continue;
+        };
+        let level = points
+            .iter()
+            .all(|&p| (p - seed[0]).dot(normal).abs() <= tolerance);
+        if facing.dot(normal).abs() < FLAT || !level {
+            continue;
+        }
+        for i in 0..3 {
+            by_edge
+                .entry(edge(points[i], points[(i + 1) % 3]))
+                .or_default()
+                .push(flat.len());
+        }
+        flat.push(points);
+    }
+    let start = flat.iter().position(|points| *points == seed)?;
+
+    // Out from the hit triangle across shared edges.
+    let mut reached = vec![false; flat.len()];
+    reached[start] = true;
+    let mut queue = vec![start];
+    let mut walked = Vec::new();
+    while let Some(at) = queue.pop() {
+        walked.push(at);
+        if walked.len() >= FACE_CEILING {
+            break;
+        }
+        let points = flat[at];
+        for i in 0..3 {
+            for &next in &by_edge[&edge(points[i], points[(i + 1) % 3])] {
+                if !std::mem::replace(&mut reached[next], true) {
+                    queue.push(next);
+                }
+            }
+        }
+    }
+
+    // The sides are the edges just one walked triangle has.
+    let mut count: HashMap<_, (usize, [Vec3; 2])> = HashMap::new();
+    for &at in &walked {
+        let points = flat[at];
+        for i in 0..3 {
+            let (a, b) = (points[i], points[(i + 1) % 3]);
+            count.entry(edge(a, b)).or_insert((0, [a, b])).0 += 1;
+        }
+    }
+    let sides: Vec<[Vec3; 2]> = count
+        .into_values()
+        .filter(|&(seen, _)| seen == 1)
+        .map(|(_, side)| side)
+        .collect();
+
+    // A corner is a side's end where the outline turns.
+    let mut ends: HashMap<_, (Vec3, Vec<Vec3>)> = HashMap::new();
+    for &[a, b] in &sides {
+        ends.entry(key(a)).or_insert((a, Vec::new())).1.push(b - a);
+        ends.entry(key(b)).or_insert((b, Vec::new())).1.push(a - b);
+    }
+    let corners = ends
+        .into_values()
+        .filter(|(_, ways)| match ways.as_slice() {
+            [one, other] => one.normalize_or_zero().dot(other.normalize_or_zero()) > -0.9999,
+            _ => true,
+        })
+        .map(|(point, _)| point)
+        .collect();
+    Some(FlatFace { corners, sides })
 }
 
 /// Möller–Trumbore: where the ray crosses the plane of triangle `abc`,

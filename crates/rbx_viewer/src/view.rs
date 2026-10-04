@@ -190,6 +190,7 @@ mod tests {
             kind: Kind::Rotate,
             local: true,
             held: None,
+            summon: None,
         }));
 
         // A tool switched away and back, and the local toggle flipped: what a
@@ -199,6 +200,7 @@ mod tests {
             kind: Kind::Move,
             local: false,
             held: None,
+            summon: None,
         }));
 
         assert!(view.orthographic);
@@ -210,6 +212,7 @@ mod tests {
                 kind: Kind::Move,
                 local: false,
                 held: None,
+                summon: None,
             })
         );
     }

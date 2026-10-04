@@ -108,7 +108,8 @@ impl Shell {
                 // selectable there at all.
                 target = hits.first().and_then(|&part| {
                     let surface = PartSurface::read(&self.dom, &self.database, &meshes, part)?;
-                    target::under(&surface, ray, grid)
+                    let (frame, hit) = target::under(&surface, ray, grid)?;
+                    Some((frame, hit, surface))
                 });
                 selection::outlined(&self.dom, &self.database, &[referent])
                     .into_iter()

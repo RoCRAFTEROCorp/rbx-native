@@ -13,6 +13,8 @@
 //! first, and winds every triangle counter-clockwise seen from outside so that
 //! back-face culling removes the far side of each one.
 
+mod balls;
+
 use bytemuck::{Pod, Zeroable};
 use glam::Vec3;
 
@@ -20,6 +22,9 @@ use crate::gizmo::{
     Axis, End, Faces, Handles, Shape, HEAD_RADIUS, HEAD_START, RING_RADIUS, RING_THICKNESS,
     SHAFT_RADIUS, SHAFT_START,
 };
+#[cfg(test)]
+use balls::ORIGIN_COLOR;
+use balls::{ball, balls, origin_ball};
 
 /// How many segments go round a shaft or an arrowhead. Eight already reads as
 /// round at the size a dragger occupies on screen, and the whole gizmo is one
@@ -58,7 +63,9 @@ const RING_VERTICES: usize = Axis::ALL.len() * RING_SEGMENTS * VERTICES_PER_SLIC
 /// The buffer has to hold whichever tool draws the most, since the tool
 /// changes without the renderer being rebuilt. Transform draws all three at
 /// once, so it alone decides this — the other tools each need less.
-pub(super) const CAPACITY: usize = ARROW_VERTICES + BALL_VERTICES + RING_VERTICES;
+/// The one extra ball is the free-drag handle at the Move gizmo's origin.
+pub(super) const CAPACITY: usize =
+    ARROW_VERTICES + BALL_VERTICES + RING_VERTICES + VERTICES_PER_BALL;
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
@@ -88,10 +95,10 @@ impl Vertex {
 pub(super) fn mesh(shape: &Shape, held: Option<End>, eye: Vec3) -> Vec<Vertex> {
     let shown = |axis: Axis, sign: f32| held.is_none_or(|end| end.is(axis, sign));
     match shape {
-        Shape::Move(handles) => arms(handles, eye, arrow, shown),
+        Shape::Move(handles) => arms(handles, eye, arrow, shown, held.is_none()),
         Shape::Scale(faces) => balls(faces, eye, shown),
         Shape::Rotate(handles) => rings(handles, eye),
-        Shape::Transform(handles, faces) => transform(handles, faces, eye, shown),
+        Shape::Transform(handles, faces) => transform(handles, faces, eye, shown, held.is_none()),
     }
 }
 
@@ -101,6 +108,7 @@ enum Piece {
     Arm(Axis, f32),
     Ball(Axis, f32),
     Ring(Axis, usize),
+    Origin,
 }
 
 /// Transform's arms, balls and rings as one triangle list, sorted back to
@@ -119,9 +127,13 @@ fn transform(
     faces: &Faces,
     eye: Vec3,
     shown: impl Fn(Axis, f32) -> bool,
+    origin: bool,
 ) -> Vec<Vertex> {
     let mut pieces: Vec<(f32, Piece)> =
-        Vec::with_capacity(ARMS + ARMS + Axis::ALL.len() * RING_SEGMENTS);
+        Vec::with_capacity(ARMS + ARMS + Axis::ALL.len() * RING_SEGMENTS + 1);
+    if origin {
+        pieces.push(((handles.origin() - eye).length(), Piece::Origin));
+    }
     for axis in Axis::ALL {
         for sign in [1.0f32, -1.0] {
             if shown(axis, sign) {
@@ -143,7 +155,7 @@ fn transform(
     }
     pieces.sort_by(|(a, ..), (b, ..)| b.total_cmp(a));
 
-    let mut vertices = Vec::with_capacity(ARROW_VERTICES + BALL_VERTICES + RING_VERTICES);
+    let mut vertices = Vec::with_capacity(CAPACITY);
     for (_, piece) in pieces {
         match piece {
             Piece::Arm(axis, sign) => arrow(
@@ -160,6 +172,7 @@ fn transform(
                 axis.color(),
             ),
             Piece::Ring(axis, step) => slice(&mut vertices, handles, axis, step),
+            Piece::Origin => origin_ball(&mut vertices, handles),
         }
     }
     vertices
@@ -169,29 +182,39 @@ fn transform(
 /// pointing `direction`, `arm` studs long.
 type Build = fn(&mut Vec<Vertex>, Vec3, Vec3, f32, [f32; 3]);
 
-/// The six arms of one axis gizmo, furthest from `eye` first.
+/// The six arms of one axis gizmo, furthest from `eye` first, with the
+/// free-drag ball at their origin among them when `origin` is set.
 ///
-/// Sorting by arm is enough here: the arms never intersect each other, so a
-/// painter's order over six convex pieces is exact rather than approximate.
+/// Sorting by arm is enough here: the arms never intersect each other or the
+/// ball, so a painter's order over these convex pieces is exact rather than
+/// approximate.
 fn arms(
     handles: &Handles,
     eye: Vec3,
     build: Build,
     shown: impl Fn(Axis, f32) -> bool,
+    origin: bool,
 ) -> Vec<Vertex> {
-    let mut arms: Vec<(f32, Axis, f32)> = Axis::ALL
+    let mut arms: Vec<(f32, Option<(Axis, f32)>)> = Axis::ALL
         .into_iter()
         .flat_map(|axis| [(axis, 1.0f32), (axis, -1.0f32)])
         .filter(|&(axis, sign)| shown(axis, sign))
         .map(|(axis, sign)| {
             let tip = handles.origin() + handles.direction(axis) * handles.arm() * sign;
-            ((tip - eye).length(), axis, sign)
+            ((tip - eye).length(), Some((axis, sign)))
         })
         .collect();
+    if origin {
+        arms.push(((handles.origin() - eye).length(), None));
+    }
     arms.sort_by(|(a, ..), (b, ..)| b.total_cmp(a));
 
-    let mut vertices = Vec::with_capacity(ARROW_VERTICES);
-    for (_, axis, sign) in arms {
+    let mut vertices = Vec::with_capacity(ARROW_VERTICES + VERTICES_PER_BALL);
+    for (_, arm) in arms {
+        let Some((axis, sign)) = arm else {
+            origin_ball(&mut vertices, handles);
+            continue;
+        };
         build(
             &mut vertices,
             handles.origin(),
@@ -230,73 +253,6 @@ fn arrow(vertices: &mut Vec<Vertex>, origin: Vec3, direction: Vec3, arm: f32, co
         // the shaft, hence the reversed winding.
         for point in [a, b, apex, base, b, a] {
             push(vertices, point, color);
-        }
-    }
-}
-
-/// The six Scale balls, furthest from `eye` first.
-///
-/// Sorted by ball for the same reason [`arms`] sorts by arm: six convex pieces
-/// that only meet when a part is small enough for opposite faces to touch, so
-/// a painter's order over them is exact wherever it matters.
-fn balls(faces: &Faces, eye: Vec3, shown: impl Fn(Axis, f32) -> bool) -> Vec<Vertex> {
-    let mut order: Vec<(f32, Axis, f32)> = faces
-        .all()
-        .filter(|&(axis, sign)| shown(axis, sign))
-        .map(|(axis, sign)| ((faces.handle(axis, sign) - eye).length(), axis, sign))
-        .collect();
-    order.sort_by(|(a, ..), (b, ..)| b.total_cmp(a));
-
-    let mut vertices = Vec::with_capacity(BALL_VERTICES);
-    for (_, axis, sign) in order {
-        ball(
-            &mut vertices,
-            faces.handle(axis, sign),
-            faces.radius(axis, sign),
-            axis.color(),
-        );
-    }
-    vertices
-}
-
-/// One Scale handle: a ball centred on the middle of the face it resizes.
-///
-/// `creator-docs` states the shape for the engine's own resize handles —
-/// `Enum.HandlesStyle.Resize` "renders `Class.Handles` as sphere shapes for
-/// resizing an adornee along its face axes" — but publishes no proportions for
-/// the Studio tool's, so the size ([`crate::gizmo::Faces::radius`]) is chosen
-/// to read at the weight of a Move arrowhead rather than measured from
-/// anything.
-///
-/// Swept about the world's own Y: a ball has no orientation for the part's
-/// frame to disagree with, so there is nothing to build it from the face's
-/// normal for.
-fn ball(vertices: &mut Vec<Vertex>, centre: Vec3, radius: f32, color: [f32; 3]) {
-    let point = |band: usize, segment: usize| {
-        let down = std::f32::consts::PI * band as f32 / BALL_BANDS as f32;
-        let round = std::f32::consts::TAU * segment as f32 / BALL_SEGMENTS as f32;
-        let (sine, cosine) = (down.sin(), down.cos());
-        centre + Vec3::new(sine * round.cos(), cosine, sine * round.sin()) * radius
-    };
-
-    for band in 0..BALL_BANDS {
-        for segment in 0..BALL_SEGMENTS {
-            let (a, b) = (point(band, segment), point(band, segment + 1));
-            let (c, d) = (point(band + 1, segment + 1), point(band + 1, segment));
-            // Walking round the sphere and then down it comes out wound
-            // outwards. At each pole one of the two rings has collapsed to a
-            // point, and the triangle that would be built from it is
-            // degenerate — so the band there is the other triangle alone.
-            if band > 0 {
-                for corner in [a, b, c] {
-                    push(vertices, corner, color);
-                }
-            }
-            if band + 1 < BALL_BANDS {
-                for corner in [a, c, d] {
-                    push(vertices, corner, color);
-                }
-            }
         }
     }
 }

@@ -39,8 +39,9 @@ pub(crate) struct SurfaceFrame {
     /// The whole face's extent along `x` and along `z`.
     pub(crate) size: Vec2,
     pub(crate) kind: TargetKind,
-    /// The ball or cylinder the frame stands on, whose major lines its guides
-    /// draw: the part's solid and its box.
+    /// The part the frame stands on: its solid and its box. A ball's and a
+    /// cylinder's guides draw its major lines; a summon snaps onto the real
+    /// outline of the face (see `workspace_view::summon::onto_edges`).
     pub(crate) part: Option<(Solid, Mat4)>,
 }
 

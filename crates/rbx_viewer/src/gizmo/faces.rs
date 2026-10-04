@@ -53,6 +53,10 @@ pub struct Faces {
     /// Half the part's `Size`, which is how far each face stands off the
     /// centre along its own axis.
     half: Vec3,
+    /// Where on its face each ball stands, in the box's own axes: the
+    /// summoned point's offset from the centre (see [`Faces::summoned`]),
+    /// zero for the middle of every face.
+    lateral: Vec3,
     pose: Pose,
     orthographic: bool,
 }
@@ -71,9 +75,44 @@ impl Faces {
                     linear.y_axis.length(),
                     linear.z_axis.length(),
                 ),
+            lateral: Vec3::ZERO,
             pose,
             orthographic,
         }
+    }
+
+    /// The same balls, summoned towards `point` by `Tab` — or left on the
+    /// middle of each face for `None`.
+    ///
+    /// Studio's handle summoning brings Move's and Rotate's handles to the
+    /// cursor outright, but Roblox's own announcement ("Pivot Points - Studio
+    /// Beta Update: Handle Summoning", DevForum topic 1335668) gives Scale "a
+    /// tweaked behavior where summoning keeps them within the bounds of [the]
+    /// selected object". It says no more than that, so this is this editor's
+    /// reading of it: the point is clamped into the box, and each ball slides
+    /// across its own face to sit level with it. Every ball stays on the face
+    /// it resizes — dragging it still moves exactly that face — and the one
+    /// on the face under the cursor lands right where the cursor is.
+    pub fn summoned(mut self, point: Option<Vec3>) -> Self {
+        if let Some(point) = point {
+            let offset = point - self.centre;
+            self.lateral = Vec3::from(Axis::ALL.map(|axis| {
+                let half = self.half[axis as usize];
+                offset.dot(self.direction(axis)).clamp(-half, half)
+            }));
+        }
+        self
+    }
+
+    /// How far summoning slid `axis`'s two balls across their faces, in
+    /// world space — the offset between the line a ball now stands on and
+    /// the line through the box's centre a drag on it is measured along.
+    pub fn slide(&self, axis: Axis) -> Vec3 {
+        Axis::ALL
+            .into_iter()
+            .filter(|&other| other != axis)
+            .map(|other| self.direction(other) * self.lateral[other as usize])
+            .sum()
     }
 
     pub fn centre(&self) -> Vec3 {
@@ -96,7 +135,7 @@ impl Faces {
     /// `axis`, `+1` for the one the axis points through and `-1` for the one
     /// opposite it.
     pub fn handle(&self, axis: Axis, sign: f32) -> Vec3 {
-        self.centre + self.direction(axis) * (self.half[axis as usize] * sign)
+        self.centre + self.direction(axis) * (self.half[axis as usize] * sign) + self.slide(axis)
     }
 
     /// How big that ball is drawn, in studs — taken at the ball's own distance

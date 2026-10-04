@@ -211,6 +211,7 @@ fn main() {
         theme::startup(&theme, &overrides, cx);
         scale::install(cx);
         shell::install_key_bindings(cx);
+        workspace_view::install_key_bindings(cx);
         menu_bar::install_key_bindings(cx);
 
         cx.spawn(async move |cx| {

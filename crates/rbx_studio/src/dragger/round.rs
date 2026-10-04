@@ -177,7 +177,9 @@ pub(crate) fn landed(
     soft: bool,
     scale: impl Fn(Vec3) -> f32,
 ) -> Option<Guides> {
-    let (solid, model) = frame.part?;
+    let (solid, model) = frame
+        .part
+        .filter(|(solid, _)| matches!(solid, Solid::Ball | Solid::Cylinder))?;
     let (rotation, centre, size) = placement(model)?;
     let part = Part {
         rotation,

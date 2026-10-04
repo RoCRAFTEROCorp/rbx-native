@@ -32,6 +32,19 @@
   "provides combined move, scale, and rotate handles in a single gizmo".
   `5` picks it, continuing Move/Scale/Rotate's own `2`/`3`/`4`, including
   on AZERTY keyboards. — @chteau
+- **Hold `Tab` to summon the gizmo's handles to the cursor.** Studio's
+  handle summoning, as Roblox's own DevForum announcement describes it:
+  the active tool's handles come to the point under the cursor and go
+  home when `Tab` is let go. Rotate turns about the summoned point, snapped
+  onto a face's edge or vertex within Studio's published 16 pixels and
+  marked in magenta (Roblox describes the snap for Rotate only, so Move
+  and Scale don't snap; Transform does, for its rings), and Scale's balls stay
+  within the selection's bounds. Move and Transform also gained a small
+  grey ball at the gizmo's origin that drags the selection like grabbing
+  its body, so summoned handles far from the part can still carry it.
+  F3X's `Shift`+`X`/`Shift`+`C` snap chord and `H` help overlay were
+  looked at and deliberately not adopted: they are a plugin's
+  conventions, not native Studio's. — @chteau
 - **Dragging a multi-selection from any of its Explorer rows.** Pressing a
   selected row other than the selection's anchor used to narrow the
   selection to that row before the drag could start, so only the anchor

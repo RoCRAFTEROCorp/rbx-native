@@ -445,6 +445,42 @@ Roblox's own engine.
   shape-conformance spec published: this is not a claim of parity with
   it, and the code says so — it is the same answer this renderer already
   gives for the one outline effect that *is* specified as a silhouette.
+- [x] **Gizmo papercuts and third-party-tool parity requests**, from
+  real use of the Move/Scale/Rotate gizmos above. Checked against
+  `Roblox/creator-docs` (`parts.md`'s Transform Parts section), Roblox's
+  own DevForum announcements and, where noted, **Building Tools by F3X** —
+  a widely-used third-party Studio plugin, not native Studio:
+  - **`Tab` summons the gizmo's handles to the cursor**, as Roblox's
+    "Pivot Points - Studio Beta Update: Handle Summoning" post describes
+    it: holding `Tab` brings the active tool's handles (Move, Scale,
+    Rotate, and Transform's all three) to the point under the cursor, and
+    releasing it sends them home. Rotate turns the selection about the
+    summoned point, snapped onto a face's edge or vertex when the cursor is
+    within 16 pixels of one and marked with a magenta dot — the threshold
+    and indicator Roblox staff gave in that topic (replies #9 and #14),
+    which also describe the snap for Rotate only ("it doesn't matter
+    precisely where the handles are summoned to for Move"), so Move and
+    Scale don't snap; Transform does, carrying Rotate's rings. The marker's
+    size isn't published. Scale's balls stay "within the bounds of [the]
+    selected object", which the post leaves unspecified beyond that and is
+    read here as each ball sliding across its own face towards the cursor
+    (`rbx_viewer::gizmo::Faces::summoned`). Handles are placed once, at
+    the press, rather than chasing the cursor while `Tab` is held. `Tab`
+    still moves keyboard focus whenever there is nothing to summon
+    (`workspace_view::summon`).
+  - **A small free-drag ball at the Move gizmo's own origin** (Move and
+    Transform): grabbing it is the same drag-and-settle gesture as
+    grabbing a selected part's body, held from the gizmo's origin instead
+    — so a summoned Move gizmo far from the part still carries it freely.
+    This editor's own addition; Studio's Move gizmo has none.
+  - **Not adopted: F3X's `Shift`+`X`/`Shift`+`C` snap-toggle chord and its
+    `H` hotkey-help overlay.** Both are F3X conventions with no
+    `creator-docs` counterpart in native Studio, whose own documented
+    snapping shortcut is holding `Shift` to suspend snapping mid-drag
+    (already implemented, `transform::Snap::active`); F3X's `C` binding is
+    also documented to clash with Studio's native `C` (Toggle Comment
+    Cursor). Left out as native defaults on purpose rather than as an
+    open item.
 
 ### Editor (`rbx_studio`, binary `rbxstudio`)
 - [x] Explorer: this project's own flat, from-scratch class icon kit
@@ -1793,31 +1829,6 @@ Roblox's own engine.
   above existing first regardless of which direction it takes.
 
 ### Renderer
-- [ ] 📋 **Gizmo papercuts and third-party-tool parity requests**, from
-  real use of the Move/Scale/Rotate gizmos above. Checked against
-  `Roblox/creator-docs` (`parts.md`'s Transform Parts section) and, where
-  noted, **Building Tools by F3X** — a widely-used third-party Studio
-  plugin, not native Studio — since some of what was asked for turns out
-  to be F3X's own convention rather than something Studio itself does:
-  - **`Tab` to "summon" the gizmo's handles to the cursor** — this one
-    *is* real, current native Studio behavior (2021 "Pivot Points" beta
-    update): holding `Tab` moves the active tool's handles to the cursor's
-    location, including Scale's, which stay "within the bounds of [the]
-    selected object" rather than sitting on its actual surface. Worth
-    implementing as described in Roblox's own DevForum announcement, not
-    guessed at.
-  - **A small free-drag handle at the gizmo's own origin**, independent of
-    clicking the part's body directly — useful in particular once
-    `Tab`-summoning (above) can put the handles somewhere that isn't
-    sitting on the part's own mesh anymore. Functionally close to what
-    Move's existing cursor-drag-and-settle already does (see "What's been
-    implemented" → Editor) when clicking the part's body directly; this
-    would be the same gesture from a fixed point on the gizmo instead.
-  - The requested `Shift+X`/`Shift+C` snap-toggle chord and the `H`
-    hotkey-help overlay are also F3X conventions, not native Studio's
-    (F3X's own `C` rotate-tool binding is documented to conflict with
-    Studio's native `C` = Toggle Comment Cursor) — worth checking against
-    a real Studio instance before adopting either verbatim.
 - [ ] 📋 **Pivot tools**, matching Studio's real Model-tab **Edit Pivot**/
   **Reset** tools (checked against `studio/pivot-tools.md`). Today's
   transform gizmos (see "What's been implemented" → Editor) move/rotate/

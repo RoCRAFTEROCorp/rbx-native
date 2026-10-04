@@ -192,3 +192,63 @@ fn every_face_is_listed_once() {
         assert!(all.contains(&(axis, -1.0)));
     }
 }
+
+/// Summoned onto a point on the box's own +Y face, the +Y ball comes to
+/// exactly that point and every other ball slides level with it on its own
+/// face — none leaves the box.
+#[test]
+fn summoned_balls_slide_across_their_faces_to_the_point() {
+    let faces = Faces::new(
+        part(Vec3::ZERO, Vec3::new(4.0, 2.0, 6.0)),
+        pose(Vec3::splat(40.0)),
+        false,
+    );
+    let point = Vec3::new(1.5, 1.0, -2.0);
+    let summoned = faces.summoned(Some(point));
+
+    assert!(summoned.handle(Axis::Y, 1.0).abs_diff_eq(point, 1e-5));
+    assert!(summoned
+        .handle(Axis::X, 1.0)
+        .abs_diff_eq(Vec3::new(2.0, 1.0, -2.0), 1e-5));
+    assert!(summoned
+        .handle(Axis::Z, -1.0)
+        .abs_diff_eq(Vec3::new(1.5, 1.0, -3.0), 1e-5));
+    assert!(summoned
+        .slide(Axis::Y)
+        .abs_diff_eq(Vec3::new(1.5, 0.0, -2.0), 1e-5));
+}
+
+/// A point outside the box — the cursor over some other part, or over the
+/// sky — is clamped into it first: Studio keeps summoned Scale handles
+/// "within the bounds of [the] selected object".
+#[test]
+fn a_summon_point_outside_the_box_is_held_to_its_bounds() {
+    let faces = Faces::new(
+        part(Vec3::new(10.0, 0.0, 0.0), Vec3::new(4.0, 2.0, 6.0)),
+        pose(Vec3::splat(40.0)),
+        false,
+    )
+    .summoned(Some(Vec3::new(100.0, -50.0, 1.0)));
+
+    for (axis, sign) in faces.all() {
+        let ball = faces.handle(axis, sign);
+        assert!((8.0 - 1e-5..=12.0 + 1e-5).contains(&ball.x), "{ball}");
+        assert!((-1.0 - 1e-5..=1.0 + 1e-5).contains(&ball.y), "{ball}");
+        assert!((-3.0 - 1e-5..=3.0 + 1e-5).contains(&ball.z), "{ball}");
+    }
+    assert!(faces
+        .handle(Axis::Z, 1.0)
+        .abs_diff_eq(Vec3::new(12.0, -1.0, 3.0), 1e-5));
+}
+
+/// Not summoned, every ball stays on the middle of its face.
+#[test]
+fn no_summon_leaves_every_ball_on_the_middle_of_its_face() {
+    let faces = Faces::new(
+        part(Vec3::ZERO, Vec3::new(4.0, 2.0, 6.0)),
+        pose(Vec3::splat(40.0)),
+        false,
+    );
+    assert_eq!(faces.summoned(None), faces);
+    assert_eq!(faces.handle(Axis::X, -1.0), Vec3::new(-2.0, 0.0, 0.0));
+}

@@ -211,6 +211,7 @@ impl Transform {
             kind,
             local: self.local,
             held: None,
+            summon: None,
         })
     }
 

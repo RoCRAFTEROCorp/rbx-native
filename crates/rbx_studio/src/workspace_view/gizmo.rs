@@ -219,8 +219,9 @@ impl WorkspaceView {
         // the same way (see `renderer::Renderer::handles`), both from
         // `gizmo::centre_of`, so what can be grabbed is what is drawn. The
         // *basis* always comes from the anchor — a selection has no
-        // aggregate rotation to take.
-        let origin = self.targets.centre()?;
+        // aggregate rotation to take. Summoned with `Tab`, they stand
+        // wherever the cursor put them instead (see `super::summon`).
+        let origin = self.summoned().or_else(|| self.targets.centre())?;
         Some(Handles::new(
             origin,
             gizmo::basis(self.transform.local.then(|| anchor.rotation())),
@@ -235,11 +236,10 @@ impl WorkspaceView {
     /// `rbx_viewer::renderer::Renderer::handles`), so what can be grabbed is
     /// what is on screen.
     pub(super) fn faces(&self) -> Option<Faces> {
-        Some(Faces::new(
-            self.targets.scale_box()?,
-            self.view?,
-            self.orthographic,
-        ))
+        Some(
+            Faces::new(self.targets.scale_box()?, self.view?, self.orthographic)
+                .summoned(self.summoned()),
+        )
     }
 
     /// The left button going down: grab a handle, grab the selected part, or
@@ -251,7 +251,10 @@ impl WorkspaceView {
         scale: f32,
         cx: &mut gpui_kit::Context<Self>,
     ) {
-        self.drag = None;
+        // A drag whose release never arrived is over now.
+        if self.drop_drag().is_some() {
+            self.show_gizmo(self.transform.gizmo());
+        }
         self.pending_grab = None;
         // Any press in the view takes Studio's measurement box down.
         self.close_measure();
@@ -267,16 +270,18 @@ impl WorkspaceView {
 
         let cycling = modifiers.alt;
         let extend = extends_selection(modifiers);
+        self.measure_from_part();
         if self.transform.drags() {
             // A handle is the gizmo's own, drawn over everything: grabbing
             // one needs no second opinion.
             if let Some(drag) = self.grab_handle(ray, modifiers.alt) {
+                let drag = self.measure_from_handle(drag, ray);
                 self.begin(drag, cx);
                 self.hold_handle(ray);
                 // Studio's handle drag shows its guides from the press on —
                 // the label reading 0 — not from the first step that moves.
                 self.grab_guides(drag, ray);
-                self.step_guides(drag, ray, modifiers.shift, scale);
+                self.step_guides(drag, self.measured(ray), modifiers.shift, scale);
                 return;
             }
             // A selected part's body is only a *candidate*: the view knows
@@ -286,6 +291,13 @@ impl WorkspaceView {
             // never with `Alt` or an extend modifier, which ask to change
             // the selection, not to move it.
             if !cycling && !extend {
+                // The free-drag ball is a body grab too, so it yields to
+                // the same modifiers — and to any handle: an arrow pointing
+                // nearly at the camera is drawn right over it.
+                if let Some(drag) = self.grab_origin(ray) {
+                    self.begin(drag, cx);
+                    return;
+                }
                 self.pending_grab = self.grab_body(ray, None).map(|_| ray);
             }
         }
@@ -372,7 +384,7 @@ impl WorkspaceView {
                 held: Some(End::of(end)),
                 ..gizmo
             });
-            self.pump.gizmo(held);
+            self.show_gizmo(held);
         }
     }
 
@@ -478,10 +490,9 @@ impl WorkspaceView {
         // actually pointing; where the drag is measured *from* is the anchor's
         // own position, because `Change::Position` is the anchor's new place
         // and every other selected part follows it by the same offset (see
-        // `transform::Targets::translate`). The two differ by a constant once
-        // more than one part is selected, and a drag only ever reads the
-        // difference between two samples, so the travel is identical either
-        // way — but the position built from it has to start where the part is.
+        // `transform::Targets::translate`). The two stand apart once more than
+        // one part is selected or the handles are summoned, which
+        // `WorkspaceView::measure_from_handle` makes up for.
         let origin = self.targets.anchor()?.position();
         Some(Drag::Axis {
             origin,
@@ -520,6 +531,7 @@ impl WorkspaceView {
         let (Some(drag), Some(ray)) = (self.drag, self.cursor_ray(position, scale)) else {
             return;
         };
+        let ray = self.measured(ray);
         let Some(anchor) = self.targets.anchor() else {
             return;
         };
@@ -558,6 +570,7 @@ impl WorkspaceView {
                 // gesture, and the DOM's answer only comes back through
                 // `set_targets` once `Shell` has applied it.
                 let moves = self.targets.translate(position - anchor.position());
+                self.follow_summon();
                 let settle = match drag {
                     Drag::Plane { offset, .. } => {
                         // A free drag has no Studio label; this editor's own
@@ -674,6 +687,7 @@ impl WorkspaceView {
         }
         if let Some(settled) = settled {
             self.targets = self.held.carried(settled.carry);
+            self.follow_summon();
         }
         self.landed(settled);
         if let (Some((_, text)), Some(now), Some(start)) = (
@@ -727,12 +741,8 @@ impl WorkspaceView {
         }
         self.step_drag(window, cx);
         if let Some(drag) = self.drop_drag() {
-            if matches!(
-                drag,
-                Drag::Axis { .. } | Drag::Size { .. } | Drag::Box { .. }
-            ) {
-                self.pump.gizmo(self.transform.gizmo());
-            }
+            // Every handle back on, wherever the handles now stand.
+            self.show_gizmo(self.transform.gizmo());
             let arrow = self.guides.arrow;
             self.clear_guides();
             self.rehover();
