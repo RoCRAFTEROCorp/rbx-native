@@ -6,9 +6,9 @@
 //! The endpoint needs both the universe and the place id. Only the place id
 //! is asked for — a bare id or any link `rbx_cloud::place_id_from_link`
 //! reads — and the universe is looked up from it, anonymously. The pair is
-//! remembered as the file's entry in Recent (`home::RecentPlace`), which is
-//! where a place opened from Home already carries its ids, so a place
-//! downloaded from Roblox publishes back without being asked at all.
+//! remembered as the file's link (`home::Link`, recorded through
+//! `home::remember` like a place opened from Home), so a place downloaded
+//! from Roblox publishes back without being asked at all.
 //!
 //! Every outcome is a row in the Output dock and the Command Bar's label,
 //! like a local save; a failure also opens a dialog with Roblox's answer,
@@ -121,7 +121,7 @@ impl Shell {
     /// The two File menu commands. An unlinked file asks for its place
     /// first and then carries on with `mode`.
     pub(crate) fn upload_to_roblox(&mut self, mode: PublishMode, cx: &mut Context<Self>) {
-        match linked_target(&home::recent(), &self.path) {
+        match linked_target(&self.path) {
             Some(target) => self.start_upload(target, mode, cx),
             None => self.open_roblox_link(Some(mode), cx),
         }
@@ -130,7 +130,7 @@ impl Shell {
     /// File › Link to Roblox Place…, and the first step of an unlinked
     /// upload.
     pub(crate) fn open_roblox_link(&mut self, then: Option<PublishMode>, cx: &mut Context<Self>) {
-        let current = linked_target(&home::recent(), &self.path);
+        let current = linked_target(&self.path);
         self.roblox.prefill = Some(current.map_or(String::new(), |t| t.place_id.to_string()));
         self.roblox.dialog = Some(Dialog::Link {
             then,
@@ -192,11 +192,17 @@ impl Shell {
 
     /// Lands lookup `token`: stores the link and runs the upload it was
     /// opened for, unless the dialog it belonged to is gone.
-    fn finish_lookup(&mut self, token: u64, found: Result<Target, String>, cx: &mut Context<Self>) {
-        let Some((target, then)) = lookup_finished(&mut self.roblox.dialog, token, found) else {
+    fn finish_lookup(
+        &mut self,
+        token: u64,
+        found: Result<(Target, Option<String>), String>,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(((target, name), then)) = lookup_finished(&mut self.roblox.dialog, token, found)
+        else {
             return;
         };
-        if let Err(message) = link(&self.path, target) {
+        if let Err(message) = link(&self.path, target, name) {
             self.roblox.dialog = Some(Dialog::Link {
                 then,
                 error: Some(message),
@@ -237,9 +243,13 @@ impl Shell {
         let bytes = match self.format.encode(&self.dom) {
             Ok(bytes) => bytes,
             Err(message) => {
-                return self.finish_upload(target, mode, Err(Failure::before_sending(message)), cx)
+                let failed = Err(Failure::before_sending(message));
+                return self.finish_upload(target, mode, failed, None, cx);
             }
         };
+        // Checked on the tree that was encoded: edits made while a slow
+        // upload runs aren't in it.
+        let warning = not_updated(&self.dom);
         self.roblox.busy = true;
         self.command_bar.set_feedback(Feedback::Output(format!(
             "{} place {}\u{2026}",
@@ -252,7 +262,7 @@ impl Shell {
                 .background_spawn(async move { upload(target, &bytes, mode) })
                 .await;
             let _ = this.update(cx, |shell, cx| {
-                shell.finish_upload(target, mode, result, cx)
+                shell.finish_upload(target, mode, result, warning, cx)
             });
         })
         .detach();
@@ -263,13 +273,14 @@ impl Shell {
         target: Target,
         mode: PublishMode,
         result: Result<u64, Failure>,
+        warning: Option<String>,
         cx: &mut Context<Self>,
     ) {
         self.roblox.busy = false;
         let feedback = outcome(target, mode, &result);
         self.output.push(SOURCE, feedback.clone());
         self.command_bar.set_feedback(feedback);
-        if let Some(warning) = result.as_ref().ok().and_then(|_| not_updated(&self.dom)) {
+        if let Some(warning) = warning.filter(|_| result.is_ok()) {
             self.output.push(SOURCE, Feedback::Warning(warning));
         }
         if let Err(failure) = result {
@@ -288,11 +299,11 @@ impl Shell {
 /// hands back the place to link and the upload to run. A stale one — the
 /// dialog was cancelled, or reopened and confirmed again — changes nothing,
 /// so a cancelled "Link and publish" never links nor publishes.
-fn lookup_finished(
+fn lookup_finished<T>(
     dialog: &mut Option<Dialog>,
     token: u64,
-    found: Result<Target, String>,
-) -> Option<(Target, Option<PublishMode>)> {
+    found: Result<T, String>,
+) -> Option<(T, Option<PublishMode>)> {
     let Some(Dialog::Link {
         then,
         error,
@@ -380,30 +391,20 @@ fn outcome(target: Target, mode: PublishMode, result: &Result<u64, Failure>) -> 
     }
 }
 
-/// The file's entry in Recent, when it carries both ids. Paths are compared
-/// canonicalized: the editor records its file that way, Home records the
-/// download path as it built it.
-fn linked_target(recent: &[RecentPlace], path: &Path) -> Option<Target> {
-    let path = std::fs::canonicalize(path).unwrap_or(path.to_path_buf());
-    recent
-        .iter()
-        .find(|place| std::fs::canonicalize(&place.path).unwrap_or(place.path.clone()) == path)
-        .and_then(|place| {
-            Some(Target {
-                universe_id: place.universe_id?,
-                place_id: place.place_id?,
-            })
-        })
+fn linked_target(path: &Path) -> Option<Target> {
+    home::link_of(path).map(|link| Target {
+        universe_id: link.universe_id,
+        place_id: link.place_id,
+    })
 }
 
-/// ponytail: the link lives in Recent, which keeps 20 files; a file that
-/// falls off it is asked for its place again. Its own map if that bites.
-fn link(path: &Path, target: Target) -> Result<(), String> {
+/// Stores the link, and moves the file to the top of Recent with it.
+fn link(path: &Path, target: Target, name: Option<String>) -> Result<(), String> {
     home::remember(RecentPlace {
         path: std::fs::canonicalize(path).unwrap_or(path.to_path_buf()),
         universe_id: Some(target.universe_id),
         place_id: Some(target.place_id),
-        name: None,
+        name,
         opened: None,
     })
     .map_err(|err| format!("the link couldn\u{2019}t be saved: {err}"))
@@ -425,19 +426,28 @@ fn mocked(which: &str) -> Result<u64, CloudError> {
     }
 }
 
-/// Blocking: the place's universe, anonymously.
-fn resolve_target(place_id: u64) -> Result<Target, String> {
+/// Blocking: the place's universe, anonymously, and its experience's name
+/// for Recent's pill. The name needs the key to reach the universe; without
+/// it the link is made all the same, unnamed.
+fn resolve_target(place_id: u64) -> Result<(Target, Option<String>), String> {
     if mock().is_some() {
-        return Ok(Target {
+        let target = Target {
             universe_id: 1,
             place_id,
-        });
+        };
+        return Ok((target, Some("Mock Experience".to_string())));
     }
     match Client::new(None).universe_of_place(place_id) {
-        Ok(Some(universe_id)) => Ok(Target {
-            universe_id,
-            place_id,
-        }),
+        Ok(Some(universe_id)) => {
+            let name = ApiKey::from_env_or_config()
+                .and_then(|key| Client::new(Some(key)).universe(universe_id).ok())
+                .map(|universe| universe.display_name);
+            let target = Target {
+                universe_id,
+                place_id,
+            };
+            Ok((target, name))
+        }
         Ok(None) => Err(format!("No place with ID {place_id}.")),
         Err(err) => Err(describe(&err)),
     }

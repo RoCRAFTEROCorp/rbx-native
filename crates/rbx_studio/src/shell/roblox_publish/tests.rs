@@ -1,47 +1,15 @@
-use std::path::{Path, PathBuf};
-
 use rbx_cloud::{CloudError, PublishMode};
 
 use super::{
-    describe, linked_target, lookup_finished, mocked, not_updated, outcome, refused, upload_with,
-    Dialog, Failure, Target,
+    describe, lookup_finished, mocked, not_updated, outcome, refused, upload_with, Dialog, Failure,
+    Target,
 };
 use crate::command_bar::Feedback;
-use crate::home::RecentPlace;
 
 const TARGET: Target = Target {
     universe_id: 6053515322,
     place_id: 17675488706,
 };
-
-fn recent(path: &str, universe_id: Option<u64>, place_id: Option<u64>) -> RecentPlace {
-    RecentPlace {
-        path: PathBuf::from(path),
-        universe_id,
-        place_id,
-        name: None,
-        opened: None,
-    }
-}
-
-#[test]
-fn a_file_is_linked_only_when_its_recent_entry_has_both_ids() {
-    let list = [
-        recent("/places/a.rbxl", Some(1), Some(2)),
-        recent("/places/b.rbxl", None, None),
-        recent("/places/c.rbxl", None, Some(5)),
-    ];
-    assert_eq!(
-        linked_target(&list, Path::new("/places/a.rbxl")),
-        Some(Target {
-            universe_id: 1,
-            place_id: 2
-        })
-    );
-    assert_eq!(linked_target(&list, Path::new("/places/b.rbxl")), None);
-    assert_eq!(linked_target(&list, Path::new("/places/c.rbxl")), None);
-    assert_eq!(linked_target(&list, Path::new("/places/d.rbxl")), None);
-}
 
 #[test]
 fn save_and_publish_reach_the_client_with_their_own_mode_and_the_linked_ids() {
@@ -164,7 +132,7 @@ fn only_the_lookup_the_reopened_dialog_waits_on_links_and_publishes() {
 
     // The first one lands — success or failure — and changes nothing.
     assert!(lookup_finished(&mut dialog, 1, Ok(TARGET)).is_none());
-    assert!(lookup_finished(&mut dialog, 1, Err("boom".to_string())).is_none());
+    assert!(lookup_finished::<Target>(&mut dialog, 1, Err("boom".to_string())).is_none());
     assert_eq!(resolving(&dialog), Some(2));
     assert!(matches!(&dialog, Some(Dialog::Link { error: None, .. })));
 
@@ -182,7 +150,9 @@ fn only_the_lookup_the_reopened_dialog_waits_on_links_and_publishes() {
 fn a_failed_lookup_shows_its_reason_and_lets_the_user_confirm_again() {
     let mut dialog = opened(None);
     confirm(&mut dialog, 3);
-    assert!(lookup_finished(&mut dialog, 3, Err("No place with ID 9.".to_string())).is_none());
+    assert!(
+        lookup_finished::<Target>(&mut dialog, 3, Err("No place with ID 9.".to_string())).is_none()
+    );
     assert!(matches!(
         &dialog,
         Some(Dialog::Link { error: Some(e), resolving: None, .. }) if e == "No place with ID 9."
