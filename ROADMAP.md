@@ -1610,6 +1610,17 @@ Roblox's own engine.
   by a narrow field — went with the panel's rework: hairline seams between
   rows, and a numeric value shown whole on its own row with its components
   behind an expander.
+- [x] **Save/Publish to Roblox from the editor UI.** File › Save to Roblox
+  (`versionType=Saved`) and Publish to Roblox (`versionType=Published`)
+  upload the open place through `rbx_cloud::Client::publish_place` as a new
+  version of its linked place; re-running either is simply the next
+  version. A file opened from Home already carries its universe/place ids;
+  any other file asks once for a place ID or link (File › Link to Roblox
+  Place… changes it), resolves the universe from it, and remembers the pair
+  in its Recent entry. Success and failure are rows in the Output dock, and
+  a failure also opens a dialog with Roblox's documented reason for the
+  status. Browsing and restoring older versions is its own item under
+  "What's planned".
 
 ### Platform
 - [x] Linux (X11) — the daily-driven target.
@@ -1796,25 +1807,12 @@ Roblox's own engine.
   anchor row. The Explorer tree tracks one selected row and already
   behaves this way for a plain click, so this belongs with the fuller
   Explorer editing item above rather than being patched at the drag.
-- [ ] 📋 **Save/Publish to Roblox from the editor UI.** The Open Cloud
-  client side of this already exists and works —
-  `rbx_cloud::Client::publish_place`
-  (`POST /universes/v1/{universe}/places/{place}/versions?versionType=Saved|Published`)
-  already distinguishes **Save** (`versionType=Saved`) from **Publish**
-  (`versionType=Published`), which is exactly the Roblox-side distinction
-  between saving a version and publishing a new live version of an already
-  -published place. What's missing is wiring it into `rbxstudio`'s own
-  File menu: prompting for (or remembering) a universe/place id, offering
-  "Save" vs. "Publish" as separate actions once a place is linked to one,
-  and "publish as a new version" being the natural behaviour once a place
-  already has an associated `placeId` — no new API work, this is an editor
-  -UI task on top of an existing, working client. **Version history**
-  (browsing and restoring an older saved/published version, not just
-  writing a new one) is a separate, real Open Cloud surface —
+- [ ] 📋 **Place version history (browse and restore).** Browsing and
+  restoring an older saved/published version of a place, not just writing
+  a new one (File › Save/Publish to Roblox, above, already does that). A
+  separate Open Cloud surface from the publish endpoint —
   `GET /place-version-history-api/v1/{placeId}/history` and
-  `.../contributors` — distinct from the publish endpoint above and not
-  yet wired into `rbx_cloud` at all; worth treating as its own follow-up
-  rather than assuming the existing client already covers it.
+  `.../contributors` — and not yet wired into `rbx_cloud` at all.
 #### Properties panel — remaining type editors
 - [ ] 📋 **"Freeze"/"Apply" a `MeshPart`'s rotation** — zero out
   `Orientation` while leaving the object's *visual* placement unchanged,
