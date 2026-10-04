@@ -22,6 +22,13 @@
   "provides combined move, scale, and rotate handles in a single gizmo".
   `5` picks it, continuing Move/Scale/Rotate's own `2`/`3`/`4`, including
   on AZERTY keyboards. — @chteau
+- **Dragging a multi-selection from any of its Explorer rows.** Pressing a
+  selected row other than the selection's anchor used to narrow the
+  selection to that row before the drag could start, so only the anchor
+  row carried the whole selection. The narrowing now waits for a release
+  that never became a drag, as in a desktop file manager: press-and-drag
+  on any selected row moves all of them, and a plain click still selects
+  just that row. — @chteau
 
 ## 2026-10-03
 
