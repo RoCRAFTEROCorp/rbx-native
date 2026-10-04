@@ -198,6 +198,7 @@ fn every_tool_but_select_shows_handles_and_drags() {
                 kind,
                 local: false,
                 held: None,
+                summon: None,
             }),
             "{} draws the wrong handles",
             tool.label()

@@ -21,8 +21,10 @@ use crate::pick::Ray;
 use crate::Pose;
 
 mod faces;
+mod origin;
 
 pub use faces::Faces;
+pub(crate) use origin::ORIGIN_RADIUS;
 
 /// The arm length of one dragger as a fraction of the viewport's half-height,
 /// so the gizmo keeps the same size on screen however far away the part is.
@@ -120,7 +122,7 @@ pub enum Kind {
 
 /// What the viewport draws over the selection, and in which frame of
 /// reference.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct Gizmo {
     pub kind: Kind,
     /// The part's own orientation rather than the world's — Studio's
@@ -131,6 +133,10 @@ pub struct Gizmo {
     /// `ExtrudeHandles:_renderDraggingHandles` each build just the one
     /// handle being dragged. `None` draws them all.
     pub held: Option<End>,
+    /// Where `Tab` has summoned the handles to (Studio's "handle summoning",
+    /// see [`Faces::summoned`] for Scale's own reading of it), or `None` to
+    /// draw them at the selection's own pivot.
+    pub summon: Option<Vec3>,
 }
 
 /// One Move arrow or Scale ball: the axis it stands on, and which end of it

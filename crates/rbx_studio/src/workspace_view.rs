@@ -25,6 +25,7 @@ mod quality;
 mod readout;
 mod scroll;
 mod stats;
+mod summon;
 mod sun;
 
 use std::cell::Cell;
@@ -52,6 +53,7 @@ pub(crate) use pump::canvas::Request as CanvasRequest;
 use pump::Pump;
 pub(crate) use scroll::{scrolled, Scroll};
 pub(crate) use stats::requested as stats_requested;
+pub(crate) use summon::install as install_key_bindings;
 
 // How long a speed change stays on screen, matching the standalone viewer's
 // title bar.
@@ -325,6 +327,8 @@ pub(crate) struct WorkspaceView {
     /// Studio's dragger guides: what they show now, and what they keep
     /// between one event and the next (see [`guides`]).
     guides: guides::State,
+    /// `Tab`'s summoned handles — see [`summon`].
+    summon: summon::Summon,
     /// The UI editor's canvas: the request last forwarded, and the last
     /// frame drawn for it — see [`canvas`].
     canvas_request: Option<CanvasRequest>,
@@ -390,6 +394,7 @@ impl WorkspaceView {
         // cursor hidden with no way to bring it back.
         let blur = cx.on_blur(&focus, window, |view, _, _| {
             view.end_look();
+            view.release_summon();
         });
         // Alt-tabbing away never blurs the focus handle, so the window's own
         // activation is watched too — and, since it's the authoritative OS
@@ -399,6 +404,7 @@ impl WorkspaceView {
             let active = window.is_window_active();
             if !active {
                 view.end_look();
+                view.release_summon();
             }
             if view.pacing.set_active(active) {
                 view.retarget_pacing();
@@ -451,6 +457,7 @@ impl WorkspaceView {
             dragged: false,
             drag_readout: None,
             guides: guides::State::default(),
+            summon: summon::Summon::default(),
             canvas_request: None,
             canvas: None,
             _subscriptions: [blur, deactivated],
@@ -721,6 +728,12 @@ impl WorkspaceView {
         // camera forward. Releases are always honoured, so a key pressed
         // plain and released with a modifier already down cannot leave the
         // camera moving on its own.
+        // `Tab` comes down as an action (see `summon::install`); only its
+        // release arrives here.
+        if !pressed && keystroke.key == "tab" {
+            self.release_summon();
+            return;
+        }
         if pressed && chorded(keystroke.modifiers) {
             return;
         }
@@ -739,7 +752,7 @@ impl WorkspaceView {
         self.transform = transform;
         self.drop_drag();
         self.close_measure();
-        self.pump.gizmo(transform.gizmo());
+        self.show_gizmo(transform.gizmo());
         self.refresh_guides();
         self.rehover();
     }
@@ -911,6 +924,8 @@ impl Render for WorkspaceView {
             // handler here.
             .id("workspace-viewport")
             .track_focus(&self.focus)
+            .key_context(summon::CONTEXT)
+            .on_action(cx.listener(Self::summon_handles))
             .relative()
             .size_full()
             .bg(rgb(0x1c1d20))

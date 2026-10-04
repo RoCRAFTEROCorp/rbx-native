@@ -159,6 +159,12 @@ impl WorkspaceView {
         }
     }
 
+    /// Whether the cursor is over the view, and the face it was last over
+    /// there with where it met it — `Shell`'s last hover answer.
+    pub(super) fn cursor_over(&self) -> (bool, Option<(SurfaceFrame, Vec3)>) {
+        (self.guides.inside, self.guides.hover)
+    }
+
     /// The cursor left the view: nothing is hovered until it comes back.
     pub(super) fn left_view(&mut self) {
         self.guides.inside = false;

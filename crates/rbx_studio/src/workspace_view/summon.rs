@@ -1,0 +1,283 @@
+//! Studio's handle summoning, and the free-drag ball at the gizmo's origin.
+//!
+//! Roblox's own announcement ("Pivot Points - Studio Beta Update: Handle
+//! Summoning", DevForum topic 1335668, carried into "Pivot Editor: Full
+//! Release", topic 1403027): "simply **hold the tab key**, and the handles
+//! of the tool you have selected will be **summoned** directly to the
+//! location of your cursor … When you're done, you *release* the tab key,
+//! and the handles will return to their normal location." Read off it:
+//!
+//! - Move's, Scale's and Rotate's handles all summon (Transform's too, being
+//!   the three at once).
+//! - "When summoning the rotate handles, the selection will be rotated
+//!   around the point that you summoned them to" — Rotate's rings turn the
+//!   selection about wherever they stand, so that comes for free.
+//! - "if you place your cursor close to an edge or vertex when summoning,
+//!   the handles will snap to that edge or vertex" — see [`onto_edges`].
+//! - Scale's balls are kept "within the bounds of [the] selected object" —
+//!   see `rbx_viewer::gizmo::Faces::summoned` for how that is read here.
+//!
+//! The announcement does not say whether the handles follow the cursor
+//! while `Tab` stays down. They are placed once, at the press: handles that
+//! kept chasing the cursor could never be reached by it.
+//!
+//! The free-drag ball (`rbx_viewer::gizmo::Handles::grab_origin`) is this
+//! editor's own addition, not Studio's: it is Move's body drag held from the
+//! gizmo's origin, which is what still lets a summoned Move gizmo carry the
+//! selection freely when the part itself is nowhere near the cursor.
+
+use glam::Vec3;
+use gpui_kit::{Context, Window};
+use rbx_viewer::gizmo::{self, Gizmo};
+use rbx_viewer::pick::{self, Ray};
+
+use crate::dragger::surface::{SurfaceFrame, TargetKind};
+use crate::transform::Tool;
+
+use super::gizmo::Drag;
+use super::WorkspaceView;
+
+gpui_kit::actions!(rbx_viewport, [SummonHandles]);
+
+/// The key context the 3D view carries, so its `Tab` out-ranks the window's
+/// own focus-cycling binding (see `shell::roving`) — and hands the key back
+/// to it whenever there are no handles to summon.
+pub(crate) const CONTEXT: &str = "RbxViewport";
+
+/// A binding rather than a key listener for the reason `shell::roving`
+/// gives: GPUI resolves `Tab` to an action before any listener sees it. The
+/// release still arrives as an ordinary key-up (see `WorkspaceView::key`).
+pub(crate) fn install(cx: &mut gpui_kit::App) {
+    cx.bind_keys([gpui_kit::KeyBinding::new(
+        "tab",
+        SummonHandles,
+        Some(CONTEXT),
+    )]);
+}
+
+/// How close to a face's edge or corner the cursor has to be for the
+/// summoned handles to snap onto it, in gizmo arm lengths — so the same
+/// distance on screen however far away the face is. Roblox does not publish
+/// Studio's; this is the Move arrows' own pick radius.
+const EDGE_SNAP: f32 = 0.15;
+
+/// The summoning state the view keeps between events.
+#[derive(Debug, Default, Clone, Copy)]
+pub(super) struct Summon {
+    /// Where the handles were summoned to, or `None` to stand them at the
+    /// selection's own pivot.
+    point: Option<Vec3>,
+    /// Whether `Tab` is down: the handles stay summoned through a drag that
+    /// began with it held, and go home at the end of it if it was let go.
+    tab: bool,
+    /// How far a handle drag's rays are moved before they are measured —
+    /// see [`WorkspaceView::measure_from_handle`].
+    shift: Vec3,
+    /// The gizmo last asked of the renderer, before the summon point is
+    /// filled in.
+    shown: Option<Gizmo>,
+}
+
+impl WorkspaceView {
+    /// `Tab` pressed over the view (and again, repeated, for as long as it
+    /// is held — only the first press places the handles).
+    pub(super) fn summon_handles(
+        &mut self,
+        _: &SummonHandles,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.transform.gizmo().is_none() || self.targets.anchor().is_none() {
+            // Nothing to summon: `Tab` keeps moving the keyboard focus on.
+            cx.propagate();
+            return;
+        }
+        if std::mem::replace(&mut self.summon.tab, true) || self.drag.is_some() {
+            return;
+        }
+        self.summon.point = self.summon_point(window.scale_factor());
+        self.refresh_gizmo();
+        cx.notify();
+    }
+
+    /// `Tab` let go, or the view lost the keyboard: the handles go home,
+    /// once whatever drag is under way has finished.
+    pub(super) fn release_summon(&mut self) {
+        self.summon.tab = false;
+        if self.drag.is_none() && self.summon.point.take().is_some() {
+            self.refresh_gizmo();
+        }
+    }
+
+    /// A drag ending: summoned handles stay where the drag carried them for
+    /// as long as `Tab` is still down.
+    pub(super) fn end_summon(&mut self, summoned: Option<Vec3>) {
+        self.summon.point = summoned.filter(|_| self.summon.tab);
+    }
+
+    /// Where the summoned handles stand right now: a Move carries them with
+    /// the selection, so the arrow or ball in hand stays under the cursor.
+    pub(super) fn summoned(&self) -> Option<Vec3> {
+        let point = self.summon.point?;
+        let carried = match self.drag {
+            Some(Drag::Axis { .. } | Drag::Plane { .. }) => self
+                .targets
+                .anchor()
+                .zip(self.held.anchor())
+                .map_or(Vec3::ZERO, |(now, then)| now.position() - then.position()),
+            _ => Vec3::ZERO,
+        };
+        Some(point + carried)
+    }
+
+    /// Asks the renderer to draw `gizmo`, summoned wherever the handles are.
+    pub(super) fn show_gizmo(&mut self, gizmo: Option<Gizmo>) {
+        self.summon.shown = gizmo;
+        self.refresh_gizmo();
+    }
+
+    /// The last gizmo shown again, summoned to where the handles are now —
+    /// a no-op while nothing is summoned.
+    pub(super) fn refresh_gizmo(&self) {
+        let summon = self.summoned();
+        self.pump
+            .gizmo(self.summon.shown.map(|gizmo| Gizmo { summon, ..gizmo }));
+    }
+
+    /// Re-sends the gizmo while summoned handles are travelling with a drag.
+    pub(super) fn follow_summon(&self) {
+        if self.summon.point.is_some() {
+            self.refresh_gizmo();
+        }
+    }
+
+    /// Where the cursor puts the handles: the point under it on whatever
+    /// part it is over (`Shell`'s last hover answer), snapped onto that
+    /// face's edge or corner when it is close to one; over nothing, the
+    /// point under the cursor level with the selection's centre.
+    fn summon_point(&self, scale: f32) -> Option<Vec3> {
+        let (inside, hover) = self.cursor_over();
+        if !inside {
+            return None;
+        }
+        let pose = self.view?;
+        if let Some((frame, hit)) = hover {
+            let reach = EDGE_SNAP * gizmo::arm_length(hit, pose, self.orthographic);
+            return Some(onto_edges(&frame, hit, reach));
+        }
+        let ray = self.cursor_ray(self.cursor?, scale)?;
+        pick::ray_hits_plane(ray, self.targets.centre()?, -ray.direction)
+    }
+
+    /// The free-drag ball at the gizmo's origin, if `ray` is on it: Move's
+    /// body drag (see `Drag::Plane`), held by the gizmo's origin rather than
+    /// by where a click met the part. Move and Transform only, the two tools
+    /// whose body drag it stands in for.
+    pub(super) fn grab_origin(&self, ray: Ray) -> Option<Drag> {
+        if !matches!(self.transform.tool, Tool::Move | Tool::Transform) {
+            return None;
+        }
+        let handles = self.handles()?;
+        if !handles.grab_origin(ray) {
+            return None;
+        }
+        let point = handles.origin();
+        Some(Drag::Plane {
+            point,
+            normal: -ray.direction,
+            offset: self.targets.anchor()?.position() - point,
+        })
+    }
+
+    /// Re-measures a handle grab along the line the grabbed handle actually
+    /// stands on, and keeps the offset for the rest of the drag.
+    ///
+    /// A drag measures the cursor along a line through the part (`origin`,
+    /// which is also what its new placement is built from), but the handle
+    /// grabbed may stand off that line: a summoned Move arrow at the
+    /// cursor, a summoned Scale ball slid across its face, a group's arrows
+    /// at the group's centre rather than its anchor's. Under perspective,
+    /// where the cursor's ray meets a line depends on which line it is, so
+    /// the rays are moved by the offset between the two lines instead —
+    /// measuring a moved ray against the part's line is measuring the real
+    /// ray against the handle's.
+    pub(super) fn measure_from_handle(&mut self, mut drag: Drag, ray: Ray) -> Drag {
+        self.summon.shift = match drag {
+            Drag::Axis { origin, .. } => self
+                .handles()
+                .map_or(Vec3::ZERO, |handles| origin - handles.origin()),
+            Drag::Size { .. } | Drag::Box { .. } => self
+                .faces()
+                .and_then(|faces| Some(-faces.slide(faces.grab(ray)?.0)))
+                .unwrap_or(Vec3::ZERO),
+            Drag::Plane { .. } | Drag::Ring { .. } | Drag::Sun => Vec3::ZERO,
+        };
+        let ray = self.measured(ray);
+        if let Drag::Axis {
+            origin,
+            axis,
+            grabbed,
+        }
+        | Drag::Size {
+            origin,
+            axis,
+            grabbed,
+            ..
+        }
+        | Drag::Box {
+            origin,
+            axis,
+            grabbed,
+            ..
+        } = &mut drag
+        {
+            if let Some(along) = gizmo::along_axis(*origin, *axis, ray) {
+                *grabbed = along;
+            }
+        }
+        drag
+    }
+
+    /// A press that grabs no handle: nothing for later rays to be moved by.
+    pub(super) fn measure_from_part(&mut self) {
+        self.summon.shift = Vec3::ZERO;
+    }
+
+    /// `ray` moved by the drag's offset (see
+    /// [`WorkspaceView::measure_from_handle`]).
+    pub(super) fn measured(&self, ray: Ray) -> Ray {
+        Ray {
+            origin: ray.origin + self.summon.shift,
+            ..ray
+        }
+    }
+}
+
+/// `hit` on `frame`'s face, moved onto the face's edge or corner when it is
+/// within `reach` of one — Studio's summoned handles "snap to that edge or
+/// vertex". Only a flat face has edges and corners to snap to; a point on a
+/// ball's or a cylinder's curve stays where it is.
+///
+/// The frame is cornered on the face corner nearest the hit, with `x` and
+/// `z` along its two edges from there (see [`SurfaceFrame`]); either may
+/// point out of the face, which the sign of the hit's own coordinate gives
+/// away, so the far edge is at that sign times the face's size.
+pub(super) fn onto_edges(frame: &SurfaceFrame, hit: Vec3, reach: f32) -> Vec3 {
+    if frame.kind != TargetKind::Polygon {
+        return hit;
+    }
+    let mut local = frame.local(hit);
+    for (value, size) in [(&mut local.x, frame.size.x), (&mut local.z, frame.size.y)] {
+        let far = size.copysign(*value);
+        if value.abs() <= reach {
+            *value = 0.0;
+        } else if (*value - far).abs() <= reach {
+            *value = far;
+        }
+    }
+    frame.world(local)
+}
+
+#[cfg(test)]
+#[path = "summon/tests.rs"]
+mod tests;

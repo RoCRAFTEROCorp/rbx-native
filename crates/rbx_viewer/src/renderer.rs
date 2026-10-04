@@ -504,7 +504,9 @@ impl Renderer {
         // there is no origin or arm to pick for them at all.
         if gizmo.kind == Kind::Scale {
             let scaled = self.selection.scale_box().unwrap_or(model);
-            return Some(Shape::Scale(Faces::new(scaled, pose, orthographic)));
+            return Some(Shape::Scale(
+                Faces::new(scaled, pose, orthographic).summoned(gizmo.summon),
+            ));
         }
 
         let (anchor, rotation) = (model.w_axis.truncate(), Mat3::from_mat4(model));
@@ -514,7 +516,11 @@ impl Renderer {
         // be first (for one part the two are the same place). The *basis*
         // still comes from the anchor: a selection has no aggregate rotation
         // to take.
-        let origin = self.selection.centre().unwrap_or(anchor);
+        // Summoned with `Tab`, Move's and Rotate's handles stand at the
+        // cursor instead — Rotate's then turning about that point.
+        let origin = gizmo
+            .summon
+            .unwrap_or_else(|| self.selection.centre().unwrap_or(anchor));
         let handles = Handles::new(
             origin,
             basis(gizmo.local.then_some(rotation)),
@@ -524,7 +530,8 @@ impl Renderer {
             Kind::Rotate => Shape::Rotate(handles),
             Kind::Transform => {
                 let scaled = self.selection.scale_box().unwrap_or(model);
-                Shape::Transform(handles, Faces::new(scaled, pose, orthographic))
+                let faces = Faces::new(scaled, pose, orthographic).summoned(gizmo.summon);
+                Shape::Transform(handles, faces)
             }
             // `Kind::Scale` never reaches here — it returned above.
             _ => Shape::Move(handles),

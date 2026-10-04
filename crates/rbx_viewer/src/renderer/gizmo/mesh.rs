@@ -17,8 +17,8 @@ use bytemuck::{Pod, Zeroable};
 use glam::Vec3;
 
 use crate::gizmo::{
-    Axis, End, Faces, Handles, Shape, HEAD_RADIUS, HEAD_START, RING_RADIUS, RING_THICKNESS,
-    SHAFT_RADIUS, SHAFT_START,
+    Axis, End, Faces, Handles, Shape, HEAD_RADIUS, HEAD_START, ORIGIN_RADIUS, RING_RADIUS,
+    RING_THICKNESS, SHAFT_RADIUS, SHAFT_START,
 };
 
 /// How many segments go round a shaft or an arrowhead. Eight already reads as
@@ -58,7 +58,14 @@ const RING_VERTICES: usize = Axis::ALL.len() * RING_SEGMENTS * VERTICES_PER_SLIC
 /// The buffer has to hold whichever tool draws the most, since the tool
 /// changes without the renderer being rebuilt. Transform draws all three at
 /// once, so it alone decides this — the other tools each need less.
-pub(super) const CAPACITY: usize = ARROW_VERTICES + BALL_VERTICES + RING_VERTICES;
+/// The one extra ball is the free-drag handle at the Move gizmo's origin.
+pub(super) const CAPACITY: usize =
+    ARROW_VERTICES + BALL_VERTICES + RING_VERTICES + VERTICES_PER_BALL;
+
+/// The free-drag ball's colour: a light neutral grey, already linearized
+/// (from sRGB `0.92`), so it reads as no axis's own. A colour of this
+/// editor's choosing — the ball is its own addition, not Studio's.
+const ORIGIN_COLOR: [f32; 3] = [0.83, 0.83, 0.83];
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
@@ -88,10 +95,10 @@ impl Vertex {
 pub(super) fn mesh(shape: &Shape, held: Option<End>, eye: Vec3) -> Vec<Vertex> {
     let shown = |axis: Axis, sign: f32| held.is_none_or(|end| end.is(axis, sign));
     match shape {
-        Shape::Move(handles) => arms(handles, eye, arrow, shown),
+        Shape::Move(handles) => arms(handles, eye, arrow, shown, held.is_none()),
         Shape::Scale(faces) => balls(faces, eye, shown),
         Shape::Rotate(handles) => rings(handles, eye),
-        Shape::Transform(handles, faces) => transform(handles, faces, eye, shown),
+        Shape::Transform(handles, faces) => transform(handles, faces, eye, shown, held.is_none()),
     }
 }
 
@@ -101,6 +108,7 @@ enum Piece {
     Arm(Axis, f32),
     Ball(Axis, f32),
     Ring(Axis, usize),
+    Origin,
 }
 
 /// Transform's arms, balls and rings as one triangle list, sorted back to
@@ -119,9 +127,13 @@ fn transform(
     faces: &Faces,
     eye: Vec3,
     shown: impl Fn(Axis, f32) -> bool,
+    origin: bool,
 ) -> Vec<Vertex> {
     let mut pieces: Vec<(f32, Piece)> =
-        Vec::with_capacity(ARMS + ARMS + Axis::ALL.len() * RING_SEGMENTS);
+        Vec::with_capacity(ARMS + ARMS + Axis::ALL.len() * RING_SEGMENTS + 1);
+    if origin {
+        pieces.push(((handles.origin() - eye).length(), Piece::Origin));
+    }
     for axis in Axis::ALL {
         for sign in [1.0f32, -1.0] {
             if shown(axis, sign) {
@@ -143,7 +155,7 @@ fn transform(
     }
     pieces.sort_by(|(a, ..), (b, ..)| b.total_cmp(a));
 
-    let mut vertices = Vec::with_capacity(ARROW_VERTICES + BALL_VERTICES + RING_VERTICES);
+    let mut vertices = Vec::with_capacity(CAPACITY);
     for (_, piece) in pieces {
         match piece {
             Piece::Arm(axis, sign) => arrow(
@@ -160,6 +172,7 @@ fn transform(
                 axis.color(),
             ),
             Piece::Ring(axis, step) => slice(&mut vertices, handles, axis, step),
+            Piece::Origin => origin_ball(&mut vertices, handles),
         }
     }
     vertices
@@ -169,29 +182,39 @@ fn transform(
 /// pointing `direction`, `arm` studs long.
 type Build = fn(&mut Vec<Vertex>, Vec3, Vec3, f32, [f32; 3]);
 
-/// The six arms of one axis gizmo, furthest from `eye` first.
+/// The six arms of one axis gizmo, furthest from `eye` first, with the
+/// free-drag ball at their origin among them when `origin` is set.
 ///
-/// Sorting by arm is enough here: the arms never intersect each other, so a
-/// painter's order over six convex pieces is exact rather than approximate.
+/// Sorting by arm is enough here: the arms never intersect each other or the
+/// ball, so a painter's order over these convex pieces is exact rather than
+/// approximate.
 fn arms(
     handles: &Handles,
     eye: Vec3,
     build: Build,
     shown: impl Fn(Axis, f32) -> bool,
+    origin: bool,
 ) -> Vec<Vertex> {
-    let mut arms: Vec<(f32, Axis, f32)> = Axis::ALL
+    let mut arms: Vec<(f32, Option<(Axis, f32)>)> = Axis::ALL
         .into_iter()
         .flat_map(|axis| [(axis, 1.0f32), (axis, -1.0f32)])
         .filter(|&(axis, sign)| shown(axis, sign))
         .map(|(axis, sign)| {
             let tip = handles.origin() + handles.direction(axis) * handles.arm() * sign;
-            ((tip - eye).length(), axis, sign)
+            ((tip - eye).length(), Some((axis, sign)))
         })
         .collect();
+    if origin {
+        arms.push(((handles.origin() - eye).length(), None));
+    }
     arms.sort_by(|(a, ..), (b, ..)| b.total_cmp(a));
 
-    let mut vertices = Vec::with_capacity(ARROW_VERTICES);
-    for (_, axis, sign) in arms {
+    let mut vertices = Vec::with_capacity(ARROW_VERTICES + VERTICES_PER_BALL);
+    for (_, arm) in arms {
+        let Some((axis, sign)) = arm else {
+            origin_ball(&mut vertices, handles);
+            continue;
+        };
         build(
             &mut vertices,
             handles.origin(),
@@ -232,6 +255,16 @@ fn arrow(vertices: &mut Vec<Vertex>, origin: Vec3, direction: Vec3, arm: f32, co
             push(vertices, point, color);
         }
     }
+}
+
+/// The free-drag ball at the gizmo's origin (see `crate::gizmo::origin`).
+fn origin_ball(vertices: &mut Vec<Vertex>, handles: &Handles) {
+    ball(
+        vertices,
+        handles.origin(),
+        ORIGIN_RADIUS * handles.arm(),
+        ORIGIN_COLOR,
+    );
 }
 
 /// The six Scale balls, furthest from `eye` first.

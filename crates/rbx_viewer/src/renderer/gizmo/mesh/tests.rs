@@ -76,7 +76,7 @@ fn a_gizmo_fits_the_buffer_it_reserved() {
 
 #[test]
 fn the_move_arms_fill_exactly_what_they_reserve() {
-    let vertices = arms(&handles(), Vec3::splat(40.0), arrow, every);
+    let vertices = arms(&handles(), Vec3::splat(40.0), arrow, every, false);
     assert_eq!(vertices.len(), ARROW_VERTICES);
 }
 
@@ -142,7 +142,7 @@ fn every_arrow_is_wound_outwards() {
 
 #[test]
 fn a_whole_gizmo_is_wound_outwards() {
-    assert!(signed_volume(&arms(&handles(), Vec3::splat(40.0), arrow, every)) > 0.0);
+    assert!(signed_volume(&arms(&handles(), Vec3::splat(40.0), arrow, every, false)) > 0.0);
 }
 
 /// A torus is a closed surface, so the same divergence-theorem check that
@@ -229,7 +229,7 @@ fn the_arms_are_painted_back_to_front() {
     // painted first and the one reaching towards it last, so that with the
     // depth test off the near arm still ends up on top.
     let handles = Handles::new(Vec3::ZERO, basis(None), 1.0);
-    let vertices = arms(&handles, Vec3::new(100.0, 0.0, 0.0), arrow, every);
+    let vertices = arms(&handles, Vec3::new(100.0, 0.0, 0.0), arrow, every, false);
 
     let (chunks, _) = vertices.as_chunks::<VERTICES_PER_ARM>();
     let first = chunks.first().expect("six arms");
@@ -303,9 +303,12 @@ fn each_ring_lies_in_the_plane_of_its_own_axis() {
 fn each_arm_carries_its_axis_colour() {
     for shape in shapes() {
         let vertices = mesh(&shape, None, Vec3::splat(40.0));
+        // The free-drag ball's grey is no axis's, and only Move's and
+        // Transform's gizmos carry one.
         let colors: std::collections::HashSet<[u32; 3]> = vertices
             .iter()
             .map(|vertex| vertex.color.map(f32::to_bits))
+            .filter(|&color| color != ORIGIN_COLOR.map(f32::to_bits))
             .collect();
 
         assert_eq!(colors.len(), 3, "{shape:?}: three axes, three colours");
@@ -319,7 +322,7 @@ fn each_arm_carries_its_axis_colour() {
 fn a_local_gizmo_points_along_the_parts_own_axes() {
     let rotation = glam::Mat3::from_rotation_y(std::f32::consts::FRAC_PI_2);
     let handles = Handles::new(Vec3::ZERO, basis(Some(rotation)), 1.0);
-    let vertices = arms(&handles, Vec3::splat(40.0), arrow, every);
+    let vertices = arms(&handles, Vec3::splat(40.0), arrow, every, false);
 
     // The red (X) arrow's tip now stands on world -Z, not world +X.
     let red = Axis::X.color().map(f32::to_bits);
@@ -361,11 +364,14 @@ fn a_local_rotation_ring_stands_in_the_parts_own_plane() {
 #[test]
 fn a_held_handle_is_drawn_alone() {
     let eye = Vec3::splat(40.0);
-    for shape in [Shape::Move(handles()), Shape::Scale(faces())] {
+    for (shape, origin) in [
+        (Shape::Move(handles()), VERTICES_PER_BALL),
+        (Shape::Scale(faces()), 0),
+    ] {
         let all = mesh(&shape, None, eye).len();
         let held = End::of((Axis::X, -1.0));
         let one = mesh(&shape, Some(held), eye);
-        assert_eq!(one.len() * 6, all, "{shape:?}");
+        assert_eq!(one.len() * 6 + origin, all, "{shape:?}");
     }
     // Rotate has no ends to hold; its rings are untouched.
     let rings = mesh(&Shape::Rotate(handles()), None, eye).len();
@@ -433,4 +439,36 @@ fn transform_interleaves_every_kind_by_eye_distance_not_by_kind() {
         (last_depth - ball_depth).abs() < 0.5,
         "the last-painted vertex is {last_depth} studs out, not near the closest ball at {ball_depth}"
     );
+}
+
+/// Move's gizmo carries a small grey ball at its origin — the free-drag
+/// handle — painted between the arms that point away from the eye and the
+/// ones that point towards it, and gone while one arrow is held alone.
+#[test]
+fn the_free_drag_ball_sits_at_the_origin_between_the_far_and_near_arms() {
+    let eye = Vec3::new(40.0, 0.0, 0.0);
+    let origin = Vec3::new(4.0, 1.0, -2.0);
+    let vertices = mesh(&Shape::Move(handles()), None, eye);
+    let grey = ORIGIN_COLOR.map(f32::to_bits);
+    let at: Vec<usize> = (0..vertices.len())
+        .filter(|&index| vertices[index].color.map(f32::to_bits) == grey)
+        .collect();
+    assert_eq!(at.len(), VERTICES_PER_BALL);
+    let reach = ORIGIN_RADIUS * handles().arm() + 1e-4;
+    for &index in &at {
+        assert!((Vec3::from(vertices[index].position) - origin).length() <= reach);
+    }
+    // +X points at this eye, -X away from it: the far arm first, the ball,
+    // then the near one.
+    let red = Axis::X.color().map(f32::to_bits);
+    let reds: Vec<usize> = (0..vertices.len())
+        .filter(|&index| vertices[index].color.map(f32::to_bits) == red)
+        .collect();
+    let (first_red, last_red) = (reds[0], reds[reds.len() - 1]);
+    assert!(first_red < at[0] && at[at.len() - 1] < last_red);
+
+    let held = Some(End::of((Axis::Y, 1.0)));
+    assert!(mesh(&Shape::Move(handles()), held, eye)
+        .iter()
+        .all(|vertex| vertex.color.map(f32::to_bits) != grey));
 }
