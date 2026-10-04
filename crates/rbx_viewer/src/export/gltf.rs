@@ -23,7 +23,12 @@ use base64::Engine as _;
 use glam::{Mat4, Quat, Vec3};
 use serde_json::{json, Value};
 
-use super::{Export, ExportMesh, Finish};
+use super::{Export, ExportMesh};
+use finish::finish;
+
+mod finish;
+
+pub(super) use finish::{FORCE_FIELD_GLOW, FORCE_FIELD_OPACITY, GLASS_IOR};
 
 // glTF's enumerations, from the 2.0 specification.
 const ARRAY_BUFFER: u32 = 34962;
@@ -34,27 +39,6 @@ const TRIANGLES: u32 = 4;
 const LINEAR: u32 = 9729;
 const LINEAR_MIPMAP_LINEAR: u32 = 9987;
 const REPEAT: u32 = 10497;
-
-/// `NEON_HDR` in `renderer/material.wgsl`: how many times its own colour a
-/// Neon surface glows by before the frame is exposed and tone-mapped.
-const NEON_STRENGTH: f32 = 6.0;
-/// A ForceField's look depends on the angle it is seen at, which a material
-/// cannot. `material.wgsl` makes its opacity `alpha * mix(0.4, 2.0, rim)`
-/// and its glow `colour * 2.2 * rim`, with `rim = (1 - |n·v|)²`; over every
-/// angle a closed shell shows an eye (`|n·v|` spread as `2c dc`) the mean
-/// rim is 1/6, so those are the figures here: the shell as a whole, not any
-/// one angle of it.
-const FORCE_FIELD_MEAN_RIM: f32 = 1.0 / 6.0;
-pub(super) const FORCE_FIELD_OPACITY: f32 = 0.4 + (2.0 - 0.4) * FORCE_FIELD_MEAN_RIM;
-pub(super) const FORCE_FIELD_GLOW: f32 = 2.2 * FORCE_FIELD_MEAN_RIM;
-/// Roblox publishes no index of refraction for Glass, and the viewport's
-/// refraction is a screen-space displacement with none either (see
-/// `GLASS_REFRACTION` in `material.wgsl`); 1.5 is window glass, and the
-/// extension's own default.
-pub(super) const GLASS_IOR: f32 = 1.5;
-/// `material.wgsl` keeps Glass "barely rougher than a mirror" when no
-/// roughness map says otherwise.
-const GLASS_ROUGHNESS: f32 = 0.05;
 
 pub fn gltf(export: &Export) -> String {
     let mut out = Buffers::default();
@@ -311,67 +295,8 @@ fn material(
         pbr["metallicFactor"] = json!(1.0);
         pbr["roughnessFactor"] = json!(1.0);
     }
-    finish(&mut material, mesh, used);
+    finish(&mut material, mesh, texture, used);
     material
-}
-
-/// What `material.wgsl` does with the three materials no texture captures,
-/// in the extensions that say the most of it.
-fn finish(material: &mut Value, mesh: &ExportMesh, used: &mut BTreeSet<&'static str>) {
-    let [r, g, b, alpha] = mesh.color;
-    match mesh.finish {
-        Finish::Plain => {}
-        // Unlit: the light it gives is all a Neon surface shows, so it
-        // reflects none (black base) and emits its colour, times its image.
-        Finish::Neon => {
-            let pbr = &mut material["pbrMetallicRoughness"];
-            pbr["baseColorFactor"] = json!([0.0, 0.0, 0.0, alpha]);
-            if let Some(texture) = pbr
-                .as_object_mut()
-                .and_then(|pbr| pbr.remove("baseColorTexture"))
-            {
-                material["emissiveTexture"] = texture;
-            }
-            material["emissiveFactor"] = json!([r, g, b]);
-            emissive_strength(material, NEON_STRENGTH, used);
-        }
-        // See-through by `Transparency` through transmission rather than
-        // blending, which is what lets a viewer refract what is behind it.
-        Finish::Glass => {
-            used.insert("KHR_materials_transmission");
-            used.insert("KHR_materials_ior");
-            material["pbrMetallicRoughness"]["baseColorFactor"] = json!([r, g, b, 1.0]);
-            if mesh.maps.metallic_roughness.is_none() {
-                material["pbrMetallicRoughness"]["roughnessFactor"] = json!(GLASS_ROUGHNESS);
-            }
-            if let Some(material) = material.as_object_mut() {
-                material.remove("alphaMode");
-            }
-            material["extensions"]["KHR_materials_transmission"] =
-                json!({ "transmissionFactor": 1.0 - alpha });
-            material["extensions"]["KHR_materials_ior"] = json!({ "ior": GLASS_IOR });
-        }
-        Finish::ForceField => {
-            material["alphaMode"] = json!("BLEND");
-            material["pbrMetallicRoughness"]["baseColorFactor"] =
-                json!([r, g, b, (alpha * FORCE_FIELD_OPACITY).min(1.0)]);
-            material["emissiveFactor"] = json!([r, g, b]);
-            emissive_strength(material, FORCE_FIELD_GLOW, used);
-        }
-    }
-}
-
-fn emissive_strength(material: &mut Value, strength: f32, used: &mut BTreeSet<&'static str>) {
-    // A black surface emits nothing however strong; the validator flags
-    // the extension on a zero factor as dead weight.
-    let lit = material["emissiveFactor"]
-        .as_array()
-        .is_some_and(|factor| factor.iter().any(|c| c.as_f64() != Some(0.0)));
-    if strength != 1.0 && lit {
-        used.insert("KHR_materials_emissive_strength");
-        material["extensions"]["KHR_materials_emissive_strength"] =
-            json!({ "emissiveStrength": strength });
-    }
 }
 
 fn bounds(positions: &[f32]) -> ([f32; 3], [f32; 3]) {

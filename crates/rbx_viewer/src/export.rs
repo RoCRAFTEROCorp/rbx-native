@@ -125,6 +125,12 @@ pub struct Maps {
     /// The two packed the way glTF's `metallicRoughnessTexture` wants them:
     /// roughness in green, metalness in blue.
     pub metallic_roughness: Option<usize>,
+    /// A ForceField mesh's pattern as `filemesh.wgsl` shows it at the
+    /// start of its cycle: greyscale, white where it shows.
+    pub pattern: Option<usize>,
+    /// The same pattern inverted, in red: how much of the shell is clear
+    /// there, as glTF's transmission texture reads it.
+    pub see_through: Option<usize>,
 }
 
 /// Every drawable part in `roots`' subtrees, each once even where one root
@@ -226,6 +232,9 @@ enum Key {
     /// Metalness and roughness packed (see `surface::pack`), null for a map
     /// the set does not carry.
     Packed(*const Image, *const Image),
+    /// A ForceField's pattern (see `surface::force_field_pattern`),
+    /// inverted or not.
+    Pattern(*const Image, bool),
 }
 
 impl Textures {

@@ -1,12 +1,14 @@
 //! One part as the surfaces it exports: its geometry, as the viewport draws
 //! it, and the look each surface is shaded with.
 
+use std::sync::Arc;
+
 use glam::{Mat4, Vec3};
 use rbx_dom::{Ref, Variant, WeakDom};
 use rbx_reflection::ReflectionDatabase;
 
 use super::{
-    packed, surface, transform_normals, transform_points, ExportMesh, Finish, Maps, Textures,
+    packed, surface, transform_normals, transform_points, ExportMesh, Finish, Key, Maps, Textures,
 };
 use crate::pick::Meshes;
 use crate::scene::{
@@ -164,12 +166,13 @@ impl Look<'_> {
         };
         let has_uvs = !geometry.uvs.is_empty();
         let surface = meshes.surface(self.referent).filter(|_| has_uvs);
+        let image = meshes.texture(self.referent).filter(|_| has_uvs);
         // A ForceField reads its image only for the moving pattern, never
-        // paints it on (`filemesh.wgsl`); the pattern is a moment of an
-        // animation, which a still export leaves out.
-        let image = meshes
-            .texture(self.referent)
-            .filter(|_| has_uvs && finish != Finish::ForceField);
+        // paints it on (`filemesh.wgsl`).
+        let (image, pattern) = match finish {
+            Finish::ForceField => (None, image),
+            _ => (image, None),
+        };
         // Neon and ForceField shade procedurally whatever pack they have.
         let pack = meshes
             .material(self.referent)
@@ -209,6 +212,16 @@ impl Look<'_> {
                         along.normalize_or(glam::Vec3::X).extend(w).to_array()
                     })
                     .collect();
+            }
+        } else if let Some(pattern) = pattern {
+            for clear in [false, true] {
+                let index = textures.add(Key::Pattern(Arc::as_ptr(pattern), clear), || {
+                    surface::png(&surface::force_field_pattern(pattern, clear))
+                });
+                match clear {
+                    false => mesh.maps.pattern = index,
+                    true => mesh.maps.see_through = index,
+                }
             }
         } else if let Some(image) = image {
             mesh.maps.color = textures.of(image);

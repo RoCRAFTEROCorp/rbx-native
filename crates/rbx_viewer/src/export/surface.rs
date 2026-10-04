@@ -132,3 +132,43 @@ pub(super) fn png(image: &Image) -> Option<Vec<u8>> {
     writer.finish().ok()?;
     Some(bytes)
 }
+
+/// `force_field_window(red, 0) * alpha` from `material.wgsl` for every texel
+/// of a ForceField mesh's image: how much of its pattern shows at the start
+/// of the cycle (the moment `--screenshot` renders), as greyscale, or its
+/// complement in red when `clear`. The motion itself is an animation of the
+/// window's centre, which a still material cannot carry.
+pub(super) fn force_field_pattern(image: &Image, clear: bool) -> Image {
+    const WINDOW: f32 = 0.1;
+    let t: f32 = 0.0;
+    let wander = 0.5 * t.sin() + 0.3 * (2.0 * t + 1.7).sin() + 0.2 * (3.0 * t + 4.1).sin();
+    let centre = 0.5 + 0.5 * wander;
+    let half = WINDOW * 0.5;
+    let smoothstep = |edge0: f32, edge1: f32, x: f32| {
+        let t = ((x - edge0) / (edge1 - edge0)).clamp(0.0, 1.0);
+        t * t * (3.0 - 2.0 * t)
+    };
+    let pixels = image
+        .pixels
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .flat_map(|texel| {
+            let red = f32::from(texel[0]) / 255.0;
+            let alpha = f32::from(texel[3]) / 255.0;
+            let shown = (1.0 - smoothstep(half * 0.5, half, (red - centre).abs())) * alpha;
+            let value = if clear { 1.0 - shown } else { shown };
+            let byte = (value.clamp(0.0, 1.0) * 255.0).round() as u8;
+            if clear {
+                [byte, 0, 0, u8::MAX]
+            } else {
+                [byte, byte, byte, u8::MAX]
+            }
+        })
+        .collect();
+    Image {
+        width: image.width,
+        height: image.height,
+        pixels,
+    }
+}

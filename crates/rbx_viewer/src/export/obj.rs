@@ -36,6 +36,7 @@ pub fn obj_files(export: &Export, stem: &str) -> Vec<(String, Vec<u8>)> {
                 m.maps.normal,
                 m.maps.metalness,
                 m.maps.roughness,
+                m.maps.pattern,
             ]
         })
         .flatten()
@@ -121,6 +122,11 @@ pub fn mtl(meshes: &[ExportMesh], stem: &str) -> String {
                     glow(g),
                     glow(b)
                 );
+                // The pattern glows where it shows; OBJ has nothing for
+                // the clear rest.
+                if let Some(texture) = mesh.maps.pattern {
+                    let _ = writeln!(out, "map_Ke {}", texture_file(&stem, texture));
+                }
             }
         }
         // `map_Bump` rather than the PBR extension's `norm`: it is the key
