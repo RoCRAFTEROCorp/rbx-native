@@ -15,6 +15,7 @@ use crate::ctx::Ctx;
 use crate::datatypes::cframe::LuaCFrame;
 use crate::datatypes::misc::LuaBrickColor;
 use crate::datatypes::vector3::LuaVector3;
+use crate::instance::LuaInstance;
 
 fn to_deg(rad: f32) -> f32 {
     rad * 180.0 / PI
@@ -103,6 +104,29 @@ pub(crate) fn get(lua: &Lua, ctx: &Ctx, referent: Ref, name: &str) -> Result<Opt
             LuaBrickColor(BrickColor::nearest(rgb))
                 .into_lua(lua)
                 .map(Some)
+        }
+        // A place file keeps `Terrain` only as a child of the Workspace; the
+        // reflected reference property is filled in by the running engine.
+        "Terrain" => {
+            let dom = ctx.dom();
+            let is_workspace =
+                dom.get(referent).ok_or_else(missing_instance)?.class() == "Workspace";
+            let found = is_workspace
+                .then(|| {
+                    dom.get(referent)?
+                        .children()
+                        .iter()
+                        .copied()
+                        .find(|child| dom.get(*child).is_some_and(|i| i.class() == "Terrain"))
+                })
+                .flatten();
+            drop(dom);
+            match found {
+                Some(terrain) => LuaInstance::new(terrain, ctx.clone())
+                    .into_lua(lua)
+                    .map(Some),
+                None => Ok(None),
+            }
         }
         _ => Ok(None),
     }
