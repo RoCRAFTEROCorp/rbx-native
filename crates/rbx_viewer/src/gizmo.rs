@@ -418,6 +418,15 @@ pub fn bounds_of(models: impl IntoIterator<Item = Mat4>) -> Option<(Vec3, Vec3)>
     bounds
 }
 
+/// The rotation Move's and Rotate's handles take, or `None` for the
+/// world's: the pivot's own while `editing` it (Edit Pivot), and with local
+/// space on the pivot's too when there is one — Studio orients local handles
+/// by the pivot — else the `anchor` part's. Shared by the renderer and the
+/// editor's hit test, so the handles drawn and grabbed agree.
+pub fn handle_axes(editing: bool, local: bool, pivot: Option<Mat4>, anchor: Mat3) -> Option<Mat3> {
+    (editing || local).then(|| pivot.map_or(anchor, Mat3::from_mat4))
+}
+
 /// The world-space directions the three draggers point along: the world axes,
 /// or — with the local toggle on — the part's own, taken from its rotation.
 ///

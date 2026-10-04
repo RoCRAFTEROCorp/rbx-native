@@ -230,10 +230,15 @@ impl WorkspaceView {
             .summoned()
             .or(pivot.map(|pivot| pivot.w_axis.truncate()))
             .or_else(|| self.targets.centre())?;
-        let axes = match self.transform.tool {
-            Tool::Pivot => Some(Mat3::from_mat4(pivot?)),
-            _ => self.transform.local.then(|| anchor.rotation()),
-        };
+        if self.transform.tool == Tool::Pivot {
+            pivot?;
+        }
+        let axes = gizmo::handle_axes(
+            self.transform.tool == Tool::Pivot,
+            self.transform.local,
+            pivot,
+            anchor.rotation(),
+        );
         Some(Handles::new(
             origin,
             gizmo::basis(axes),

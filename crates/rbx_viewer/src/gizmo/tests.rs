@@ -526,3 +526,21 @@ fn the_origin_ball_is_grabbed_at_the_origin_and_nowhere_near_an_arm() {
     // Behind the eye is not under the cursor.
     assert!(!handles.grab_origin(Ray::new(Vec3::new(0.0, 0.0, -10.0), -Vec3::Z)));
 }
+
+/// Local space turns the handles with a model's pivot, not with whichever
+/// part happens to anchor the selection; world space ignores both.
+#[test]
+fn local_handles_take_the_pivots_axes_over_the_anchor_parts() {
+    let anchor = Mat3::from_rotation_z(0.3);
+    let pivot = Mat4::from_rotation_y(1.1) * Mat4::from_translation(Vec3::X);
+    let turned = Mat3::from_rotation_y(1.1);
+
+    assert_eq!(handle_axes(false, false, Some(pivot), anchor), None);
+    let local = handle_axes(false, true, Some(pivot), anchor).unwrap();
+    assert!((local.x_axis - turned.x_axis).length() < 1e-6);
+    assert!((local.z_axis - turned.z_axis).length() < 1e-6);
+    // No one pivot (several selected): the anchor part's own.
+    assert_eq!(handle_axes(false, true, None, anchor), Some(anchor));
+    // Edit Pivot's are the pivot's whatever the toggle says.
+    assert!(handle_axes(true, false, Some(pivot), anchor).is_some());
+}

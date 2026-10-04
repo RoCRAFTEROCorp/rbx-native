@@ -44,7 +44,7 @@ use glam::Mat3;
 
 use crate::camera::{Camera, Frustum, Viewpoint};
 use crate::fonts::Library;
-use crate::gizmo::{arm_length, basis, Faces, Gizmo, Handles, Kind, Shape};
+use crate::gizmo::{arm_length, basis, handle_axes, Faces, Gizmo, Handles, Kind, Shape};
 use crate::lighting::{Lighting, LocalLight};
 use crate::load::Answered;
 use crate::pick::Selected;
@@ -527,11 +527,12 @@ impl Renderer {
             .unwrap_or_else(|| self.selection.centre().unwrap_or(anchor));
         // Edit Pivot's handles are the pivot's own frame, whatever the
         // world/local toggle says: turning them is what turns the pivot.
-        let axes = match (gizmo.kind, gizmo.pivot) {
-            (Kind::Pivot, Some(pivot)) => Some(Mat3::from_mat4(pivot)),
-            (Kind::Pivot, None) => return None,
-            _ => gizmo.local.then_some(rotation),
-        };
+        // Local space takes the pivot's frame too (see `handle_axes`).
+        let editing = gizmo.kind == Kind::Pivot;
+        if editing && gizmo.pivot.is_none() {
+            return None;
+        }
+        let axes = handle_axes(editing, gizmo.local, gizmo.pivot, rotation);
         let handles = Handles::new(origin, basis(axes), arm_length(origin, pose, orthographic));
         Some(match gizmo.kind {
             Kind::Rotate => Shape::Rotate(handles),
