@@ -215,6 +215,45 @@ fn without_keeping_it_the_pivot_would_jump_back() {
     assert_eq!(pivot(&dom, &db, model), Some(at(5.0, 0.0, 0.0)));
 }
 
+/// Unassigning, unlike deleting, resets: the pivot goes from the primary
+/// part's (x = 10) to the box's centre (x = 5), not back to the stale
+/// `WorldPivot` (x = -20), and keeps the primary part's turn.
+#[test]
+fn clearing_a_primary_part_resets_the_pivot_to_the_boxs_centre() {
+    let db = ReflectionDatabase::embedded();
+    let mut dom = WeakDom::new();
+    let (model, _, right) = model(&mut dom, at(-20.0, 4.0, 0.0));
+    dom.set_property(right, CFRAME, Variant::CFrame(turned(10.0, 0.0, 0.0)))
+        .unwrap();
+    dom.set_property(model, PRIMARY_PART, Variant::Ref(right))
+        .unwrap();
+
+    let cleared = clear_primary_part(&mut dom, &db, model).unwrap();
+
+    assert_eq!(cleared, Some(Variant::Ref(right)));
+    assert!(dom
+        .get(model)
+        .unwrap()
+        .properties()
+        .get(PRIMARY_PART)
+        .is_none());
+    assert!(close(
+        pivot(&dom, &db, model).unwrap(),
+        turned(5.0, 0.0, 0.0)
+    ));
+}
+
+/// Nothing to clear, nothing reset: the stored pivot stays.
+#[test]
+fn clearing_no_primary_part_leaves_the_pivot_alone() {
+    let db = ReflectionDatabase::embedded();
+    let mut dom = WeakDom::new();
+    let (model, ..) = model(&mut dom, at(-20.0, 4.0, 0.0));
+
+    assert_eq!(clear_primary_part(&mut dom, &db, model), Ok(None));
+    assert_eq!(pivot(&dom, &db, model), Some(at(-20.0, 4.0, 0.0)));
+}
+
 #[test]
 fn deleting_some_other_part_pins_nothing() {
     let db = ReflectionDatabase::embedded();

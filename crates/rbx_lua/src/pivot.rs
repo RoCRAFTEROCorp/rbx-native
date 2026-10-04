@@ -28,7 +28,7 @@ const MODEL: &str = "Model";
 
 mod edit;
 
-pub use edit::{follow, followers, keep_pivots, reset, set_pivot, Follower};
+pub use edit::{clear_primary_part, follow, followers, keep_pivots, reset, set_pivot, Follower};
 
 /// `reference`'s pivot in world space, if it is a part or a model.
 pub fn pivot(dom: &WeakDom, db: &ReflectionDatabase, reference: Ref) -> Option<CFrameData> {

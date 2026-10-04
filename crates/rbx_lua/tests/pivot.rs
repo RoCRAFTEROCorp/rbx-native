@@ -109,3 +109,25 @@ fn a_model_without_a_stored_pivot_reads_back_where_it_was_turned_to() {
     );
     assert_eq!(printed, "1 2 3 -1");
 }
+
+#[test]
+fn unassigning_a_primary_part_resets_the_pivot_to_the_box_centre() {
+    let mut runtime = runtime();
+    let printed = printed(
+        &mut runtime,
+        r#"
+        local model = Instance.new("Model")
+        local a = Instance.new("Part")
+        a.CFrame = CFrame.new(0, 0, 0)
+        a.Parent = model
+        local b = Instance.new("Part")
+        b.CFrame = CFrame.new(10, 0, 0)
+        b.Parent = model
+        model.WorldPivot = CFrame.new(-20, 4, 0)
+        model.PrimaryPart = b
+        model.PrimaryPart = nil
+        print(model.PrimaryPart, model:GetPivot().Position.X, model:GetPivot().Position.Y)
+        "#,
+    );
+    assert_eq!(printed, "nil 5 0");
+}

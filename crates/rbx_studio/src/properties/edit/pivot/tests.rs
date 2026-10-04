@@ -146,3 +146,16 @@ fn turning_the_origin_turns_the_part_about_its_pivot() {
     assert!((moved.x - 2.0).abs() < 1e-4, "{moved:?}");
     assert!((moved.z - 2.0).abs() < 1e-4, "{moved:?}");
 }
+
+/// Picking `nil` for `PrimaryPart` in the panel resets the pivot onto the
+/// box's centre (parts span x = -5 .. 7, y = 0 .. 2), rather than leaving it
+/// on the stale `WorldPivot`.
+#[test]
+fn clearing_primary_part_in_the_panel_resets_the_pivot() {
+    let world = Variant::CFrame(at(9.0, 9.0, 9.0));
+    let mut dom = model(&[("WorldPivot", world), ("PrimaryPart", Variant::Ref(RIGHT))]);
+
+    super::super::commit(&mut dom, &db(), MODEL_REF, "PrimaryPart", "nil").unwrap();
+
+    assert_eq!(pivot(&dom, &db(), MODEL_REF), Some(at(1.0, 1.0, 0.0)));
+}

@@ -10,7 +10,7 @@ use rbx_reflection::ReflectionDatabase;
 
 use super::{
     bounds_centre, carried, cframe, compose, pivot, primary_part, BASE_PART, CFRAME, IDENTITY,
-    MODEL, PIVOT_OFFSET, WORLD_PIVOT,
+    MODEL, PIVOT_OFFSET, PRIMARY_PART, WORLD_PIVOT,
 };
 use crate::datatypes::cframe::LuaCFrame;
 
@@ -57,6 +57,28 @@ pub fn reset(
     let current = pivot(dom, db, reference)?;
     let centre = bounds_centre(dom, db, reference, &current.rotation)?;
     set_pivot(dom, db, reference, &centre)
+}
+
+/// Clears `model`'s `PrimaryPart`, and — when it had one — puts its pivot
+/// back on the centre of its bounding box, as [`reset`] does:
+/// `studio/pivot-tools.md` has unassigning a `PrimaryPart` reset the pivot,
+/// where deleting the part ([`keep_pivots`]) leaves it be. The box is squared
+/// to the pivot the part gave it, which is the one on screen. Returns the
+/// value cleared.
+pub fn clear_primary_part(
+    dom: &mut WeakDom,
+    db: &ReflectionDatabase,
+    model: Ref,
+) -> Result<Option<Variant>, String> {
+    let was = primary_part(dom, db, model).and_then(|_| pivot(dom, db, model));
+    let cleared = dom
+        .remove_property(model, PRIMARY_PART)
+        .map_err(|err| err.to_string())?;
+    if let Some(was) = was {
+        write(dom, model, WORLD_PIVOT, was)?;
+        reset(dom, db, model).unwrap_or(Ok(()))?;
+    }
+    Ok(cleared)
 }
 
 /// Pins the pivot of every model whose `PrimaryPart` is about to go with
