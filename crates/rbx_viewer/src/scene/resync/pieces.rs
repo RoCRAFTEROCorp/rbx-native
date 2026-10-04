@@ -36,6 +36,12 @@ impl Scene {
         known_layers: usize,
     ) -> Result<Drawn, Rebuild> {
         let referent = part.referent();
+        // A tree carried inline that this place never carved (a union just
+        // pasted in) has no download to wait for: only a load plans and
+        // carves it.
+        if entry.is_inline() && !unions.is_known(entry.asset()) {
+            return Err(Rebuild::Asset);
+        }
         let Some(evaluated) = unions.of(entry.asset()) else {
             // Nothing carved for the asset yet, whether nobody has fetched
             // it or the boolean over it is still pending: the same "not

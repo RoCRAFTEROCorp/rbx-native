@@ -6,17 +6,17 @@ const IDENTITY_ROTATION: [f32; 9] = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0
 // below) that this whole module was reverse-engineered against.
 const REAL_ROCK_ASSET_ID: &str = "http://www.roblox.com//asset/?id=394314025";
 
-fn database() -> ReflectionDatabase {
+pub(super) fn database() -> ReflectionDatabase {
     ReflectionDatabase::embedded()
 }
 
 /// `plan` needs a `Catalog` only to register a fallback part's material slot,
 /// irrelevant to these DOM-walking tests — build a fresh, throwaway one.
-fn plan_of(dom: &WeakDom, database: &ReflectionDatabase) -> Plan {
+pub(super) fn plan_of(dom: &WeakDom, database: &ReflectionDatabase) -> Plan {
     plan(dom, database, &mut Catalog::new(dom, database))
 }
 
-fn operation(referent: Ref, class: &str, asset_id: Option<&str>) -> Instance {
+pub(super) fn operation(referent: Ref, class: &str, asset_id: Option<&str>) -> Instance {
     let mut instance = Instance::new(referent, class, "Rock");
     let properties = instance.properties_mut();
     if let Some(id) = asset_id {
@@ -54,7 +54,7 @@ fn operation(referent: Ref, class: &str, asset_id: Option<&str>) -> Instance {
 
 /// `plan` only looks under `Workspace` now (see [`super::plan`]'s doc
 /// comment), so every fixture instance is parented there rather than at root.
-fn dom_with(instance: Instance) -> WeakDom {
+pub(super) fn dom_with(instance: Instance) -> WeakDom {
     let mut dom = WeakDom::new();
     let workspace = Ref::new(9000);
     dom.insert(Instance::new(workspace, "Workspace", "Workspace"));
@@ -190,7 +190,9 @@ fn resolves_the_real_rock_union_from_a_real_place_fixture() {
 fn the_real_rock_boolean_is_a_single_positively_oriented_solid() {
     let bytes = fixture_bytes();
     let database = database();
-    let node = tree::parse(&bytes, &database).expect("tree must parse");
+    let node = tree::parse(&bytes, &database, &tree::Assets::new())
+        .expect("tree must parse")
+        .root;
 
     // Mirrors `csg::additive_volume_bound`: a leaf's own `negate` flag is
     // always false (only its wrapping `Operation` carries `negate: true`),
@@ -221,7 +223,7 @@ fn the_real_rock_boolean_is_a_single_positively_oriented_solid() {
     }
 
     let base = base_volume(&node);
-    let solid = csg::evaluate(&node).expect("boolean must succeed");
+    let solid = csg::evaluate(&node, None).expect("boolean must succeed");
     let volume = solid.volume();
     let mesh = solid.to_mesh();
     println!(
@@ -300,13 +302,14 @@ fn a_hand_built_tree_keeps_its_volume_ratio_through_entry_placement() {
         negate: false,
         children: vec![leaf(Vec3::ZERO, false), leaf(Vec3::splat(1.0), true)],
     };
-    let local = csg::evaluate(&tree).expect("boolean must succeed");
+    let local = csg::evaluate(&tree, None).expect("boolean must succeed");
     assert!((local.volume() - 7.0).abs() < 1e-4, "{}", local.volume());
 
     let dom = WeakDom::new();
     let entry = Entry {
         referent: Ref::new(1),
         asset: AssetRef::Id(1),
+        inline: false,
         cframe: Mat4::from_translation(Vec3::new(10.0, 0.0, 0.0)),
         size: Vec3::splat(4.0),
         initial_size: Vec3::splat(2.0),
@@ -377,7 +380,7 @@ fn carving(children: Vec<tree::Node>, carved: bool) -> Evaluated {
     };
     let mesh = carved.then(|| {
         Arc::new(
-            csg::evaluate(&tree)
+            csg::evaluate(&tree, None)
                 .expect("the boolean must run")
                 .to_mesh(),
         )
@@ -580,6 +583,7 @@ fn synthetic_plan(
         entries.push(Entry {
             referent: Ref::new(2_000 + i as u32),
             asset,
+            inline: false,
             cframe: Mat4::IDENTITY,
             size: Vec3::splat(10.0),
             initial_size: Vec3::splat(10.0),
@@ -590,7 +594,13 @@ fn synthetic_plan(
             casts_shadow: true,
         });
     }
-    (Plan { entries }, assets)
+    (
+        Plan {
+            entries,
+            ..Plan::default()
+        },
+        assets,
+    )
 }
 
 /// `resolve` runs every union's BSP boolean across a bounded worker pool
@@ -617,7 +627,9 @@ fn parallel_csg_evaluation_matches_evaluating_each_asset_alone() {
     let expected: HashMap<AssetRef, Arc<rbx_mesh::Mesh>> = assets
         .iter()
         .map(|(asset, bytes)| {
-            let evaluated = evaluate(bytes, &database).expect("synthetic asset must parse");
+            let evaluated = evaluate(bytes, &database, &tree::Assets::new(), None)
+                .flatten()
+                .expect("synthetic asset must parse");
             (
                 asset.clone(),
                 evaluated.mesh.expect("synthetic boolean must succeed"),

@@ -192,6 +192,19 @@ impl Resident {
         }
     }
 
+    /// Which of `references` [`Resident::bytes`] has failed for good — not
+    /// for a reason of the moment, which the next load asks about again:
+    /// what a caller tells apart from "still coming".
+    pub(crate) fn failed_bytes(&self, references: &[AssetRef]) -> Vec<AssetRef> {
+        references
+            .iter()
+            .filter(|reference| {
+                matches!(self.bytes.entries.get(*reference), Some(Err(failure)) if !failure.transient)
+            })
+            .cloned()
+            .collect()
+    }
+
     /// Which of `references` this has an answer to, `None` where the answer
     /// was a failure and absent where it is still coming — what a renderer
     /// pass that uploads an image itself needs in order to tell "never" from

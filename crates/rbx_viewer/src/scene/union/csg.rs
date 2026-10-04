@@ -7,8 +7,9 @@
 //! `f32` classification drifts far enough to open seams along coplanar faces.
 
 mod bsp;
-
-use std::collections::HashMap;
+#[cfg(test)]
+mod diagnostics;
+mod repair;
 
 use glam::{DVec3, Mat4, Vec3};
 use rbx_dom::Variant;
@@ -17,6 +18,9 @@ use super::tree::Node;
 use crate::scene::ShapeKind;
 use crate::shapes::{self, MeshData};
 use bsp::{BspNode, Plane, Polygon};
+#[cfg(test)]
+pub(super) use diagnostics::{connected_components, leak_report};
+use repair::{clean, discard_disconnected_debris, is_watertight, weld_t_junctions};
 
 /// A result that outgrows this many polygons after any single step is
 /// abandoned: the fallback box is better than a load stalled on one asset.
@@ -287,7 +291,10 @@ pub(crate) fn unit_mesh(kind: ShapeKind) -> MeshData {
 /// additive children are unioned, then each negated child is carved out.
 ///
 /// Leaf meshes are generated once per shape kind and reused across the tree.
-pub(super) fn evaluate(root: &Node) -> Result<Solid, Failure> {
+/// `bake` is the union's `InitialSize`, the extent Studio's own bake of this
+/// tree has: a disconnected piece outside it is debris (see
+/// `repair::discard_disconnected_debris`). `None` keeps every piece.
+pub(super) fn evaluate(root: &Node, bake: Option<Vec3>) -> Result<Solid, Failure> {
     if root.leaf_count() > MAX_LEAVES {
         return Err(Failure::TooComplex);
     }
@@ -296,23 +303,20 @@ pub(super) fn evaluate(root: &Node) -> Result<Solid, Failure> {
     if solid.is_empty() {
         return Err(Failure::Empty);
     }
-    let polygons = weld_t_junctions(solid.polygons);
+    // Cleaned again after welding: a T-junction split can land within the
+    // snap tolerance of a corner it already had.
+    let polygons = clean(weld_t_junctions(clean(solid.polygons)));
     if !is_watertight(&polygons) {
         return Err(Failure::Leaky);
     }
-    // A cut so aggressive it slices a corner off entirely (rather than just
-    // notching it) is legitimate CSG output, not a bug — a handful of small
-    // disconnected specks scattered around the real result reads as broken
-    // geometry, though, not a rock with a chipped corner. See
-    // `discard_disconnected_debris` for what stays and what goes.
-    let polygons = discard_disconnected_debris(polygons);
+    let polygons = discard_disconnected_debris(polygons, bake.map(Vec3::as_dvec3));
     let solid = Solid { polygons };
     let volume = solid.volume();
     // A union can only ever shrink from subtracting; it can never exceed the
     // sum of its additive leaves' own volumes (inclusion-exclusion), so that
     // sum is a cheap ceiling without a second full boolean.
     let ceiling = additive_volume_bound(root);
-    if volume <= 0.0 || volume > ceiling + EPSILON_VOLUME {
+    if volume <= 0.0 || volume > ceiling * (1.0 + VOLUME_SLACK) + EPSILON_VOLUME {
         return Err(Failure::Inverted);
     }
     Ok(solid)
@@ -321,15 +325,20 @@ pub(super) fn evaluate(root: &Node) -> Result<Solid, Failure> {
 /// Small enough that no legitimate result's own floating-point volume noise
 /// trips the [`Failure::Inverted`] ceiling check above.
 const EPSILON_VOLUME: f64 = 1e-6;
+/// Relative to the ceiling: welding moves vertices by up to a weld cell, so a
+/// result that only touches (none of whose leaves overlap) can land a few
+/// parts in ten million over the exact sum on a large union of many parts.
+const VOLUME_SLACK: f64 = 1e-4;
 
 /// See [`evaluate`]'s ceiling check: the volume every additive leaf would
 /// have on its own, ignoring negation and overlap.
 fn additive_volume_bound(node: &Node) -> f64 {
     match node {
         Node::Leaf(leaf) if !leaf.negate => {
+            // The whole placement, not just the leaf's size: a nested
+            // operation resized since its bake scales the leaves under it.
             let mesh = unit_mesh(leaf.geometry.kind);
-            let scale = Mat4::from_scale(leaf.geometry.size);
-            Solid::from_mesh(&mesh, scale).volume().abs()
+            Solid::from_mesh(&mesh, leaf.model()).volume().abs()
         }
         Node::Leaf(_) => 0.0,
         Node::Operation { children, .. } => children
@@ -338,257 +347,6 @@ fn additive_volume_bound(node: &Node) -> f64 {
             .map(additive_volume_bound)
             .sum(),
     }
-}
-
-/// Groups `polygons` by shared-edge adjacency (union-find), then keeps: the
-/// single largest group with positive signed volume (the main shell), and
-/// *every* group with non-positive volume, however small. A negative-volume
-/// group is a surface facing inward — a fully enclosed cavity, like a
-/// negation sitting entirely inside the additive solid — which is a
-/// topologically required complement to the shell it hollows out, not
-/// debris; dropping it would silently undo the carve it represents. Only
-/// same-signed (positive) groups compete against each other to be kept.
-/// `is_watertight` still holds afterward: every discarded group is its own
-/// individually closed piece, so removing it only removes matched edge
-/// pairs, never leaves one side dangling.
-fn discard_disconnected_debris(polygons: Vec<Polygon>) -> Vec<Polygon> {
-    let key = |v: DVec3| {
-        (
-            (v.x / WELD_EPSILON).round() as i64,
-            (v.y / WELD_EPSILON).round() as i64,
-            (v.z / WELD_EPSILON).round() as i64,
-        )
-    };
-    let mut parent: Vec<usize> = (0..polygons.len()).collect();
-    fn find(parent: &mut [usize], x: usize) -> usize {
-        if parent[x] != x {
-            parent[x] = find(parent, parent[x]);
-        }
-        parent[x]
-    }
-    let mut edge_owner: HashMap<DirectedEdge, usize> = HashMap::new();
-    for (i, polygon) in polygons.iter().enumerate() {
-        let n = polygon.vertices.len();
-        for e in 0..n {
-            let a = key(polygon.vertices[e]);
-            let b = key(polygon.vertices[(e + 1) % n]);
-            let edge = if a <= b { (a, b) } else { (b, a) };
-            match edge_owner.get(&edge) {
-                Some(&owner) => {
-                    let (ra, rb) = (find(&mut parent, owner), find(&mut parent, i));
-                    if ra != rb {
-                        parent[ra] = rb;
-                    }
-                }
-                None => {
-                    edge_owner.insert(edge, i);
-                }
-            }
-        }
-    }
-    // A negative-volume component is an inward-facing surface — a fully
-    // enclosed cavity (the classic case: a negation entirely inside the
-    // additive solid, like a bubble) rather than a piece of the outer shell.
-    // It is topologically required, however small: dropping it would silently
-    // undo the carve it represents. Only a same-signed (positive) component
-    // competes to be kept; every negative one always survives.
-    let mut volume: HashMap<usize, f64> = HashMap::new();
-    let mut positive_size: HashMap<usize, usize> = HashMap::new();
-    for (i, polygon) in polygons.iter().enumerate() {
-        let root = find(&mut parent, i);
-        let first = polygon.vertices[0];
-        let v: f64 = polygon.vertices[1..]
-            .windows(2)
-            .map(|pair| first.dot(pair[0].cross(pair[1])))
-            .sum();
-        *volume.entry(root).or_insert(0.0) += v / 6.0;
-    }
-    for i in 0..polygons.len() {
-        let root = find(&mut parent, i);
-        if volume[&root] > 0.0 {
-            *positive_size.entry(root).or_insert(0) += 1;
-        }
-    }
-    let largest_positive = positive_size
-        .iter()
-        .max_by_key(|&(_, &count)| count)
-        .map(|(&root, _)| root);
-    polygons
-        .into_iter()
-        .enumerate()
-        .filter(|(i, _)| {
-            let root = find(&mut parent, *i);
-            volume[&root] <= 0.0 || Some(root) == largest_positive
-        })
-        .map(|(_, polygon)| polygon)
-        .collect()
-}
-
-/// Test-only: the same shared-edge grouping [`discard_disconnected_debris`]
-/// does, without the filtering — so a test can assert a result is (or, for
-/// `discard_disconnected_debris`'s own tests, was) a single connected piece.
-#[cfg(test)]
-pub(super) fn connected_components(solid: &Solid) -> Vec<f64> {
-    let key = |v: DVec3| {
-        (
-            (v.x / WELD_EPSILON).round() as i64,
-            (v.y / WELD_EPSILON).round() as i64,
-            (v.z / WELD_EPSILON).round() as i64,
-        )
-    };
-    let polygons = &solid.polygons;
-    let mut parent: Vec<usize> = (0..polygons.len()).collect();
-    fn find(parent: &mut [usize], x: usize) -> usize {
-        if parent[x] != x {
-            parent[x] = find(parent, parent[x]);
-        }
-        parent[x]
-    }
-    let mut edge_owner: HashMap<DirectedEdge, usize> = HashMap::new();
-    for (i, polygon) in polygons.iter().enumerate() {
-        let n = polygon.vertices.len();
-        for e in 0..n {
-            let a = key(polygon.vertices[e]);
-            let b = key(polygon.vertices[(e + 1) % n]);
-            let edge = if a <= b { (a, b) } else { (b, a) };
-            match edge_owner.get(&edge) {
-                Some(&owner) => {
-                    let (ra, rb) = (find(&mut parent, owner), find(&mut parent, i));
-                    if ra != rb {
-                        parent[ra] = rb;
-                    }
-                }
-                None => {
-                    edge_owner.insert(edge, i);
-                }
-            }
-        }
-    }
-    let mut volume: HashMap<usize, f64> = HashMap::new();
-    for (i, polygon) in polygons.iter().enumerate() {
-        let root = find(&mut parent, i);
-        let first = polygon.vertices[0];
-        let v: f64 = polygon.vertices[1..]
-            .windows(2)
-            .map(|pair| first.dot(pair[0].cross(pair[1])))
-            .sum();
-        *volume.entry(root).or_insert(0.0) += v / 6.0;
-    }
-    volume.into_values().collect()
-}
-
-/// Snap tolerance for the edge-adjacency check below: coarser than any
-/// legitimate vertex spacing this codebase's shapes produce, fine enough not
-/// to merge genuinely distinct nearby edges.
-const WELD_EPSILON: f64 = 1e-4;
-
-/// A vertex position snapped to the `WELD_EPSILON` grid, used to recognize
-/// "the same point" (or edge) across independently-computed fragments.
-type GridPoint = (i64, i64, i64);
-type DirectedEdge = (GridPoint, GridPoint);
-
-/// A fragment is finalized as soon as `clip_polygons` confirms it lies in
-/// front of just one of the other solid's planes — correct, since that alone
-/// proves it is outside a convex cutter, but it means a neighboring fragment
-/// that needed more plane tests can have their shared boundary edge
-/// subdivided on its side and not on this one. Splits every polygon edge at
-/// any other polygon's vertex that lies exactly on it (using that vertex's
-/// own value, not a recomputed one, so the two sides end up bit-identical)
-/// to turn that T-junction back into a matching pair of edges before
-/// [`is_watertight`] ever runs.
-fn weld_t_junctions(polygons: Vec<Polygon>) -> Vec<Polygon> {
-    const T_MARGIN: f64 = 1e-7;
-    let quantize = |v: DVec3| {
-        (
-            (v.x / WELD_EPSILON).round() as i64,
-            (v.y / WELD_EPSILON).round() as i64,
-            (v.z / WELD_EPSILON).round() as i64,
-        )
-    };
-    let mut canonical: HashMap<GridPoint, DVec3> = HashMap::new();
-    for polygon in &polygons {
-        for &v in &polygon.vertices {
-            canonical.entry(quantize(v)).or_insert(v);
-        }
-    }
-    // An O(edges * vertices) pass only stays cheap for a modest vertex
-    // count; past this, skip welding and let `is_watertight` (or the
-    // triangle cap, further up the call chain) catch a genuine problem.
-    if canonical.len() > 20_000 {
-        return polygons;
-    }
-    let points: Vec<DVec3> = canonical.into_values().collect();
-    polygons
-        .into_iter()
-        .map(|polygon| {
-            let n = polygon.vertices.len();
-            let mut ring = Vec::with_capacity(n + 4);
-            for i in 0..n {
-                let a = polygon.vertices[i];
-                let b = polygon.vertices[(i + 1) % n];
-                ring.push(a);
-                let edge = b - a;
-                let length_sq = edge.length_squared();
-                if length_sq < WELD_EPSILON * WELD_EPSILON {
-                    continue;
-                }
-                let mut inserts: Vec<(f64, DVec3)> = points
-                    .iter()
-                    .filter_map(|&p| {
-                        let t = (p - a).dot(edge) / length_sq;
-                        if !(T_MARGIN..=1.0 - T_MARGIN).contains(&t) {
-                            return None;
-                        }
-                        let on_line = a + edge * t;
-                        ((p - on_line).length_squared() < WELD_EPSILON * WELD_EPSILON)
-                            .then_some((t, p))
-                    })
-                    .collect();
-                inserts.sort_by(|x, y| x.0.total_cmp(&y.0));
-                ring.extend(inserts.into_iter().map(|(_, p)| p));
-            }
-            Polygon {
-                vertices: ring,
-                plane: polygon.plane,
-            }
-        })
-        .collect()
-}
-
-/// A lone stray edge stays invisible at render distance — the risk this
-/// guards against is a shattered, hole-ridden mesh, not a single hairline
-/// sliver. Anything past this fraction of the mesh's own edges reads as
-/// broken rather than merely imperfect (the additive-only fallback is safer
-/// past that point); below it, [`weld_t_junctions`] has already done what it
-/// can and the rest is the BSP split's inherent floating-point residue.
-const MAX_LEAK_FRACTION: f64 = 0.02;
-
-/// Every directed polygon edge in a correctly closed, consistently-wound
-/// solid has its exact reverse somewhere else exactly once — this is the
-/// invariant a leak (open edge) or overlap (duplicated edge) breaks. Called
-/// once, by [`evaluate`], on the finished result.
-fn is_watertight(polygons: &[Polygon]) -> bool {
-    let key = |v: DVec3| {
-        (
-            (v.x / WELD_EPSILON).round() as i64,
-            (v.y / WELD_EPSILON).round() as i64,
-            (v.z / WELD_EPSILON).round() as i64,
-        )
-    };
-    let mut directed: HashMap<DirectedEdge, u32> = HashMap::new();
-    for polygon in polygons {
-        let n = polygon.vertices.len();
-        for i in 0..n {
-            let a = key(polygon.vertices[i]);
-            let b = key(polygon.vertices[(i + 1) % n]);
-            *directed.entry((a, b)).or_insert(0) += 1;
-        }
-    }
-    let bad = directed
-        .iter()
-        .filter(|(&(a, b), &count)| !(count == 1 && directed.get(&(b, a)).copied() == Some(1)))
-        .count();
-    (bad as f64) <= (directed.len() as f64) * MAX_LEAK_FRACTION
 }
 
 fn evaluate_node(node: &Node, cache: &mut Vec<(ShapeKind, MeshData)>) -> Result<Solid, Failure> {
@@ -685,3 +443,7 @@ fn visit_additive_leaves(
 #[cfg(test)]
 #[path = "csg/tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "csg/noise_tests.rs"]
+mod noise_tests;

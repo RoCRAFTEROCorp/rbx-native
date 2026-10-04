@@ -18,6 +18,10 @@
 use rbx_assets::AssetRef;
 
 use super::{Loaded, Resident};
+
+/// How many levels of union assets naming further union assets a load
+/// follows; one is all any place seen so far has needed.
+const NESTED_ROUNDS: usize = 4;
 use crate::fonts::Family;
 use crate::textures::Decor;
 
@@ -73,9 +77,8 @@ impl Loaded {
             .into_iter()
             .map(|(_, reference)| reference)
             .collect();
-        if references.is_empty() {
-            return Vec::new();
-        }
+        // No early return on an empty list: a union carrying its own tree
+        // downloads nothing and still has to be carved.
         self.want(&references);
         // Only what was never carved needs its bytes: a known asset resolves
         // out of the evaluation an earlier scene left behind (see
@@ -86,7 +89,26 @@ impl Loaded {
             .filter(|reference| !resident.unions.is_known(reference))
             .cloned()
             .collect();
-        let (bytes, warnings) = resident.bytes(&uncarved);
+        let (mut bytes, mut warnings) = resident.bytes(&uncarved);
+        // A tree can name further union assets of its own, found only once
+        // the asset naming them is here; a few rounds reach any real depth.
+        // One that failed for good is handed over empty, so the operation is
+        // drawn as its box instead of the whole union waiting on it forever.
+        for _ in 0..NESTED_ROUNDS {
+            let nested = self.scene.union_nested_assets(&bytes, &resident.unions);
+            if nested.is_empty() {
+                break;
+            }
+            self.want(&nested);
+            let (more, more_warnings) = resident.bytes(&nested);
+            warnings.extend(more_warnings);
+            let failed = resident.failed_bytes(&nested);
+            if more.is_empty() && failed.is_empty() {
+                break;
+            }
+            bytes.extend(more);
+            bytes.extend(failed.into_iter().map(|asset| (asset, Vec::new())));
+        }
         self.scene.resolve_unions(bytes, &mut resident.unions);
         warnings
     }

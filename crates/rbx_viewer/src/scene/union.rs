@@ -1,12 +1,15 @@
-//! Legacy `UnionOperation`/`NegateOperation` handling: recovers the original,
-//! pre-CSG parts from the `PartOperationAsset` a builder's union was baked
-//! into and recomputes the boolean over them (`csg`), instead of drawing the
-//! union as a plain box forever. Roblox's own baked `MeshData` is never read.
+//! `UnionOperation`/`NegateOperation` handling: recovers the original,
+//! pre-CSG parts and recomputes the boolean over them (`csg`), instead of
+//! drawing the union as a plain box forever. The parts come from the union's
+//! own `ChildData2` (`ChildData` in older files) where it carries them, as
+//! every union Studio writes today does, or else from the
+//! `PartOperationAsset` its legacy `AssetId` names. Roblox's own baked
+//! `MeshData`/`MeshData2` is never read.
 //!
-//! Two-phase like `filemesh`: [`plan`] walks the DOM for every operation that
-//! carries a legacy `AssetId`, and [`resolve`] joins that plan against
-//! downloaded asset bytes once they exist. No network access happens here —
-//! see `crate::assets` for downloading.
+//! Two-phase like `filemesh`: [`plan`] walks the DOM for every operation, and
+//! [`resolve`] joins that plan against downloaded asset bytes once they exist
+//! (an inline tree is its own bytes). No network access happens here — see
+//! `crate::assets` for downloading.
 
 mod csg;
 mod patch;
@@ -43,7 +46,9 @@ pub(super) struct Entry {
     /// The real DOM instance this entry stands for, so its fallback box can be
     /// hidden once real geometry resolves — see `Scene::resolve_unions`.
     referent: Ref,
+    /// The union's `AssetId`, or the [`inline_key`] of the tree it carries.
     asset: AssetRef,
+    inline: bool,
     /// The union's own world placement: everything the asset's operation tree
     /// describes is expressed relative to this.
     cframe: Mat4,
@@ -94,32 +99,92 @@ impl Entry {
 #[derive(Default)]
 pub(crate) struct Plan {
     entries: Vec<Entry>,
+    /// The operation documents unions carry inline, by their [`inline_key`]:
+    /// resolved like downloaded assets, with nothing to download.
+    inline: tree::Assets,
 }
 
 impl Plan {
-    /// One `(referent, asset)` pair per union found, in first-seen order.
-    /// Several unions can share the same `AssetId` (a builder copy-pasting a
-    /// rock, say); callers should dedupe before downloading, same as
-    /// `filemesh`'s `mesh_refs`/`texture_refs`.
+    /// One `(referent, asset)` pair per union whose tree is behind its
+    /// `AssetId`, in first-seen order; a union carrying its tree inline has
+    /// nothing to download (the assets such a tree names deeper down are
+    /// [`missing`]'s to find). Several unions can share the same `AssetId` (a
+    /// builder copy-pasting a rock, say); callers should dedupe before
+    /// downloading, same as `filemesh`'s `mesh_refs`/`texture_refs`.
     pub(crate) fn assets(&self) -> Vec<(Ref, AssetRef)> {
         self.entries
             .iter()
+            .filter(|entry| !entry.inline)
             .map(|entry| (entry.referent, entry.asset.clone()))
             .collect()
     }
 }
 
 /// Walks a DOM for every `PartOperation` (`UnionOperation`, `NegateOperation`)
-/// that still carries the legacy `AssetId` its pre-CSG tree was baked into.
+/// whose pre-CSG tree is still reachable: inline in `ChildData`/`ChildData2`,
+/// or in the legacy `AssetId` asset it was baked into.
 ///
 /// Workspace-scoped, same as `Scene::from_dom`'s own part build: a union
 /// staged outside `Workspace` never draws, so there is nothing to plan for it.
 pub(crate) fn plan(dom: &WeakDom, database: &ReflectionDatabase, materials: &mut Catalog) -> Plan {
-    let entries = super::workspace_descendants(dom, database)
+    let mut plan = Plan::default();
+    for referent in super::workspace_descendants(dom, database)
         .filter(|&referent| super::is_drawable(dom, database, referent))
-        .filter_map(|referent| from_operation(dom, database, referent, materials))
-        .collect();
-    Plan { entries }
+    {
+        let Some(entry) = from_operation(dom, database, referent, materials) else {
+            continue;
+        };
+        if entry.inline && !plan.inline.contains_key(&entry.asset) {
+            if let Some(raw) = dom
+                .get(referent)
+                .and_then(|i| tree::child_data(i.properties()))
+            {
+                plan.inline.insert(entry.asset.clone(), raw.to_vec());
+            }
+        }
+        plan.entries.push(entry);
+    }
+    plan
+}
+
+/// The key an inline operation document is evaluated and drawn under: a
+/// digest of the bytes, so every copy of one union shares one boolean, and an
+/// edit that leaves them alone finds it already carved. `rbxthumb` is never
+/// fetched (see `rbx_assets::resolver`), the same reason
+/// `renderer::gui::viewport` keys its baked frames that way.
+fn inline_key(raw: &[u8]) -> AssetRef {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::hash::DefaultHasher::new();
+    raw.hash(&mut hasher);
+    AssetRef::Thumb(format!("csg-inline/{:016x}-{}", hasher.finish(), raw.len()))
+}
+
+/// Whether `referent` is a union with no geometry anywhere: no inline tree,
+/// no asset, and no baked mesh either. Studio writes these with a
+/// `TriangleCount` of 0, and draws nothing for them, so neither does this.
+pub(crate) fn is_empty(dom: &WeakDom, database: &ReflectionDatabase, referent: Ref) -> bool {
+    let Some(instance) = dom.get(referent) else {
+        return false;
+    };
+    if !database.is_subclass_of(instance.class(), PART_OPERATION) {
+        return false;
+    }
+    let properties = instance.properties();
+    let filled = |key: &str| match properties.get(key) {
+        Some(Variant::Unknown { raw, .. }) => !raw.is_empty(),
+        Some(Variant::String(text)) => !text.is_empty(),
+        Some(Variant::Content(rbx_dom::Content::Uri(uri))) => !uri.is_empty(),
+        _ => false,
+    };
+    ![
+        "AssetId",
+        "ChildData",
+        "ChildData2",
+        "MeshData",
+        "MeshData2",
+    ]
+    .into_iter()
+    .any(filled)
 }
 
 fn from_operation(
@@ -128,7 +193,7 @@ fn from_operation(
     referent: Ref,
     materials: &mut Catalog,
 ) -> Option<Entry> {
-    let (asset, cframe, size, initial_size) = frame(dom, database, referent)?;
+    let (asset, inline, cframe, size, initial_size) = frame(dom, database, referent)?;
     let properties = dom.get(referent)?.properties();
     let use_part_color = matches!(properties.get("UsePartColor"), Some(Variant::Bool(true)));
     let color = match properties.get("Color3uint8") {
@@ -139,6 +204,7 @@ fn from_operation(
     Some(Entry {
         referent,
         asset,
+        inline,
         cframe,
         size,
         initial_size,
@@ -150,22 +216,27 @@ fn from_operation(
     })
 }
 
-/// A legacy union's asset, world `CFrame`, `size` and `InitialSize`: all its
-/// computed mesh needs to be placed where it is drawn.
+/// A union's key (its asset, or its inline tree's [`inline_key`] — the
+/// inline tree winning, since it needs no download), whether it is inline,
+/// and its world `CFrame`, `size` and `InitialSize`: all its computed mesh
+/// needs to be placed where it is drawn.
 fn frame(
     dom: &WeakDom,
     database: &ReflectionDatabase,
     referent: Ref,
-) -> Option<(AssetRef, Mat4, Vec3, Vec3)> {
+) -> Option<(AssetRef, bool, Mat4, Vec3, Vec3)> {
     let instance = dom.get(referent)?;
     if !database.is_subclass_of(instance.class(), PART_OPERATION) {
         return None;
     }
     let properties = instance.properties();
 
-    let asset = match AssetRef::parse(asset_uri(properties.get("AssetId")?)?).ok()? {
-        AssetRef::Empty => return None,
-        asset => asset,
+    let (asset, inline) = match tree::child_data(properties) {
+        Some(raw) => (inline_key(raw), true),
+        None => match AssetRef::parse(asset_uri(properties.get("AssetId")?)?).ok()? {
+            AssetRef::Empty => return None,
+            asset => (asset, false),
+        },
     };
     let Some(Variant::CFrame(cframe)) = properties.get("CFrame") else {
         return None;
@@ -179,7 +250,13 @@ fn frame(
         _ => size,
     }
     .max(Vec3::splat(f32::EPSILON));
-    Some((asset, super::cframe_matrix(cframe), size, initial_size))
+    Some((
+        asset,
+        inline,
+        super::cframe_matrix(cframe),
+        size,
+        initial_size,
+    ))
 }
 
 /// The asset a legacy union's computed boolean is keyed by, and the unit-mesh
@@ -191,7 +268,7 @@ pub(crate) fn fit(
     database: &ReflectionDatabase,
     referent: Ref,
 ) -> Option<(AssetRef, Mat4)> {
-    let (asset, cframe, size, initial_size) = frame(dom, database, referent)?;
+    let (asset, _, cframe, size, initial_size) = frame(dom, database, referent)?;
     Some((asset, cframe * Mat4::from_scale(size / initial_size)))
 }
 
@@ -314,6 +391,12 @@ pub(crate) fn resolve(
     materials: &mut Catalog,
     evaluations: &mut Evaluations,
 ) -> Resolution {
+    let mut assets = assets;
+    for (key, raw) in &plan.inline {
+        if !evaluations.is_known(key) {
+            assets.entry(key.clone()).or_insert_with(|| raw.clone());
+        }
+    }
     let evaluated = evaluate_all(plan, &assets, database, evaluations);
     let mut resolution = Resolution::default();
 
@@ -349,14 +432,56 @@ pub(crate) fn resolve(
     resolution
 }
 
-/// Decodes and carves one asset. `None` only when the bytes did not parse;
-/// a parsed tree whose boolean failed keeps `mesh: None` for the fallback.
-fn evaluate(bytes: &[u8], database: &ReflectionDatabase) -> Option<Evaluated> {
-    let tree = tree::parse(bytes, database)?;
-    let mesh = csg::evaluate(&tree)
+/// Decodes and carves one asset, `assets` holding the nested ones its tree
+/// points at. The outer `None` is "not yet": a nested asset has not arrived,
+/// and carving now would remember a box in its place for good. The inner
+/// `None` is "never": the bytes did not parse. A parsed tree whose boolean
+/// failed keeps `mesh: None` for the fallback.
+fn evaluate(
+    bytes: &[u8],
+    database: &ReflectionDatabase,
+    assets: &tree::Assets,
+    bake: Option<Vec3>,
+) -> Option<Option<Evaluated>> {
+    let Some(parsed) = tree::parse(bytes, database, assets) else {
+        return Some(None);
+    };
+    if !parsed.missing.is_empty() {
+        return None;
+    }
+    let tree = parsed.root;
+    let mesh = csg::evaluate(&tree, bake)
         .ok()
         .map(|solid| Arc::new(solid.to_mesh()));
-    Some(Evaluated { tree, mesh })
+    Some(Some(Evaluated { tree, mesh }))
+}
+
+/// The nested union assets that the trees in `assets`, and the inline trees
+/// of `plan` not yet carved, point at and `assets` does not hold yet — what
+/// a loader fetches next, before [`resolve`] can carve those trees.
+pub(crate) fn missing(
+    plan: &Plan,
+    assets: &tree::Assets,
+    database: &ReflectionDatabase,
+    evaluations: &Evaluations,
+) -> Vec<AssetRef> {
+    let inline = plan
+        .inline
+        .iter()
+        .filter(|(key, _)| !evaluations.is_known(key))
+        .map(|(_, raw)| raw);
+    let mut missing = Vec::new();
+    for bytes in assets.values().chain(inline) {
+        for asset in tree::parse(bytes, database, assets)
+            .map(|parsed| parsed.missing)
+            .unwrap_or_default()
+        {
+            if !missing.contains(&asset) {
+                missing.push(asset);
+            }
+        }
+    }
+    missing
 }
 
 /// Every distinct asset `plan` needs that is either already known or
@@ -382,19 +507,21 @@ fn evaluate_all(
     evaluations: &mut Evaluations,
 ) -> HashMap<AssetRef, Option<Arc<Evaluated>>> {
     let mut seen = HashSet::new();
-    let wanted: Vec<&AssetRef> = plan
+    // The first union's `InitialSize` stands for every one sharing the
+    // asset: it is the extent of the very bake the asset holds.
+    let wanted: Vec<(&AssetRef, Vec3)> = plan
         .entries
         .iter()
-        .map(|entry| &entry.asset)
-        .filter(|asset| {
+        .map(|entry| (&entry.asset, entry.initial_size))
+        .filter(|(asset, _)| {
             (evaluations.known.contains_key(*asset) || assets.contains_key(*asset))
                 && seen.insert((*asset).clone())
         })
         .collect();
-    let unique: Vec<&AssetRef> = wanted
+    let unique: Vec<(&AssetRef, Vec3)> = wanted
         .iter()
         .copied()
-        .filter(|asset| !evaluations.known.contains_key(*asset))
+        .filter(|(asset, _)| !evaluations.known.contains_key(*asset))
         .collect();
 
     if !unique.is_empty() {
@@ -405,12 +532,13 @@ fn evaluate_all(
             .min(unique.len());
 
         let work = || {
-            while let Some(&asset) = unique.get(next.fetch_add(1, Ordering::Relaxed)) {
-                let evaluated = evaluate(&assets[asset], database).map(Arc::new);
-                results
-                    .lock()
-                    .unwrap_or_else(|e| e.into_inner())
-                    .insert(asset.clone(), evaluated);
+            while let Some(&(asset, bake)) = unique.get(next.fetch_add(1, Ordering::Relaxed)) {
+                if let Some(evaluated) = evaluate(&assets[asset], database, assets, Some(bake)) {
+                    results
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .insert(asset.clone(), evaluated.map(Arc::new));
+                }
             }
         };
         // One worker is the calling thread itself: no thread to spawn, which
@@ -432,7 +560,7 @@ fn evaluate_all(
 
     wanted
         .into_iter()
-        .filter_map(|asset| Some((asset.clone(), evaluations.known.get(asset)?.clone())))
+        .filter_map(|(asset, _)| Some((asset.clone(), evaluations.known.get(asset)?.clone())))
         .collect()
 }
 
@@ -443,3 +571,11 @@ pub(in crate::scene) mod tests_support;
 #[cfg(test)]
 #[path = "union/tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "union/inline_tests.rs"]
+mod inline_tests;
+
+#[cfg(test)]
+#[path = "union/survey.rs"]
+mod survey;

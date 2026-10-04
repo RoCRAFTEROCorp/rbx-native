@@ -235,3 +235,75 @@ fn a_corner_wedge_mesh_type_maps_to_the_corner_wedge_shape() {
 
     assert_eq!(geometry.kind, ShapeKind::CornerWedge);
 }
+
+/// A Cylinder part's cross-section is a circle as wide as the smaller of Y
+/// and Z — the extent Studio's own bake gives a union holding one.
+#[test]
+fn part_shape_cylinder_keeps_a_circular_cross_section() {
+    let mut dom = WeakDom::new();
+    let referent = part(&mut dom, "Part");
+    dom.get_mut(referent)
+        .unwrap()
+        .properties_mut()
+        .insert("shape".to_string(), Variant::Enum(2));
+
+    let geometry = resolve(
+        &dom,
+        &database(),
+        dom.get(referent).unwrap(),
+        Vec3::new(1.8, 1.0, 0.5),
+    );
+
+    assert_eq!(geometry.kind, ShapeKind::CylinderX);
+    assert_eq!(geometry.size, Vec3::new(1.8, 0.5, 0.5));
+}
+
+/// creator-docs `CylinderMesh`: "maintaining a 1:1 ratio for the part's X and
+/// Z axis, using the lowest value", after its `Scale`.
+#[test]
+fn a_cylinder_mesh_keeps_a_circular_cross_section() {
+    let mut dom = WeakDom::new();
+    let part_ref = part(&mut dom, "Part");
+    let mesh_ref = part(&mut dom, "CylinderMesh");
+    dom.set_parent(mesh_ref, Some(part_ref));
+    set_vector3(&mut dom, mesh_ref, "Scale", [1.0, 0.6, 1.0]);
+
+    let geometry = resolve(
+        &dom,
+        &database(),
+        dom.get(part_ref).unwrap(),
+        Vec3::new(0.4, 0.2, 0.3),
+    );
+
+    assert_eq!(geometry.kind, ShapeKind::CylinderY);
+    assert!(
+        (geometry.size - Vec3::new(0.3, 0.12, 0.3))
+            .abs()
+            .max_element()
+            < 1e-6
+    );
+}
+
+/// The same docs contrast a `CylinderMesh` (along Y) with a `SpecialMesh`
+/// cylinder, which lies along X like a Cylinder part.
+#[test]
+fn a_special_mesh_cylinder_lies_along_x() {
+    let mut dom = WeakDom::new();
+    let part_ref = part(&mut dom, "Part");
+    let mesh_ref = part(&mut dom, "SpecialMesh");
+    dom.set_parent(mesh_ref, Some(part_ref));
+    dom.get_mut(mesh_ref)
+        .unwrap()
+        .properties_mut()
+        .insert("MeshType".to_string(), Variant::Enum(4));
+
+    let geometry = resolve(
+        &dom,
+        &database(),
+        dom.get(part_ref).unwrap(),
+        Vec3::new(0.4, 4.0, 4.0),
+    );
+
+    assert_eq!(geometry.kind, ShapeKind::CylinderX);
+    assert_eq!(geometry.size, Vec3::new(0.4, 4.0, 4.0));
+}

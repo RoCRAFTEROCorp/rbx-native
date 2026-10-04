@@ -318,7 +318,7 @@ fn a_tree_unions_additive_leaves_then_carves_negated_ones() {
         ),
     ]);
     // 12 (see the overlapping union) minus a 1x1x1 bite fully inside it.
-    assert_volume(&evaluate(&tree).unwrap(), 11.0);
+    assert_volume(&evaluate(&tree, None).unwrap(), 11.0);
 }
 
 #[test]
@@ -336,7 +336,7 @@ fn evaluate_a_single_box_minus_box_tree_stays_positive_and_bounded() {
             true,
         ),
     ]);
-    let solid = evaluate(&tree).expect("a partial overlap must stay a valid solid");
+    let solid = evaluate(&tree, None).expect("a partial overlap must stay a valid solid");
     // 8 minus the 1x1x1 corner shared with the negated box.
     assert_volume(&solid, 7.0);
     assert!(
@@ -349,14 +349,12 @@ fn evaluate_a_single_box_minus_box_tree_stays_positive_and_bounded() {
     );
 }
 
-#[test]
-fn a_disconnected_boolean_keeps_only_its_largest_piece() {
-    // Two additive boxes joined only at a shared corner, both then carved
-    // through their middle by one wide negation: the corner link is cut
-    // away, leaving two separate solids. `evaluate` keeps just the bigger
-    // one rather than handing the renderer a debris field — see
-    // `largest_connected_component`.
-    let tree = union_of(vec![
+/// Two additive boxes joined only at a shared corner, both then carved
+/// through their middle by one wide negation: the corner link is cut away,
+/// leaving two separate solids, the smaller spanning x -2..-0.25 and the
+/// larger -0.25..4.
+fn split_in_two() -> Node {
+    union_of(vec![
         leaf(
             ShapeKind::Box,
             Vec3::splat(2.0),
@@ -370,11 +368,29 @@ fn a_disconnected_boolean_keeps_only_its_largest_piece() {
             false,
         ),
         leaf(ShapeKind::Box, Vec3::new(0.5, 6.0, 6.0), Vec3::ZERO, true),
-    ]);
-    let solid = evaluate(&tree).expect("two disjoint remainders must still resolve");
-    // Only the larger box's own trimmed remainder (4x4x4 minus a 0.25-thick
-    // slice = 60.0) survives; the smaller box's 7.0 remainder is discarded.
-    assert_volume(&solid, 60.0);
+    ])
+}
+
+#[test]
+fn a_disconnected_boolean_keeps_every_piece_inside_its_bake() {
+    // A union of separate parts is separate pieces in Studio too: both
+    // remainders (60 and 7) stay, whether or not the bake is known.
+    let solid = evaluate(&split_in_two(), None).expect("two disjoint remainders must resolve");
+    assert_volume(&solid, 67.0);
+
+    let bake = Some(Vec3::new(8.0, 4.0, 4.0));
+    let solid = evaluate(&split_in_two(), bake).expect("both lie inside the bake");
+    assert_volume(&solid, 67.0);
+}
+
+#[test]
+fn a_piece_outside_the_bake_is_debris() {
+    // A bake one stud across, centred on the union's frame, holds neither
+    // remainder whole: the largest stays regardless, and the smaller, lying
+    // 1.5 studs past the bake's edge, is something Studio's result has no
+    // geometry for.
+    let bake = Some(Vec3::new(1.0, 4.0, 4.0));
+    assert_volume(&evaluate(&split_in_two(), bake).expect("resolves"), 60.0);
 }
 
 #[test]
@@ -399,13 +415,13 @@ fn a_negated_compound_carves_all_of_its_pieces() {
             ],
         },
     ]);
-    assert_volume(&evaluate(&tree).unwrap(), 62.0);
+    assert_volume(&evaluate(&tree, None).unwrap(), 62.0);
 }
 
 #[test]
 fn a_tree_with_nothing_additive_is_empty_not_a_mesh() {
     let tree = union_of(vec![leaf(ShapeKind::Box, Vec3::ONE, Vec3::ZERO, true)]);
-    assert_eq!(evaluate(&tree).err(), Some(Failure::Empty));
+    assert_eq!(evaluate(&tree, None).err(), Some(Failure::Empty));
 }
 
 #[test]
@@ -414,7 +430,7 @@ fn a_fully_carved_tree_is_empty_not_a_mesh() {
         leaf(ShapeKind::Box, Vec3::ONE, Vec3::ZERO, false),
         leaf(ShapeKind::Box, Vec3::splat(3.0), Vec3::ZERO, true),
     ]);
-    assert_eq!(evaluate(&tree).err(), Some(Failure::Empty));
+    assert_eq!(evaluate(&tree, None).err(), Some(Failure::Empty));
 }
 
 #[test]
@@ -423,7 +439,7 @@ fn a_zero_sized_leaf_contributes_nothing() {
         leaf(ShapeKind::Box, Vec3::ONE, Vec3::ZERO, false),
         leaf(ShapeKind::Ball, Vec3::ZERO, Vec3::ZERO, false),
     ]);
-    assert_volume(&evaluate(&tree).unwrap(), 1.0);
+    assert_volume(&evaluate(&tree, None).unwrap(), 1.0);
 }
 
 /// Every asset this module has been tested against so far (see
@@ -459,7 +475,7 @@ fn a_multi_lump_organic_union_keeps_every_facet_wound_outward() {
             false,
         ),
     ]);
-    let solid = evaluate(&tree).expect("a multi-lump additive union must resolve");
+    let solid = evaluate(&tree, None).expect("a multi-lump additive union must resolve");
     assert!(
         solid.polygons.len() > 20,
         "the lump cluster should fragment into more than a handful of facets"
@@ -606,7 +622,7 @@ fn an_absurdly_wide_tree_is_refused_up_front() {
         })
         .collect();
     assert_eq!(
-        evaluate(&union_of(children)).err(),
+        evaluate(&union_of(children), None).err(),
         Some(Failure::TooComplex)
     );
 }

@@ -100,12 +100,18 @@ pub(crate) fn resolve(
         // a plain box until CSG/mesh geometry lands (see rbx_mesh).
         _ => ShapeKind::Box,
     };
-    let size = if kind == ShapeKind::Ball {
+    let size = match kind {
         // Enum.PartType.Ball is always a true sphere, clamped to the smallest
         // dimension rather than stretched into an ellipsoid.
-        Vec3::splat(size.x.min(size.y).min(size.z))
-    } else {
-        size
+        ShapeKind::Ball => Vec3::splat(size.x.min(size.y).min(size.z)),
+        // A Cylinder part's cross-section is a circle too, as wide as the
+        // smaller of Y and Z: Studio's own bake of a union holding one has
+        // exactly that extent.
+        ShapeKind::CylinderX => {
+            let diameter = size.y.min(size.z);
+            Vec3::new(size.x, diameter, diameter)
+        }
+        _ => size,
     };
     Geometry {
         kind,
@@ -191,11 +197,17 @@ fn mesh_child(dom: &WeakDom, instance: &Instance, size: Vec3) -> Option<Geometry
                 size: size * scale,
                 offset,
             }),
-            "CylinderMesh" => Some(Geometry {
-                kind: ShapeKind::CylinderY,
-                size: size * scale,
-                offset,
-            }),
+            // Along Y, and "maintaining a 1:1 ratio for the part's X and Z
+            // axis, using the lowest value" (creator-docs `CylinderMesh`).
+            "CylinderMesh" => {
+                let size = size * scale;
+                let diameter = size.x.min(size.z);
+                Some(Geometry {
+                    kind: ShapeKind::CylinderY,
+                    size: Vec3::new(diameter, size.y, diameter),
+                    offset,
+                })
+            }
             "SpecialMesh" => special_mesh(child, size * scale, offset),
             // A plain `FileMesh` child (no MeshType) has no procedural stand-in
             // yet — TODO: rbx_mesh will draw its actual geometry.
@@ -227,8 +239,10 @@ fn special_mesh(mesh: &Instance, size: Vec3, offset: Vec3) -> Option<Geometry> {
     };
 
     let kind = match mesh_type {
-        0 | 3 => ShapeKind::Ball,           // Head, Sphere
-        4 => ShapeKind::CylinderY,          // Cylinder
+        0 | 3 => ShapeKind::Ball, // Head, Sphere
+        // Along X like a Cylinder part, not Y like a `CylinderMesh`
+        // (creator-docs `CylinderMesh`, which contrasts the two).
+        4 => ShapeKind::CylinderX,
         2 | 7 | 9 | 10 => ShapeKind::Wedge, // Wedge, Prism, ParallelRamp, RightAngleRamp
         11 => ShapeKind::CornerWedge,
         5 => return None,    // FileMesh: no procedural geometry yet
