@@ -166,11 +166,24 @@ pub(super) fn parse(
     database: &ReflectionDatabase,
     assets: &Assets,
 ) -> Option<Parsed> {
+    parse_at_least(bytes, database, assets, 0.0)
+}
+
+/// [`parse`], every part's stored `size` raised to at least `min_size` on
+/// each axis first — the smallest part the engine built when the union was
+/// baked (see `super::legacy`).
+pub(super) fn parse_at_least(
+    bytes: &[u8],
+    database: &ReflectionDatabase,
+    assets: &Assets,
+    min_size: f32,
+) -> Option<Parsed> {
     let mut context = Context {
         database,
         assets,
         missing: Vec::new(),
         depth: 0,
+        min_size,
     };
     let children = context.document(bytes)?;
     Some(Parsed {
@@ -200,6 +213,7 @@ struct Context<'a> {
     assets: &'a Assets,
     missing: Vec<AssetRef>,
     depth: usize,
+    min_size: f32,
 }
 
 impl Context<'_> {
@@ -272,7 +286,7 @@ impl Context<'_> {
         let Some(&Variant::Vector3(size)) = properties.get("size") else {
             return None;
         };
-        let size = Vec3::new(size.x, size.y, size.z);
+        let size = Vec3::new(size.x, size.y, size.z).max(Vec3::splat(self.min_size));
         Some(Node::Leaf(Leaf {
             negate,
             geometry: shape::resolve(dom, self.database, instance, size),

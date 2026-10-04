@@ -58,8 +58,13 @@ fn survey(path: &str, database: &ReflectionDatabase, cache: &AssetCache) {
             *tally.entry("asset unavailable".into()).or_default() += 1;
             continue;
         };
+        let initial = match instance.properties().get("InitialSize") {
+            Some(&Variant::Vector3(v)) => Some(glam::Vec3::new(v.x, v.y, v.z)),
+            _ => None,
+        };
         let parsed = loop {
-            let Some(parsed) = tree::parse(&raw, database, &assets) else {
+            let Some(parsed) = super::legacy::parse_as_baked(&raw, database, &assets, initial)
+            else {
                 break None;
             };
             if parsed.missing.is_empty() {
@@ -82,10 +87,6 @@ fn survey(path: &str, database: &ReflectionDatabase, cache: &AssetCache) {
             continue;
         };
         let kind = if inline { "inline" } else { "asset" };
-        let initial = match instance.properties().get("InitialSize") {
-            Some(&Variant::Vector3(v)) => Some(glam::Vec3::new(v.x, v.y, v.z)),
-            _ => None,
-        };
         match csg::evaluate(&parsed.root, initial) {
             Ok(solid) => {
                 *tally.entry(format!("carved ({kind})")).or_default() += 1;

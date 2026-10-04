@@ -35,6 +35,12 @@ impl Leaf {
         }
     }
 
+    /// Its box stretched to `size` rather than a cube.
+    pub(in crate::scene) fn stretched(mut self, size: Vec3) -> Self {
+        self.size = size;
+        self
+    }
+
     /// A colour of its own, so a test can tell one recovered piece from
     /// another — a real builder's parts nearly always have one.
     pub(in crate::scene) fn painted(mut self, color: [u8; 3]) -> Self {

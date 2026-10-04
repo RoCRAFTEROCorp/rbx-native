@@ -12,6 +12,7 @@
 //! `crate::assets` for downloading.
 
 mod csg;
+mod legacy;
 mod patch;
 mod tree;
 
@@ -443,7 +444,7 @@ fn evaluate(
     assets: &tree::Assets,
     bake: Option<Vec3>,
 ) -> Option<Option<Evaluated>> {
-    let Some(parsed) = tree::parse(bytes, database, assets) else {
+    let Some(parsed) = legacy::parse_as_baked(bytes, database, assets, bake) else {
         return Some(None);
     };
     if !parsed.missing.is_empty() {
