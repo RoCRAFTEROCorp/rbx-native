@@ -1,7 +1,7 @@
 use gpui_kit::SharedString;
 use rbx_dom::Ref;
 
-use super::DraggedInstances;
+use super::{DraggedInstances, defers_press};
 
 fn name() -> SharedString {
     SharedString::from("Part")
@@ -39,4 +39,22 @@ fn nothing_selected_still_drags_the_pressed_row() {
     let dragged = DraggedInstances::new(&[], Ref::new(5), &name());
 
     assert_eq!(dragged.references, vec![Ref::new(5)]);
+}
+
+#[test]
+fn a_plain_press_inside_a_multi_selection_waits_for_the_release() {
+    let selected = [Ref::new(1), Ref::new(2), Ref::new(3)];
+
+    // Not only the anchor: any row of the selection can carry all of it.
+    assert!(defers_press(&selected, Ref::new(1)));
+    assert!(defers_press(&selected, Ref::new(3)));
+}
+
+#[test]
+fn a_plain_press_anywhere_else_selects_at_once() {
+    let selected = [Ref::new(1), Ref::new(2)];
+
+    assert!(!defers_press(&selected, Ref::new(3)));
+    assert!(!defers_press(&[Ref::new(1)], Ref::new(1)));
+    assert!(!defers_press(&[], Ref::new(1)));
 }
