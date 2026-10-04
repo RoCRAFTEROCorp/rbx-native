@@ -1145,7 +1145,14 @@ Roblox's own engine.
   when the selection holds no part. Each part's colour goes along as its
   material (a `.mtl` beside the `.obj`), and a mesh drawn with a
   `TextureID`/`TextureId` image takes it too: a `.png` the `.mtl` maps,
-  or a PNG data URI inside the glTF.
+  or a PNG data URI inside the glTF. A `MeshPart` wearing a
+  `SurfaceAppearance` takes its four maps (glTF base colour, normal and a
+  packed metallic-roughness texture; `map_Kd`/`map_Bump`/`map_Pm`/`map_Pr`
+  in the `.mtl`), its `Color` tint and its `AlphaMode` as the viewport
+  shades them, an `Overlay` colour map baked over the part's colour since
+  neither format can mix one by its alpha. A part whose `Material` has a
+  texture pack takes the pack, with UVs projected per face the way the
+  viewport tiles it. An image several parts share is written once.
 - [x] Drag-and-drop reparenting in the Explorer tree. Dragging a row
   onto another reparents onto it, the way creator-docs describes
   ("simply drag and drop them onto the new parent") — with a ghost under
@@ -1801,10 +1808,13 @@ Roblox's own engine.
   Editor): the whole place to a local file under a name of its choosing
   (Studio's File › Save to File / File › Export as glTF, both File-menu
   items rather than row ones), and services and the place to Roblox
-  (Save/Publish, see below). The mesh exports also still leave out a
-  `SurfaceAppearance`'s maps and the `Material` textures (only the colour
-  and a mesh's own image travel), and a union whose boolean failed, or one
-  baked only as `MeshData` (never decoded here), exports as its box.
+  (Save/Publish, see below). In the mesh exports a union whose boolean
+  failed, or one baked only as `MeshData` (never decoded here), still
+  exports as its box; a textured mesh whose `Material` also has a pack
+  takes its own image alone (one UV set per part), a material projected
+  across a facet tilted off every axis takes one axis's projection where
+  the viewport blends three, and the procedural materials (Neon, Glass,
+  ForceField) export as their colour.
   Roblox's own roadmap lists glTF export, pushed from
   Late 2025 to Late 2026 in its
   [fall 2026 update](https://devforum.roblox.com/t/creator-roadmap-2026-fall-update/4880208);

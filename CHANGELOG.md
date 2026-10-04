@@ -8,8 +8,11 @@
   same serializers a save uses, services included, and **Export
   Selection…** / **Export as glTF…** write its parts as `.obj` or a
   single-file glTF 2.0 — the geometry the viewport draws, real downloaded
-  meshes included — for opening in Blender or any other 3D tool. —
-  @chteau
+  meshes included — for opening in Blender or any other 3D tool. A
+  part's colour, a mesh's own texture, a `SurfaceAppearance`'s four PBR
+  maps (with its tint and alpha mode) and a `Material`'s texture pack,
+  tiled the way the viewport tiles it, all travel with it, and an image
+  several parts share is written once. — @chteau
 - **The Transform tool.** The ribbon's 5th Tools button — Move's arrows,
   Scale's balls and Rotate's rings, all grabbable over the same selection
   at once — the roadmap could previously only confirm as `creator-docs`'
