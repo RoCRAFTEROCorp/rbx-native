@@ -1,7 +1,9 @@
 use glam::{Mat3, Mat4, Vec3};
 use rbx_dom::{CFrameData, Ref, Variant, Vector3Data, WeakDom};
 use rbx_reflection::ReflectionDatabase;
+use rbx_viewer::gizmo;
 
+use super::frame::rigid;
 use super::*;
 
 /// `Targets::read` needs one to tell a `BasePart` from a container it has to
@@ -186,6 +188,7 @@ fn every_tool_but_select_shows_handles_and_drags() {
         (Tool::Scale, Kind::Scale),
         (Tool::Rotate, Kind::Rotate),
         (Tool::Transform, Kind::Transform),
+        (Tool::Pivot, Kind::Pivot),
     ] {
         let transform = Transform {
             tool,
@@ -196,9 +199,10 @@ fn every_tool_but_select_shows_handles_and_drags() {
             transform.gizmo(),
             Some(Gizmo {
                 kind,
-                local: false,
-                held: None,
-                summon: None,
+                // Edit Pivot's hotspots show while its Snap is on, which it
+                // is by default.
+                hotspots: tool == Tool::Pivot,
+                ..Gizmo::default()
             }),
             "{} draws the wrong handles",
             tool.label()
@@ -626,10 +630,13 @@ fn part_at(referent: u32, position: Vec3, size: Vec3) -> Target {
 fn a_group_scales_every_part_and_its_offset_from_the_pivot_by_one_factor() {
     // Two 2-stud cubes side by side, x from -3 to 3; the -X face of the
     // group's box stands at x = -3 and holds still while the +X one is pulled.
-    let held = Targets(vec![
-        part_at(1, Vec3::new(-2.0, 0.0, 0.0), Vec3::splat(2.0)),
-        part_at(2, Vec3::new(2.0, 0.0, 0.0), Vec3::splat(2.0)),
-    ]);
+    let held = Targets(
+        vec![
+            part_at(1, Vec3::new(-2.0, 0.0, 0.0), Vec3::splat(2.0)),
+            part_at(2, Vec3::new(2.0, 0.0, 0.0), Vec3::splat(2.0)),
+        ],
+        None,
+    );
     let mut targets = held.clone();
     let pivot = Vec3::new(-3.0, 0.0, 0.0);
 
@@ -654,7 +661,7 @@ fn a_group_scales_every_part_and_its_offset_from_the_pivot_by_one_factor() {
 
 #[test]
 fn a_group_scale_is_absolute_from_the_grab_not_a_running_product() {
-    let held = Targets(vec![part_at(1, Vec3::ZERO, Vec3::splat(2.0))]);
+    let held = Targets(vec![part_at(1, Vec3::ZERO, Vec3::splat(2.0))], None);
     let mut targets = held.clone();
     targets.scale_about(&held, Vec3::ZERO, 3.0);
     targets.scale_about(&held, Vec3::ZERO, 1.5);
@@ -663,10 +670,13 @@ fn a_group_scale_is_absolute_from_the_grab_not_a_running_product() {
 
 #[test]
 fn a_group_factor_stops_where_any_part_would_leave_the_size_range() {
-    let targets = Targets(vec![
-        part_at(1, Vec3::ZERO, Vec3::new(1.0, 1.0, 1.0)),
-        part_at(2, Vec3::ZERO, Vec3::new(10.0, 1.0, 1.0)),
-    ]);
+    let targets = Targets(
+        vec![
+            part_at(1, Vec3::ZERO, Vec3::new(1.0, 1.0, 1.0)),
+            part_at(2, Vec3::ZERO, Vec3::new(10.0, 1.0, 1.0)),
+        ],
+        None,
+    );
     // The 10-stud part hits a 20-stud ceiling at a factor of 2, however far
     // the handle is pulled.
     assert!((targets.factor_within(5.0, 0.001, 20.0) - 2.0).abs() < 1e-6);
@@ -679,10 +689,13 @@ fn a_group_factor_stops_where_any_part_would_leave_the_size_range() {
 
 #[test]
 fn a_group_rotates_about_its_centre_carrying_each_part_round_with_it() {
-    let held = Targets(vec![
-        part_at(1, Vec3::new(4.0, 0.0, 0.0), Vec3::splat(2.0)),
-        part_at(2, Vec3::new(-4.0, 0.0, 0.0), Vec3::splat(2.0)),
-    ]);
+    let held = Targets(
+        vec![
+            part_at(1, Vec3::new(4.0, 0.0, 0.0), Vec3::splat(2.0)),
+            part_at(2, Vec3::new(-4.0, 0.0, 0.0), Vec3::splat(2.0)),
+        ],
+        None,
+    );
     let mut targets = held.clone();
     let quarter = Mat3::from_axis_angle(Vec3::Y, std::f32::consts::FRAC_PI_2);
 
@@ -697,4 +710,100 @@ fn a_group_rotates_about_its_centre_carrying_each_part_round_with_it() {
     assert!((position - Vec3::new(0.0, 0.0, 4.0)).length() < 1e-5);
     // Sizes are untouched by a turn.
     assert!((targets.anchor().unwrap().size() - Vec3::splat(2.0)).length() < 1e-5);
+}
+
+/// A pivot two studs above a lone part, which every gesture carries along.
+fn with_pivot() -> Targets {
+    let pivot = Mat4::from_translation(Vec3::new(0.0, 2.0, 0.0));
+    Targets(vec![part_at(1, Vec3::ZERO, Vec3::splat(2.0))], Some(pivot))
+}
+
+fn pivot_at(targets: &Targets) -> Vec3 {
+    targets.pivot().unwrap().w_axis.truncate()
+}
+
+#[test]
+fn the_pivot_travels_with_a_move() {
+    let mut targets = with_pivot();
+    targets.translate(Vec3::new(3.0, 0.0, 0.0));
+    assert_eq!(pivot_at(&targets), Vec3::new(3.0, 2.0, 0.0));
+}
+
+#[test]
+fn a_turn_about_the_pivot_leaves_it_standing_and_turns_it() {
+    let held = with_pivot();
+    let mut targets = held.clone();
+    let quarter = Mat3::from_axis_angle(Vec3::Z, std::f32::consts::FRAC_PI_2);
+
+    let written = targets.rotate_about(&held, Vec3::new(0.0, 2.0, 0.0), quarter);
+
+    assert!((pivot_at(&targets) - Vec3::new(0.0, 2.0, 0.0)).length() < 1e-5);
+    let axes = Mat3::from_mat4(targets.pivot().unwrap());
+    assert!(
+        (axes.x_axis - Vec3::Y).length() < 1e-5,
+        "the pivot turned too"
+    );
+    // The part swung round it: from two below the pivot to two to its +X.
+    assert!((written[0].2 - Vec3::new(2.0, 2.0, 0.0)).length() < 1e-5);
+}
+
+#[test]
+fn a_scale_carries_the_pivot_out_from_the_point_it_scales_about() {
+    let held = with_pivot();
+    let mut targets = held.clone();
+    targets.scale_about(&held, Vec3::new(0.0, -1.0, 0.0), 2.0);
+    assert_eq!(pivot_at(&targets), Vec3::new(0.0, 5.0, 0.0));
+}
+
+#[test]
+fn a_lone_parts_pivot_rides_along_with_its_resize() {
+    let mut targets = with_pivot();
+    let anchor = targets.anchor().unwrap();
+    targets.set_anchor(anchor.resized_to(Vec3::new(2.0, 4.0, 2.0), Vec3::new(0.0, 1.0, 0.0)));
+    assert!((pivot_at(&targets) - Vec3::new(0.0, 3.0, 0.0)).length() < 1e-5);
+}
+
+#[test]
+fn a_cframe_and_its_matrix_round_trip() {
+    let frame = CFrameData {
+        position: Vector3Data {
+            x: 1.0,
+            y: 2.0,
+            z: 3.0,
+        },
+        // A quarter turn about +Y, row by row: +X goes to -Z.
+        rotation: [0.0, 0.0, 1.0, 0.0, 1.0, 0.0, -1.0, 0.0, 0.0],
+    };
+    let matrix = rigid(&frame);
+    assert!((matrix.transform_vector3(Vec3::X) - Vec3::NEG_Z).length() < 1e-6);
+    assert_eq!(matrix.w_axis.truncate(), Vec3::new(1.0, 2.0, 3.0));
+    assert_eq!(cframe(matrix), frame);
+}
+
+/// Edit Pivot's hotspots stand on the model's box squared to its pivot:
+/// turned a quarter about Y, the box's own X runs along the world's -Z, so
+/// it is 1 long that way and 5 along its Z (cubes at x = 0 and x = 4).
+#[test]
+fn a_models_hotspot_box_turns_with_its_pivot() {
+    let (mut dom, model, ..) = model_of_two_parts();
+    let quarter = CFrameData {
+        position: Vector3Data {
+            x: 2.0,
+            y: 0.0,
+            z: 0.0,
+        },
+        rotation: [0.0, 0.0, 1.0, 0.0, 1.0, 0.0, -1.0, 0.0, 0.0],
+    };
+    dom.set_property(model, "WorldPivot", Variant::CFrame(quarter))
+        .unwrap();
+    let targets = Targets::read(&dom, &database(), &[model]);
+
+    let boxed = targets.pivot_box().unwrap();
+    let axes = Mat3::from_mat4(targets.pivot().unwrap());
+    assert!((boxed.w_axis.truncate() - Vec3::new(2.0, 0.0, 0.0)).length() < 1e-5);
+    assert!((boxed.x_axis.truncate() - axes.x_axis).length() < 1e-5);
+    assert!((boxed.z_axis.truncate() - axes.z_axis * 5.0).length() < 1e-5);
+    // Without a pivot of its own to square to, there is none.
+    let several = Targets::read(&dom, &database(), dom.get(model).unwrap().children());
+    assert_eq!(several.pivot_box(), None);
 }

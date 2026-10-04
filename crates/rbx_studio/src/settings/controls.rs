@@ -1,6 +1,6 @@
 //! How the camera and the draggers feel: the free camera's look speed,
 //! flight speed and smoothing (`"camera"`), and the Snap popover's two
-//! increments (`"snap"`).
+//! increments with Edit Pivot's Snap checkbox (`"snap"`).
 
 use rbx_viewer::CameraFeel;
 
@@ -16,6 +16,8 @@ pub(crate) struct Controls {
     pub(crate) move_increment: f32,
     /// Degrees a rotate drag rounds to.
     pub(crate) rotate_increment: f32,
+    /// Edit Pivot's Snap checkbox (`transform::Transform::pivot_snap`).
+    pub(crate) pivot_snap: bool,
 }
 
 impl Default for Controls {
@@ -26,6 +28,7 @@ impl Default for Controls {
             camera: CameraFeel::default(),
             move_increment: transform.translate.increment,
             rotate_increment: transform.rotate.increment,
+            pivot_snap: transform.pivot_snap,
         }
     }
 }
@@ -60,6 +63,10 @@ impl Controls {
             },
             move_increment: increment("move", defaults.move_increment),
             rotate_increment: increment("rotate", defaults.rotate_increment),
+            pivot_snap: value
+                .get("snap")
+                .and_then(|snap| snap.get("pivot")?.as_bool())
+                .unwrap_or(defaults.pivot_snap),
         }
     }
 
@@ -73,6 +80,7 @@ impl Controls {
             serde_json::json!({
                 "move": self.move_increment,
                 "rotate": self.rotate_increment,
+                "pivot": self.pivot_snap,
             }),
         ]
     }
@@ -88,6 +96,7 @@ mod tests {
         let defaults = Controls::default();
         assert_eq!(defaults.move_increment, 1.);
         assert_eq!(defaults.rotate_increment, 45.);
+        assert!(defaults.pivot_snap);
     }
 
     #[test]
@@ -100,6 +109,7 @@ mod tests {
             },
             move_increment: 0.25,
             rotate_increment: 15.,
+            pivot_snap: false,
         };
         let [camera, snap] = controls.json();
         let value = serde_json::json!({ "camera": camera, "snap": snap });

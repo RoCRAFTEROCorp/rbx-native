@@ -143,31 +143,18 @@ pub(super) fn models_of<'a>(
 /// drawn geometry at all.
 ///
 /// A part keeps its own oriented box, which hugs it however it is turned. A
-/// container has no orientation to hug it with, so it gets the world-axis
-/// -aligned box around everything beneath it — one box for the whole thing,
-/// not one per part, because that extent is what Studio calls a model's
-/// bounding box and what the Move gizmo already stands in the middle of (see
-/// `gizmo::bounds_of`). Shared by the selection and hover outlines so both
-/// draw a model as one box rather than a mess of per-part ones.
-///
-/// Known divergence from real Studio, since the docs are explicit about it:
-/// `Model:GetBoundingBox` "matches the selection box rendered in Studio when
-/// the model is selected", and its orientation "matches the orientation of
-/// the Pivot — either the pivot of the `PrimaryPart` (if present) or the
-/// `WorldPivot` of the model". The default pivot has no rotation, so the two
-/// agree for every model that has neither; a model with a turned
-/// `PrimaryPart` gets a box turned with it in Studio and a world-aligned one
-/// here. Pivots are not modelled anywhere in this editor yet (see
-/// `ROADMAP.md`'s Pivot tools bullet), so the box is aligned to the world
-/// rather than to a pivot that does not exist to read.
+/// container gets one box round everything beneath it — not one per part,
+/// because that extent is what Studio calls a model's bounding box — squared
+/// to its pivot's rotation ([`Selected::axes`]), the world's for a container
+/// with no pivot: `Model:GetBoundingBox` "matches the selection box rendered
+/// in Studio when the model is selected", and its orientation "matches the
+/// orientation of the Pivot". Shared by the selection and hover outlines so
+/// both draw a model as one box rather than a mess of per-part ones.
 pub(super) fn box_of(placements: &HashMap<Ref, Placement>, entry: &Selected) -> Option<Mat4> {
     if entry.is_part() {
         return Some(placements.get(&entry.referent())?.model);
     }
-    let (min, max) = gizmo::bounds_of(models_of(placements, entry))?;
-    // The unit cube `edges` carries through spans [-0.5, 0.5], so the box's
-    // full extent is its scale, exactly as a part's `Size` is.
-    Some(Mat4::from_translation((min + max) * 0.5) * Mat4::from_scale(max - min))
+    gizmo::bounds_along(models_of(placements, entry), entry.axes())
 }
 
 /// Every *container's* edges, in order — one box each, and nothing at all
@@ -246,6 +233,50 @@ mod tests {
         let selected = [Selected::part(Ref::new(1))];
         assert!(box_edges(&placements, &selected).is_empty());
         assert_eq!(box_of(&placements, &selected[0]), Some(Mat4::IDENTITY));
+    }
+
+    /// `studio/pivot-tools.md`: "When you rotate the pivot of a model, the
+    /// bounding box of the model also rotates."
+    #[test]
+    fn a_model_box_turns_with_its_pivot() {
+        use glam::Mat3;
+        use rbx_dom::WeakDom;
+        use rbx_reflection::ReflectionDatabase;
+
+        let mut dom = WeakDom::new();
+        let model = dom.new_instance("Model", "Model", None);
+        let mut placements = HashMap::new();
+        for x in [0.0, 4.0] {
+            let part = dom.new_instance("Part", "Part", Some(model));
+            placements.insert(part, placement(Mat4::from_translation(Vec3::X * x)));
+        }
+        let entry = Selected::read(&dom, &ReflectionDatabase::embedded(), model);
+
+        let world = box_of(&placements, &entry).unwrap();
+        assert_eq!(
+            world,
+            Mat4::from_translation(Vec3::X * 2.0) * Mat4::from_scale(Vec3::new(5.0, 1.0, 1.0))
+        );
+
+        let turn = Mat3::from_rotation_y(30f32.to_radians());
+        let turned = box_of(&placements, &entry.along(turn)).unwrap();
+        let axes = Mat3::from_mat4(turned);
+        assert!(axes.x_axis.normalize().abs_diff_eq(turn.x_axis, 1e-5));
+        assert!(axes.z_axis.normalize().abs_diff_eq(turn.z_axis, 1e-5));
+        // Still round both parts: every corner of each lies inside it.
+        let inside = turned.inverse();
+        for part in placements.values() {
+            for corner in CORNERS {
+                let local = inside.transform_point3(part.model.transform_point3(corner));
+                assert!(local.abs().cmple(Vec3::splat(HALF + 1e-4)).all(), "{local}");
+            }
+        }
+        // A lone part is untouched by a pivot it does not have.
+        let part = Selected::part(*placements.keys().next().unwrap()).along(turn);
+        assert_eq!(
+            box_of(&placements, &part),
+            Some(placements[&part.referent()].model)
+        );
     }
 
     #[test]

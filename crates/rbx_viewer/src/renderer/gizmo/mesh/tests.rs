@@ -34,13 +34,17 @@ fn every(_: Axis, _: f32) -> bool {
     true
 }
 
-/// Every tool's geometry, for the checks that have to hold for all four.
-fn shapes() -> [Shape; 4] {
+/// Every tool's geometry, for the checks that have to hold for all five.
+fn shapes() -> [Shape; 5] {
     [
         Shape::Move(handles()),
         Shape::Scale(faces()),
         Shape::Rotate(handles()),
         Shape::Transform(handles(), faces()),
+        Shape::Pivot(
+            handles(),
+            Some((Hotspots::new(faces(), []), Some(faces().centre()))),
+        ),
     ]
 }
 
@@ -309,6 +313,7 @@ fn each_arm_carries_its_axis_colour() {
             .iter()
             .map(|vertex| vertex.color.map(f32::to_bits))
             .filter(|&color| color != ORIGIN_COLOR.map(f32::to_bits))
+            .filter(|&color| color != HOTSPOT_COLOR.map(f32::to_bits))
             .collect();
 
         assert_eq!(colors.len(), 3, "{shape:?}: three axes, three colours");
@@ -390,10 +395,7 @@ fn a_transform_gizmo_draws_every_arm_ball_and_ring() {
         + mesh(&Shape::Scale(faces()), None, eye).len()
         + mesh(&Shape::Rotate(handles()), None, eye).len();
     assert_eq!(combined, separate);
-    assert_eq!(
-        combined, CAPACITY,
-        "this is the shape CAPACITY is sized for"
-    );
+    assert_eq!(combined, TRANSFORM_VERTICES);
 }
 
 /// Depth-test-off painting only works if what's nearer the eye is painted
@@ -471,4 +473,72 @@ fn the_free_drag_ball_sits_at_the_origin_between_the_far_and_near_arms() {
     assert!(mesh(&Shape::Move(handles()), held, eye)
         .iter()
         .all(|vertex| vertex.color.map(f32::to_bits) != grey));
+}
+
+#[test]
+fn edit_pivot_draws_a_magenta_dot_per_hotspot_and_a_larger_one_where_it_snapped() {
+    // Big enough that no two dots overlap.
+    let model =
+        Mat4::from_scale_rotation_translation(Vec3::splat(20.0), Quat::IDENTITY, Vec3::ZERO);
+    let faces = Faces::new(model, pose(Vec3::splat(40.0)), false);
+    let hotspots = Hotspots::new(faces, []);
+    let snapped = faces.hotspots()[0];
+    let vertices = mesh(
+        &Shape::Pivot(handles(), Some((hotspots.clone(), Some(snapped)))),
+        None,
+        Vec3::splat(40.0),
+    );
+    let magenta: Vec<Vec3> = vertices
+        .iter()
+        .filter(|vertex| vertex.color == HOTSPOT_COLOR)
+        .map(|vertex| Vec3::from(vertex.position))
+        .collect();
+    assert_eq!(magenta.len(), HOTSPOTS * VERTICES_PER_BALL);
+
+    // How far the dot round each hotspot reaches.
+    let reach = |point: Vec3| {
+        magenta
+            .iter()
+            .map(|vertex| (*vertex - point).length())
+            .filter(|&distance| distance < hotspots.radius(point) * SNAPPED_SCALE * 1.01)
+            .fold(0.0f32, f32::max)
+    };
+    let other = faces.hotspots()[26];
+    assert!((reach(other) - hotspots.radius(other)).abs() < 1e-3);
+    assert!((reach(snapped) - hotspots.radius(snapped) * SNAPPED_SCALE).abs() < 1e-3);
+
+    // Snapping off: the same arms, rings and ball, and no dots at all.
+    let bare = mesh(&Shape::Pivot(handles(), None), None, Vec3::splat(40.0));
+    assert!(bare.iter().all(|vertex| vertex.color != HOTSPOT_COLOR));
+    assert_eq!(bare.len(), vertices.len() - magenta.len());
+}
+
+/// A model of more parts than the cap fills the pivot gizmo's whole budget
+/// and never more: a dot per box hotspot, and seven per capped part.
+#[test]
+fn a_many_part_model_draws_its_parts_hotspots_up_to_the_cap() {
+    let eye = Vec3::splat(40.0);
+    let box_of = |centre: Vec3| {
+        Faces::new(
+            Mat4::from_scale_rotation_translation(Vec3::splat(2.0), Quat::IDENTITY, centre),
+            pose(eye),
+            false,
+        )
+    };
+    let parts = (0..500).map(|index| box_of(Vec3::X * index as f32 * 3.0));
+    let hotspots = Hotspots::new(box_of(Vec3::ZERO), parts);
+    let vertices = mesh(&Shape::Pivot(handles(), Some((hotspots, None))), None, eye);
+    let magenta = vertices
+        .iter()
+        .filter(|vertex| vertex.color == HOTSPOT_COLOR)
+        .count();
+    assert_eq!(
+        magenta,
+        (HOTSPOTS + HOTSPOT_PARTS * PART_HOTSPOTS) * VERTICES_PER_BALL
+    );
+    assert_eq!(
+        vertices.len(),
+        PIVOT_VERTICES,
+        "the pivot gizmo's own budget"
+    );
 }

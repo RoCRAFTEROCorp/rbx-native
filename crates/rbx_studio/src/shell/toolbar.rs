@@ -49,6 +49,7 @@ impl Shell {
                 "rotate" => self.transform_action(Action::Use(Tool::Rotate), cx),
                 "transform" => self.transform_action(Action::Use(Tool::Transform), cx),
                 "sun" => self.transform_action(Action::Use(Tool::Sun), cx),
+                "pivot" => self.transform_action(Action::Use(Tool::Pivot), cx),
                 "local" => self.transform_action(Action::ToggleLocal, cx),
                 "nosnap" => self.transform_action(Action::ToggleSnap(SnapKind::Translate), cx),
                 other => eprintln!("rbxstudio: {TOOL_VARIABLE}: no tool called {other:?}"),
@@ -72,12 +73,13 @@ impl Shell {
             }
             Action::SetIncrement(kind, increment) => self.snap_mut(kind).increment = increment,
             Action::FocusIncrement(_) => {}
+            Action::TogglePivotSnap => self.transform.pivot_snap = !self.transform.pivot_snap,
         }
 
         let transform = self.transform;
         self.viewport
             .update(cx, |viewport, _| viewport.set_transform(transform));
-        if matches!(action, Action::SetIncrement(..)) {
+        if matches!(action, Action::SetIncrement(..) | Action::TogglePivotSnap) {
             self.save_settings();
         }
         cx.notify();

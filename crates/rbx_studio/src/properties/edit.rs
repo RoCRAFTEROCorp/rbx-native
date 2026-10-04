@@ -242,6 +242,9 @@ pub(crate) fn commit(
     let value = parse(&current, db, &class, canonical, text)?;
     if let Variant::Ref(target) = value {
         check_target(dom, db, reference, &class, canonical, target)?;
+        if target == NIL_REF && canonical == "PrimaryPart" && db.is_subclass_of(&class, "Model") {
+            return rbx_lua::pivot::clear_primary_part(dom, db, reference);
+        }
         if target == NIL_REF {
             return dom
                 .remove_property(reference, &key)

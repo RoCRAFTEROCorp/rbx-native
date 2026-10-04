@@ -2,6 +2,23 @@
 
 ## 2026-10-04
 
+- **Edit Pivot and Reset, on the Model tab.** Studio's pivot tools
+  (`studio/pivot-tools.md`): a sixth tool whose arrows, rings and
+  free-drag ball move and turn a part's or model's pivot without moving
+  the geometry, snapping onto the selection's corners, edge middles, face
+  middles and centre — drawn as magenta points — while Snap is on, and a
+  Reset that puts the pivot back on the bounding box's centre. Move's and
+  Rotate's handles now stand on a lone selection's pivot, so a turn goes
+  round it; dragging a model carries its `WorldPivot` along; and deleting
+  a model's `PrimaryPart` leaves its pivot where it was instead of jumping
+  back, as the docs ask, while clearing it puts the pivot back on the
+  bounding box's centre. The hotspots stand on the model's box squared to
+  its pivot, so they turn with it; Local space turns Move's and Rotate's
+  handles with the pivot too; a whole model scaled at once keeps its pivot
+  where the drag showed it on release; and the Snap checkbox is remembered
+  between sessions. A model's blue selection outline turns with its pivot
+  too, following every pivot edit, and Snap offers each part's own face
+  middles and centre as well as the model box's. — @chteau
 - **Save and Publish to Roblox from the File menu.** File › Save to
   Roblox and Publish to Roblox upload the open place as a new saved or
   live version of its Roblox place, replacing the greyed-out Publish

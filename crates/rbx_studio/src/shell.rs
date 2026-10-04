@@ -31,6 +31,7 @@ mod menu;
 mod output;
 mod panel_window;
 mod panels;
+mod pivot;
 mod property_element;
 mod quality;
 mod recovery;
@@ -354,6 +355,9 @@ pub(crate) struct Shell {
     /// the toolbar renders from it; pushed down to the viewport, which
     /// hit-tests against it, whenever it changes.
     transform: Transform,
+    /// The model pivots a viewport drag carries with its parts, read once at
+    /// the drag's first step — see `Shell::write_drag_after`.
+    drag_followers: Vec<rbx_lua::pivot::Follower>,
     /// The two snap increment fields' live text — see `shell::toolbar::snap`.
     snap_fields: SnapFields,
     /// The Align tool's current toggles (axes, Min/Center/Max, World/Local,
@@ -539,6 +543,7 @@ impl Shell {
         let mut transform = Transform::default();
         transform.translate.increment = controls.move_increment;
         transform.rotate.increment = controls.rotate_increment;
+        transform.pivot_snap = controls.pivot_snap;
         let viewport = cx.new(|cx| {
             let opened = Opened {
                 viewer,
@@ -683,6 +688,7 @@ impl Shell {
             format,
             folder_colors,
             transform,
+            drag_followers: Vec::new(),
             snap_fields,
             align: AlignOptions::default(),
             align_open: false,
@@ -1512,6 +1518,7 @@ impl Shell {
                 camera: self.camera_feel,
                 move_increment: self.transform.translate.increment,
                 rotate_increment: self.transform.rotate.increment,
+                pivot_snap: self.transform.pivot_snap,
             },
             argon_address: self.argon_saved_address.clone(),
             argon: self.argon_settings.clone(),

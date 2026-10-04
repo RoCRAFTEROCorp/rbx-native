@@ -19,6 +19,7 @@ mod input;
 mod label;
 mod measure;
 mod orientation;
+mod pivot;
 mod presence;
 mod pump;
 mod quality;
@@ -130,6 +131,12 @@ pub(crate) enum ViewportAction {
         /// own Scale, every selected part for a group scaled as a whole (see
         /// `transform::Targets::scale_about`).
         parts: Vec<(Ref, Vec3, Vec3)>,
+        /// Where a group scaled as a whole put the selection's pivot —
+        /// scaled about the same point as its parts, which carrying it
+        /// rigidly with one part would not — written as is, so the pivot
+        /// does not jump when the drag ends and the view reads it back.
+        /// `None` for a lone part's Scale, whose pivot rides along with it.
+        pivot: Option<Mat4>,
         first: bool,
     },
     /// A Rotate drag turned the part about its centre, which is where the
@@ -142,6 +149,10 @@ pub(crate) enum ViewportAction {
         parts: Vec<(Ref, Mat3, Vec3)>,
         first: bool,
     },
+    /// An Edit Pivot drag put the selection's pivot on `to` (rigid — no
+    /// `Size` in its columns), the geometry left where it is. `first` opens
+    /// the gesture's one undo step, as for every other drag.
+    Pivot { to: Mat4, first: bool },
     /// The Sun tool's gesture: the ray under the cursor at the press
     /// (`first`) and at every drag step after it. `Shell` works out what it
     /// points at and writes `Lighting` (see `shell::sun`), and answers with
@@ -285,6 +296,9 @@ pub(crate) struct WorkspaceView {
     /// The transform toolbar's state, pushed down from `Shell` (see
     /// [`WorkspaceView::set_transform`]).
     transform: Transform,
+    /// What the outline was last sent as, so [`WorkspaceView::reoutline`]
+    /// only sends one that changed.
+    outlined: Vec<Selected>,
     /// Where every selected part stands, so a click can be hit-tested against
     /// the draggers here rather than on the render thread, and a drag can
     /// move the whole selection together (see `transform::Targets`).
@@ -332,6 +346,8 @@ pub(crate) struct WorkspaceView {
     guides: guides::State,
     /// `Tab`'s summoned handles — see [`summon`].
     summon: summon::Summon,
+    /// The hotspot an Edit Pivot drag has snapped onto — see [`pivot`].
+    snapped: Option<Vec3>,
     /// The UI editor's canvas: the request last forwarded, and the last
     /// frame drawn for it — see [`canvas`].
     canvas_request: Option<CanvasRequest>,
@@ -362,6 +378,7 @@ impl WorkspaceView {
             viewer.open_at(camera.eye, camera.look_at, camera.fov_degrees);
         }
         viewer.set_selection(&selected);
+        let outlined = selected;
         viewer.set_orthographic(orthographic);
         // Applied here rather than after the view exists, so a saved
         // preference is already in force on the first frame instead of
@@ -415,6 +432,7 @@ impl WorkspaceView {
         });
 
         WorkspaceView {
+            outlined,
             pump: Pump::spawn(viewer, dom, interval, quality),
             focus,
             cursor: None,
@@ -462,6 +480,7 @@ impl WorkspaceView {
             drag_readout: None,
             guides: guides::State::default(),
             summon: summon::Summon::default(),
+            snapped: None,
             canvas_request: None,
             canvas: None,
             _subscriptions: [blur, deactivated],
@@ -769,6 +788,8 @@ impl WorkspaceView {
         // one would snap the parts back a frame.
         if self.drag.is_none() {
             self.targets = targets;
+            // The handles stand on the pivot, which may have moved with it.
+            self.refresh_gizmo();
         }
     }
 

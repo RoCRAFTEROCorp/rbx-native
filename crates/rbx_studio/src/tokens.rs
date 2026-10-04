@@ -369,6 +369,13 @@ pub(crate) fn tool_sun() -> Rgba {
     theme::color("tool_sun")
 }
 
+/// Edit Pivot's own, on its tile and its Snap row. Lime, a hue no other
+/// tool spends — the magenta Studio draws its hotspots in is already
+/// Transform's pink's neighbour.
+pub(crate) fn tool_pivot() -> Rgba {
+    theme::color("tool_pivot")
+}
+
 /// The same pastel as the fill behind an active tool's icon: the frame's
 /// own wash weight, low enough that the icon stays the brightest thing in
 /// the button.
@@ -382,7 +389,7 @@ pub(crate) type Named = (&'static str, fn() -> Rgba);
 
 /// Every pastel, for the test that checks them all against [`tile`].
 #[cfg(test)]
-pub(crate) const TOOL_ACCENTS: [Named; 8] = [
+pub(crate) const TOOL_ACCENTS: [Named; 9] = [
     ("select", tool_select),
     ("move", tool_move),
     ("scale", tool_scale),
@@ -391,6 +398,7 @@ pub(crate) const TOOL_ACCENTS: [Named; 8] = [
     ("align", tool_align),
     ("local", tool_local),
     ("sun", tool_sun),
+    ("pivot", tool_pivot),
 ];
 
 // ----------------------------------------------------------------- shapes

@@ -44,7 +44,7 @@ use glam::Mat3;
 
 use crate::camera::{Camera, Frustum, Viewpoint};
 use crate::fonts::Library;
-use crate::gizmo::{arm_length, basis, Faces, Gizmo, Handles, Kind, Shape};
+use crate::gizmo::{arm_length, basis, handle_axes, Faces, Gizmo, Handles, Hotspots, Kind, Shape};
 use crate::lighting::{Lighting, LocalLight};
 use crate::load::Answered;
 use crate::pick::Selected;
@@ -518,16 +518,35 @@ impl Renderer {
         // to take.
         // Summoned with `Tab`, Move's and Rotate's handles stand at the
         // cursor instead — Rotate's then turning about that point.
+        // A lone part's or model's own pivot stands in for the centre (see
+        // `Gizmo::pivot`).
+        let pivot = gizmo.pivot.map(|pivot| pivot.w_axis.truncate());
         let origin = gizmo
             .summon
+            .or(pivot)
             .unwrap_or_else(|| self.selection.centre().unwrap_or(anchor));
-        let handles = Handles::new(
-            origin,
-            basis(gizmo.local.then_some(rotation)),
-            arm_length(origin, pose, orthographic),
-        );
+        // Edit Pivot's handles are the pivot's own frame, whatever the
+        // world/local toggle says: turning them is what turns the pivot.
+        // Local space takes the pivot's frame too (see `handle_axes`).
+        let editing = gizmo.kind == Kind::Pivot;
+        if editing && gizmo.pivot.is_none() {
+            return None;
+        }
+        let axes = handle_axes(editing, gizmo.local, gizmo.pivot, rotation);
+        let handles = Handles::new(origin, basis(axes), arm_length(origin, pose, orthographic));
         Some(match gizmo.kind {
             Kind::Rotate => Shape::Rotate(handles),
+            Kind::Pivot => {
+                // Squared to the pivot, so the hotspots turn with it.
+                let axes = Mat3::from_mat4(gizmo.pivot?);
+                let scaled = self.selection.box_along(axes).unwrap_or(model);
+                let parts = self
+                    .selection
+                    .models()
+                    .map(|part| Faces::new(part, pose, orthographic));
+                let hotspots = Hotspots::new(Faces::new(scaled, pose, orthographic), parts);
+                Shape::Pivot(handles, gizmo.hotspots.then_some((hotspots, gizmo.snapped)))
+            }
             Kind::Transform => {
                 let scaled = self.selection.scale_box().unwrap_or(model);
                 let faces = Faces::new(scaled, pose, orthographic).summoned(gizmo.summon);

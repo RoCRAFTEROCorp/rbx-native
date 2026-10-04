@@ -116,7 +116,12 @@ impl Shell {
                     (IconName::Bug, "Analysis"),
                 ],
             )],
-            Tab::Model => vec![self.edit_tiles(cx), self.sun_tiles(cx), file_tiles()],
+            Tab::Model => vec![
+                self.edit_tiles(cx),
+                self.pivot_tiles(cx),
+                self.sun_tiles(cx),
+                file_tiles(),
+            ],
             Tab::Test => vec![test_tiles(), viewport_tiles()],
             Tab::Plugins => vec![placeholders(
                 "plugins",
@@ -587,6 +592,7 @@ fn tool_icon(tool: Tool) -> IconName {
         // own corner handles, is this editor's equivalent rather than a copy.
         Tool::Transform => IconName::SquareDashed,
         Tool::Sun => IconName::Sun,
+        Tool::Pivot => IconName::LocateFixed,
     }
 }
 
@@ -600,6 +606,7 @@ pub(super) fn tool_accent(tool: Tool) -> Rgba {
         Tool::Rotate => tokens::tool_rotate(),
         Tool::Transform => tokens::tool_transform(),
         Tool::Sun => tokens::tool_sun(),
+        Tool::Pivot => tokens::tool_pivot(),
     }
 }
 

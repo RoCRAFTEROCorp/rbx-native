@@ -387,12 +387,10 @@ Roblox's own engine.
   gizmos it with its own oriented box. One derivation
   (`rbx_viewer::gizmo::bounds_of`) feeds the outline, the gizmo's centre
   and the Scale handles' box alike, and the Align tool's own **Selection
-  Bounds** agrees with it on the world axes. Known divergence, since the
-  docs are explicit: `Model:GetBoundingBox` orients Studio's box by the
-  model's pivot (the `PrimaryPart`'s, or the `WorldPivot`), which matches
-  world alignment only while that pivot is unrotated. The pivot itself is
-  read now (the Properties panel's `Origin` row), but this box does not
-  turn with it yet (see "What's planned" → Renderer's Pivot tools).
+  Bounds** agrees with it on the world axes. The outline itself is
+  squared to the model's pivot (the `PrimaryPart`'s, or the `WorldPivot`)
+  the way `Model:GetBoundingBox` orients Studio's box, so it turns with
+  the pivot (`rbx_viewer::gizmo::bounds_along`).
   The box is drawn through whatever stands in front of it, as Studio's is;
   the Viewport dock can ask for it to be depth-tested
   against the scene instead (`Hide Selection Box Behind Parts`, off by
@@ -481,6 +479,33 @@ Roblox's own engine.
     also documented to clash with Studio's native `C` (Toggle Comment
     Cursor). Left out as native defaults on purpose rather than as an
     open item.
+
+- [x] **Pivot tools**, matching Studio's real Model-tab **Edit Pivot**/
+  **Reset** tools (checked against `studio/pivot-tools.md`). A sixth tool,
+  **Edit Pivot**, in its own Model-tab group beside **Snap** and **Reset**:
+  its arrows, rings and free-drag ball stand on the selected part's or
+  model's pivot, in the pivot's own axes, and move or turn the pivot alone
+  — a part's `PivotOffset`, a model's `PrimaryPart`'s `PivotOffset` or its
+  `WorldPivot` (`rbx_lua::pivot::set_pivot`), one undo step per drag. With
+  Snap on, the selection's corners, edge middles, face middles and centre
+  — and, on a model, each part's own face middles and centre, as the
+  docs' "Hotspots on a model" shot shows (the first 32 parts) — are drawn
+  as magenta points and a free drag lands on the nearest one, drawn
+  larger while it holds it. A model's selection outline turns with its
+  pivot, refreshed on every pivot edit. **Reset** puts the pivot back on the
+  centre of the bounding box (squared to the pivot's own axes for a model).
+  Move's and Rotate's handles stand on a lone selection's pivot, so a turn
+  goes round it, and a viewport drag carries a dragged model's
+  `WorldPivot` with its parts. Assigning a `Class.Model.PrimaryPart` moves
+  the pivot to that part's own pivot, and deleting the part — from the
+  Explorer or with Luau's `Destroy` — leaves the pivot where it was rather
+  than snapping back (`rbx_lua::pivot::keep_pivots`). Also: the Properties
+  panel's `Origin` row reads a part's or model's pivot the way `GetPivot`
+  does and moves the instance the way `PivotTo` does (see Editor), and
+  Luau — the Command Bar and scripts — has `PVInstance:GetPivot()` and
+  `PVInstance:PivotTo()` through the same pivot (`rbx_lua::pivot`), with
+  `BasePart.PivotOffset` readable and writable like any property. What is
+  still open is "What's planned" → Renderer's Pivot tools follow-ups.
 
 ### Editor (`rbx_studio`, binary `rbxstudio`)
 - [x] Explorer: this project's own flat, from-scratch class icon kit
@@ -775,7 +800,8 @@ Roblox's own engine.
   arbitrarily; ungrouping something that isn't a `Model`, or an empty one,
   is a clean no-op. Each is one undo step regardless of how many instances
   it moves. Out of scope, matching real Studio's own separate Pivot tools
-  (see "What's planned" → Renderer): the new `Model` gets no computed
+  (see "What's been implemented" → Renderer's Pivot tools): the new
+  `Model` gets no computed
   `PrimaryPart` or pivot, just Roblox's own empty-pivot default.
 
 - [x] **Light guides** — select a `SpotLight`, `PointLight` or
@@ -1829,24 +1855,10 @@ Roblox's own engine.
   above existing first regardless of which direction it takes.
 
 ### Renderer
-- [ ] 📋 **Pivot tools**, matching Studio's real Model-tab **Edit Pivot**/
-  **Reset** tools (checked against `studio/pivot-tools.md`). Today's
-  transform gizmos (see "What's been implemented" → Editor) move/rotate/
-  scale a part or model around its existing pivot; nothing lets you *move
-  the pivot itself*. Real Studio's Edit
-  Pivot tool repositions/reorients a part's or model's pivot independently
-  of its geometry (rotation and scaling then happen around the new pivot),
-  with **Snap**-to-hotspot behaviour (corners/edges/centers highlighted in
-  magenta while dragging) and a one-click **Reset** back to the bounding
-  box's center. Assigning a `Class.Model.PrimaryPart` moves the pivot to
-  that part's own pivot and — deliberately, per the docs, to avoid a
-  sudden jump — does **not** snap back if the `PrimaryPart` is later
-  deleted. Landed so far: the Properties panel's `Origin` row reads a
-  part's or model's pivot the way `GetPivot` does and moves the instance
-  the way `PivotTo` does (see "What's been implemented" → Editor), and
-  Luau — the Command Bar and scripts — has `PVInstance:GetPivot()` and
-  `PVInstance:PivotTo()` through the same pivot (`rbx_lua::pivot`), with
-  `BasePart.PivotOffset` readable and writable like any property.
+- [ ] 📋 **Pivot tools follow-ups**, the part of Studio's pivot behaviour
+  (`studio/pivot-tools.md`) the Edit Pivot tool and its follow-up passes
+  did not bring: Scale's handles still stand on the world-aligned box and
+  scale about it rather than about the pivot.
 - [ ] 📋 **Place version history (browse and restore).** Browsing and
   restoring an older saved/published version of a place, not just writing
   a new one (File › Save/Publish to Roblox, above, already does that). A

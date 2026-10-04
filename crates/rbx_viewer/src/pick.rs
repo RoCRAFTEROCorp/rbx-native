@@ -323,9 +323,12 @@ pub fn outermost_model(dom: &WeakDom, database: &ReflectionDatabase, referent: R
 /// every command that needs one ships a clone of the entire place — and a
 /// copy of the place per selection change, for what is usually one click,
 /// would cost far more than the handful of referents this carries instead.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Selected {
     referent: Ref,
+    /// The pivot's rotation a container's box is squared to (see
+    /// [`Selected::along`]); the world's until the editor says otherwise.
+    axes: glam::Mat3,
     /// Whether `referent` is a drawable `BasePart` itself, answered from its
     /// own class while the DOM is still in hand — the render thread has none
     /// to ask again, and the shape of [`Selected::parts`] cannot stand in for
@@ -338,6 +341,7 @@ impl Selected {
     pub fn read(dom: &WeakDom, database: &ReflectionDatabase, referent: Ref) -> Self {
         Selected {
             referent,
+            axes: glam::Mat3::IDENTITY,
             drawable: is_drawable(dom, database, referent),
             parts: parts_of(dom, database, referent).collect(),
         }
@@ -349,9 +353,25 @@ impl Selected {
     pub fn part(referent: Ref) -> Self {
         Selected {
             referent,
+            axes: glam::Mat3::IDENTITY,
             drawable: true,
             parts: vec![referent],
         }
+    }
+
+    /// The same entry with a container's box squared to `axes`, its pivot's
+    /// rotation: "When you rotate the pivot of a model, the bounding box of
+    /// the model also rotates" (`studio/pivot-tools.md`). The pivot is the
+    /// editor's to read (`rbx_lua::pivot`), so it hands it over here. A part
+    /// ignores it: its own box already turns with its `CFrame`.
+    pub fn along(mut self, axes: glam::Mat3) -> Self {
+        self.axes = axes;
+        self
+    }
+
+    /// The rotation [`Selected::along`] set, the world's by default.
+    pub fn axes(&self) -> glam::Mat3 {
+        self.axes
     }
 
     pub fn referent(&self) -> Ref {
@@ -368,8 +388,9 @@ impl Selected {
     /// Whether the selected instance is a drawable part in its own right.
     ///
     /// Only then does it have an orientation of its own to draw an oriented
-    /// bounding box along; a container is outlined by one world-axis-aligned
-    /// box around everything beneath it instead, the same extent
+    /// bounding box along; a container is outlined by one box around
+    /// everything beneath it instead, squared to its pivot (see
+    /// [`Selected::along`]) — the extent
     /// `creator-docs` means by a model's bounding box (`studio/pivot-tools.md`).
     ///
     /// Read from the instance's own class rather than inferred from what

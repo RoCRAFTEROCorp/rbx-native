@@ -1,7 +1,8 @@
 //! The Explorer's selection, drawn as a thin outline around what it covers:
 //! a selected part's own oriented bounding box, or — for a `Model`, a
-//! `Folder`, or any other container with no placement of its own — one
-//! world-axis-aligned box around every part beneath it.
+//! `Folder`, or any other container with no placement of its own — one box
+//! around every part beneath it, squared to its pivot (see
+//! `outline::box_of`).
 //!
 //! [`Scene::all_placements`] is keyed by `BasePart` referent and never has an
 //! entry for a container, so the parts each selected instance stands for are
@@ -17,7 +18,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use glam::{Mat4, Vec3};
+use glam::{Mat3, Mat4, Vec3};
 use rbx_dom::Ref;
 use wgpu::util::DeviceExt;
 
@@ -278,12 +279,20 @@ impl Selection {
 
     /// The box the Scale handles stand on — see `gizmo::scale_box`.
     pub(super) fn scale_box(&self) -> Option<Mat4> {
-        gizmo::scale_box(
-            self.outline
-                .selected
-                .iter()
-                .flat_map(|entry| outline::models_of(&self.outline.placements, entry)),
-        )
+        self.box_along(Mat3::IDENTITY)
+    }
+
+    /// The same box squared to `axes` — see `gizmo::box_along`.
+    pub(super) fn box_along(&self, axes: Mat3) -> Option<Mat4> {
+        gizmo::box_along(self.models(), axes)
+    }
+
+    /// Every part the selection covers, as drawn, in selection order.
+    pub(super) fn models(&self) -> impl Iterator<Item = Mat4> + '_ {
+        self.outline
+            .selected
+            .iter()
+            .flat_map(|entry| outline::models_of(&self.outline.placements, entry))
     }
 
     /// The centre of the world-axis-aligned box containing every part the
@@ -295,12 +304,7 @@ impl Selection {
     /// `gizmo::centre_of` (see `transform::Targets::centre`), so what the user
     /// can grab and what they can see cannot drift apart.
     pub(super) fn centre(&self) -> Option<Vec3> {
-        gizmo::centre_of(
-            self.outline
-                .selected
-                .iter()
-                .flat_map(|entry| outline::models_of(&self.outline.placements, entry)),
-        )
+        gizmo::centre_of(self.models())
     }
 
     /// Draws the outline, if any, reusing whichever camera bind group the rest

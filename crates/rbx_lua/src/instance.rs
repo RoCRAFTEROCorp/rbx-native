@@ -133,7 +133,11 @@ impl UserData for LuaInstance {
             }
         });
         methods.add_method("Destroy", |_, this, ()| {
-            this.ctx.dom_mut().remove(this.referent);
+            let mut dom = this.ctx.dom_mut();
+            // A model losing its `PrimaryPart` keeps the pivot it had.
+            crate::pivot::keep_pivots(&mut dom, this.ctx.database(), &[this.referent])
+                .map_err(mlua::Error::runtime)?;
+            dom.remove(this.referent);
             Ok(())
         });
         methods.add_method("Clone", |_, this, ()| {

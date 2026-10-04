@@ -16,7 +16,7 @@ use crate::transform::Targets;
 
 use super::drag::{CFRAME_PROPERTY, SIZE_PROPERTY};
 
-use super::Shell;
+use super::{selection, Shell};
 
 impl Shell {
     /// Selects what `target` names in the current DOM (see
@@ -281,7 +281,13 @@ impl Shell {
         }
         self.recovery.changed();
         self.properties.dom_changed(changes);
-        let refresh = refresh_for(changes, &self.covered);
+        let mut refresh = refresh_for(changes, &self.covered);
+        // A selected model's own properties — its `WorldPivot`, its
+        // `PrimaryPart` — say where its pivot, and so its handles, stand.
+        refresh.targets |= changes.iter().any(|change| {
+            matches!(change, Change::Property { referent, .. }
+                if self.selected_all().contains(referent))
+        });
         // The instances the log names, not the tree: a drag reflects a
         // change every mouse move, and copying the whole place per move
         // would cost what the patch itself was made to save.
@@ -292,10 +298,20 @@ impl Shell {
         if let Some(targets) = &targets {
             self.covered = targets.iter().map(|target| target.referent).collect();
         }
+        // And the outline with them: a selected model's box is squared to
+        // its pivot, which an Edit Pivot drag, Reset, a `PrimaryPart` change
+        // or a `WorldPivot`/`PivotOffset` write all turn (`reoutline` sends
+        // only a box that changed).
+        let outline = refresh
+            .targets
+            .then(|| selection::outlined(&self.dom, &self.database, self.selected_all()));
         self.viewport.update(cx, |viewport, _| {
             viewport.apply_changes(snapshots, changes.to_vec());
             if let Some(targets) = targets {
                 viewport.set_targets(targets);
+            }
+            if let Some(outline) = outline {
+                viewport.reoutline(outline);
             }
         });
         if refresh.neighbours {

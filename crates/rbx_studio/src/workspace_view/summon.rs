@@ -93,7 +93,12 @@ impl WorkspaceView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.transform.gizmo().is_none() || self.targets.anchor().is_none() {
+        // Edit Pivot's handles *are* the pivot: summoning them elsewhere
+        // would draw them somewhere the pivot is not.
+        if self.transform.gizmo().is_none()
+            || self.transform.tool == Tool::Pivot
+            || self.targets.anchor().is_none()
+        {
             // Nothing to summon: `Tab` keeps moving the keyboard focus on.
             cx.propagate();
             return;
@@ -183,14 +188,19 @@ impl WorkspaceView {
     /// The last gizmo shown again, summoned to where the handles are now —
     /// a no-op while nothing is summoned.
     pub(super) fn refresh_gizmo(&self) {
-        let summon = self.summoned();
-        self.pump
-            .gizmo(self.summon.shown.map(|gizmo| Gizmo { summon, ..gizmo }));
+        let (summon, pivot, snapped) = (self.summoned(), self.targets.pivot(), self.snapped);
+        self.pump.gizmo(self.summon.shown.map(|gizmo| Gizmo {
+            summon,
+            pivot,
+            snapped,
+            ..gizmo
+        }));
     }
 
-    /// Re-sends the gizmo while summoned handles are travelling with a drag.
+    /// Re-sends the gizmo while handles are travelling with a drag: summoned
+    /// ones, or ones standing on a pivot the drag carries.
     pub(super) fn follow_summon(&self) {
-        if self.summon.point.is_some() {
+        if self.summon.point.is_some() || self.targets.pivot().is_some() {
             self.refresh_gizmo();
         }
     }

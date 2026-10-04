@@ -8,7 +8,9 @@
 
 use glam::{Mat3, Mat4, Vec3};
 use gpui_kit::*;
-use rbx_dom::{Ref, WeakDom};
+use rbx_dom::{CFrameData, Ref, WeakDom};
+use rbx_lua::pivot::Follower;
+use rbx_reflection::ReflectionDatabase;
 use rbx_viewer::gizmo;
 use rbx_viewer::pick::{self, PartSurface, Ray, Selected};
 
@@ -23,6 +25,8 @@ use super::{selection, Shell};
 /// `RBX_STUDIO_DRAG` / `RBX_STUDIO_RESIZE`: one drag step, applied at startup
 /// through the same entry points a real gesture ends with.
 mod debug;
+#[cfg(test)]
+mod tests;
 
 /// The property a viewport move or rotation writes. A move gives it three
 /// numbers and a rotation nine, and `properties::edit::commit` carries the
@@ -54,9 +58,14 @@ impl Shell {
                 first,
                 settle,
             } => self.move_parts(moves, *first, settle.as_deref().copied(), cx),
-            ViewportAction::Resized { parts, first } => self.resize_parts(parts, *first, cx),
+            ViewportAction::Resized {
+                parts,
+                pivot,
+                first,
+            } => self.resize_parts(parts, *pivot, *first, cx),
             ViewportAction::Rotated { parts, first } => self.rotate_parts(parts, *first, cx),
             ViewportAction::Sun { ray, first } => self.sun_step(*ray, *first, cx),
+            ViewportAction::Pivot { to, first } => self.pivot_step(*to, *first, cx),
             // The one toolbar action that moves the caret instead of changing
             // state, which is why this path carries a `Window` at all.
             ViewportAction::Tool(transform::Action::FocusIncrement(kind)) => {
@@ -253,7 +262,16 @@ impl Shell {
     /// half of that growth — or, for a group scaled as a whole, by its
     /// offset from the box's far face — and either one written without the
     /// other would show the part jumping.
-    fn resize_parts(&mut self, parts: &[(Ref, Vec3, Vec3)], first: bool, cx: &mut Context<Self>) {
+    ///
+    /// `pivot` is where the view scaled the selection's pivot to, when it
+    /// scaled a group as a whole (see `ViewportAction::Resized`).
+    fn resize_parts(
+        &mut self,
+        parts: &[(Ref, Vec3, Vec3)],
+        pivot: Option<Mat4>,
+        first: bool,
+        cx: &mut Context<Self>,
+    ) {
         let writes: Vec<(Ref, &str, String)> = parts
             .iter()
             .flat_map(|&(referent, size, position)| {
@@ -263,7 +281,7 @@ impl Shell {
                 ]
             })
             .collect();
-        self.write_drag(first, &writes, cx);
+        self.write_drag_with(first, &writes, &[], pivot, cx);
     }
 
     /// One step of a Rotate drag, for every part it carries: the rotation
@@ -311,15 +329,42 @@ impl Shell {
         opened: &[rbx_dom::Change],
         cx: &mut Context<Self>,
     ) {
+        self.write_drag_with(first, writes, opened, None, cx);
+    }
+
+    /// [`Shell::write_drag_after`], and the one part's or model's pivot put
+    /// on `pivot` after the writes, in place of wherever carrying it with
+    /// its parts left it.
+    fn write_drag_with(
+        &mut self,
+        first: bool,
+        writes: &[(Ref, &str, String)],
+        opened: &[rbx_dom::Change],
+        pivot: Option<Mat4>,
+        cx: &mut Context<Self>,
+    ) {
         if first {
             self.push_history();
+            // Studio carries a dragged model's pivot with it; the writes
+            // below only move its parts. Read once, here, against the DOM
+            // as the drag found it: every step's writes are measured from
+            // there too, so the pivot is carried in one go each step rather
+            // than nudged on from the last one, piling up rounding.
+            self.drag_followers =
+                rbx_lua::pivot::followers(&self.dom, &self.database, self.selection.all());
         }
-
-        let mut dom = std::mem::replace(&mut self.dom, WeakDom::new());
-        let written = writes.iter().try_for_each(|(referent, name, text)| {
-            properties::edit::commit(&mut dom, &self.database, *referent, name, text).map(|_| ())
+        let pivot = pivot.and_then(|to| match self.pivot_owners()[..] {
+            [owner] => Some((owner, transform::cframe(to))),
+            _ => None,
         });
-        self.dom = dom;
+
+        let written = apply(
+            &mut self.dom,
+            &self.database,
+            writes,
+            &self.drag_followers,
+            pivot,
+        );
         // Same reasoning as `move_parts`: overwrites the entry's log with
         // just this step's writes — one `CFrame` per part for a Rotate,
         // Size and CFrame per part for a Scale — one patch of each part
@@ -353,6 +398,27 @@ impl Shell {
             .collect();
         self.viewport
             .update(cx, |viewport, _| viewport.set_neighbours(neighbours));
+    }
+}
+
+/// One drag step's writes into `dom`, each through the same
+/// `properties::edit::commit` the Properties panel uses; then every model
+/// pivot in `followers` carried along with its parts, and the one in `pivot`
+/// put where the view put it (see `ViewportAction::Resized`).
+fn apply(
+    dom: &mut WeakDom,
+    database: &ReflectionDatabase,
+    writes: &[(Ref, &str, String)],
+    followers: &[Follower],
+    pivot: Option<(Ref, CFrameData)>,
+) -> Result<(), String> {
+    for (referent, name, text) in writes {
+        properties::edit::commit(dom, database, *referent, name, text)?;
+    }
+    rbx_lua::pivot::follow(dom, database, followers)?;
+    match pivot {
+        Some((owner, to)) => rbx_lua::pivot::set_pivot(dom, database, owner, &to).unwrap_or(Ok(())),
+        None => Ok(()),
     }
 }
 

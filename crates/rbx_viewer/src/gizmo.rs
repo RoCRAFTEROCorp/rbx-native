@@ -23,7 +23,7 @@ use crate::Pose;
 mod faces;
 mod origin;
 
-pub use faces::Faces;
+pub use faces::{Faces, Hotspots, HOTSPOTS, HOTSPOT_PARTS, PART_HOTSPOTS};
 pub(crate) use origin::ORIGIN_RADIUS;
 
 /// The arm length of one dragger as a fraction of the viewport's half-height,
@@ -118,6 +118,12 @@ pub enum Kind {
     /// term for Move+Scale+Rotate together — so the enum and the dump are
     /// the only primary sources this is built from.
     Transform,
+    /// Studio's Edit Pivot (`studio/pivot-tools.md`): Move's arrows and
+    /// Rotate's rings standing on the selection's pivot and turned with it,
+    /// plus the free-drag ball at their origin — and, with snapping on, the
+    /// magenta hotspots the pivot snaps onto. Dragging any of them moves the
+    /// pivot alone, never the geometry.
+    Pivot,
 }
 
 /// What the viewport draws over the selection, and in which frame of
@@ -137,6 +143,17 @@ pub struct Gizmo {
     /// see [`Faces::summoned`] for Scale's own reading of it), or `None` to
     /// draw them at the selection's own pivot.
     pub summon: Option<Vec3>,
+    /// The selection's pivot, rigid (no `Size` in its columns), when it is
+    /// one part or one model: Move's and Rotate's handles stand on it
+    /// rather than on the selection's centre, so a turn goes round it
+    /// (`studio/pivot-tools.md`: "Once set, rotation and scaling occur
+    /// around the pivot point"), and Edit Pivot's handles take its axes.
+    pub pivot: Option<Mat4>,
+    /// Whether Edit Pivot's snap hotspots are drawn (see [`Faces::hotspots`]).
+    pub hotspots: bool,
+    /// The hotspot a pivot drag has snapped onto, drawn larger than the
+    /// rest.
+    pub snapped: Option<Vec3>,
 }
 
 /// One Move arrow or Scale ball: the axis it stands on, and which end of it
@@ -359,15 +376,30 @@ pub fn centre_of(models: impl IntoIterator<Item = Mat4>) -> Option<Vec3> {
 /// based on the center of its bounding box" — and the bounding box it means
 /// is the world-aligned one `bounds_of` computes.
 pub fn scale_box(models: impl IntoIterator<Item = Mat4>) -> Option<Mat4> {
+    box_along(models, Mat3::IDENTITY)
+}
+
+/// [`scale_box`] with a group's box squared to `axes` (a rotation) rather
+/// than to the world's — how `Model:GetBoundingBox` squares a model's box to
+/// its pivot, and `rbx_lua::pivot::reset` with it. What Edit Pivot's
+/// hotspots stand on, so they turn with the pivot.
+pub fn box_along(models: impl IntoIterator<Item = Mat4>, axes: Mat3) -> Option<Mat4> {
     let models: Vec<Mat4> = models.into_iter().collect();
     match models.as_slice() {
-        [] => None,
         [only] => Some(*only),
-        many => {
-            let (min, max) = bounds_of(many.iter().copied())?;
-            Some(Mat4::from_translation((min + max) * 0.5) * Mat4::from_scale(max - min))
-        }
+        many => bounds_along(many.iter().copied(), axes),
     }
+}
+
+/// The box round every one of `models` squared to `axes`, even for just one
+/// — `Model:GetBoundingBox`, which the selection outline of a model is
+/// ("matches the selection box rendered in Studio when the model is
+/// selected"). `None` for none.
+pub fn bounds_along(models: impl IntoIterator<Item = Mat4>, axes: Mat3) -> Option<Mat4> {
+    let turn = Mat4::from_mat3(axes);
+    let into = turn.transpose();
+    let (min, max) = bounds_of(models.into_iter().map(|model| into * model))?;
+    Some(turn * Mat4::from_translation((min + max) * 0.5) * Mat4::from_scale(max - min))
 }
 
 pub fn bounds_of(models: impl IntoIterator<Item = Mat4>) -> Option<(Vec3, Vec3)> {
@@ -389,6 +421,15 @@ pub fn bounds_of(models: impl IntoIterator<Item = Mat4>) -> Option<(Vec3, Vec3)>
         });
     }
     bounds
+}
+
+/// The rotation Move's and Rotate's handles take, or `None` for the
+/// world's: the pivot's own while `editing` it (Edit Pivot), and with local
+/// space on the pivot's too when there is one — Studio orients local handles
+/// by the pivot — else the `anchor` part's. Shared by the renderer and the
+/// editor's hit test, so the handles drawn and grabbed agree.
+pub fn handle_axes(editing: bool, local: bool, pivot: Option<Mat4>, anchor: Mat3) -> Option<Mat3> {
+    (editing || local).then(|| pivot.map_or(anchor, Mat3::from_mat4))
 }
 
 /// The world-space directions the three draggers point along: the world axes,
@@ -453,7 +494,7 @@ pub fn turned(linear: Mat3, position: Vec3, pivot: Vec3, turn: Mat3) -> (Mat3, V
 /// entirely, so there is no one type both halves of the editor can pass around
 /// — this is it, and it is what keeps the renderer and the hit-test from being
 /// handed different geometry for the same tool.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Shape {
     Move(Handles),
     Scale(Faces),
@@ -461,6 +502,9 @@ pub enum Shape {
     /// Transform's combined gizmo: Move's and Rotate's shared [`Handles`]
     /// plus Scale's own [`Faces`], all drawn together.
     Transform(Handles, Faces),
+    /// Edit Pivot's: the arrows, rings and free-drag ball on the pivot, and
+    /// the hotspots drawn, with the one snapped onto, when snapping is on.
+    Pivot(Handles, Option<(Hotspots, Option<Vec3>)>),
 }
 
 #[cfg(test)]

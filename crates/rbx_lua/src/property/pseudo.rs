@@ -138,6 +138,17 @@ fn brick_color_expected(value: &Value) -> mlua::Error {
 /// so the caller falls back to the generic reflected-property path.
 pub(crate) fn set(ctx: &Ctx, referent: Ref, name: &str, value: &Value) -> Result<bool> {
     match name {
+        // Unassigning a model's `PrimaryPart` resets its pivot.
+        "PrimaryPart" if value.is_nil() => {
+            let mut dom = ctx.dom_mut();
+            let model = dom.get(referent).ok_or_else(super::missing_instance)?;
+            if !ctx.database().is_subclass_of(model.class(), "Model") {
+                return Ok(false);
+            }
+            crate::pivot::clear_primary_part(&mut dom, ctx.database(), referent)
+                .map_err(mlua::Error::runtime)?;
+            Ok(true)
+        }
         "Position" => {
             let Some(mut frame) = cframe(ctx, referent)? else {
                 return Ok(false);
