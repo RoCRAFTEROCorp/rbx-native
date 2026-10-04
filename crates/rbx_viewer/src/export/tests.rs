@@ -452,6 +452,10 @@ fn a_surface_appearance_exports_its_four_maps() {
         [255, 0, 0, 255, 0, 255, 0, 255]
     );
     assert_eq!(decode(&png_of(mesh.maps.normal)).2, normal.pixels);
+    // The frame the viewport reads it in comes along: the triangle's U runs
+    // along +X (see `triangle`), and V down the image means up the mesh.
+    assert_eq!(mesh.tangents.len(), mesh.positions.len());
+    assert!(mesh.tangents.iter().all(|t| t[0] > 0.99 && t[3] == 1.0));
     assert_eq!(decode(&png_of(mesh.maps.metalness)).2, metalness.pixels);
     assert_eq!(decode(&png_of(mesh.maps.roughness)).2, roughness.pixels);
     let (width, height, packed) = decode(&png_of(mesh.maps.metallic_roughness));

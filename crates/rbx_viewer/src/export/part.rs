@@ -25,6 +25,9 @@ pub(super) struct Geometry {
     pub(super) indices: Vec<u32>,
     /// The mesh's own; empty for a procedural solid.
     pub(super) uvs: Vec<[f32; 2]>,
+    /// The frame the viewport reads a mesh's own normal map in (see
+    /// `renderer::mesh_tangents`); empty for a procedural solid.
+    pub(super) tangents: Vec<[f32; 4]>,
     pub(super) model: Mat4,
 }
 
@@ -69,6 +72,7 @@ pub(super) fn export_part(
             normals: mesh.vertices.iter().map(|v| v.normal).collect(),
             indices: mesh.lod0().to_vec(),
             uvs: mesh.vertices.iter().map(|v| v.uv).collect(),
+            tangents: crate::renderer::mesh_tangents(mesh),
             model,
         };
         let surfaces = looks.dress(geometry, color, alpha, meshes, textures);
@@ -88,6 +92,7 @@ pub(super) fn export_part(
                     normals: unit.normals,
                     indices: unit.indices,
                     uvs: Vec::new(),
+                    tangents: Vec::new(),
                     model: piece.transform,
                 };
                 let alpha = alpha.min(piece.alpha);
@@ -113,6 +118,7 @@ pub(super) fn export_part(
         normals: unit.normals,
         indices: unit.indices,
         uvs: Vec::new(),
+        tangents: Vec::new(),
         model: shape.model(placement),
     };
     let surfaces = looks.dress(geometry, color, alpha, meshes, textures);
@@ -193,6 +199,17 @@ impl Look<'_> {
         };
         if let Some(surface) = surface {
             surface::wear(&mut mesh, surface, textures);
+            if mesh.maps.normal.is_some() {
+                let model = geometry.model;
+                mesh.tangents = geometry
+                    .tangents
+                    .iter()
+                    .map(|&[x, y, z, w]| {
+                        let along = model.transform_vector3(glam::Vec3::new(x, y, z));
+                        along.normalize_or(glam::Vec3::X).extend(w).to_array()
+                    })
+                    .collect();
+            }
         } else if let Some(image) = image {
             mesh.maps.color = textures.of(image);
             // The viewport multiplies the image's alpha into the part's.

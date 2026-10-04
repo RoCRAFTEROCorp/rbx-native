@@ -350,7 +350,12 @@ fn finish(material: &mut Value, mesh: &ExportMesh, used: &mut BTreeSet<&'static 
 }
 
 fn emissive_strength(material: &mut Value, strength: f32, used: &mut BTreeSet<&'static str>) {
-    if strength != 1.0 {
+    // A black surface emits nothing however strong; the validator flags
+    // the extension on a zero factor as dead weight.
+    let lit = material["emissiveFactor"]
+        .as_array()
+        .is_some_and(|factor| factor.iter().any(|c| c.as_f64() != Some(0.0)));
+    if strength != 1.0 && lit {
         used.insert("KHR_materials_emissive_strength");
         material["extensions"]["KHR_materials_emissive_strength"] =
             json!({ "emissiveStrength": strength });

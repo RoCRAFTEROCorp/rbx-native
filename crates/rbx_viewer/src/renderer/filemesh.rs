@@ -41,6 +41,8 @@ use blended::{blends, Blended};
 use images::{Binding, Images};
 use pipelines::{Layouts, Pipelines, Skin};
 use vertex::{AppearanceVertex, TexturedVertex};
+// The export writes the frame the viewport decodes a mesh's normal map in.
+pub(crate) use vertex::tangents as mesh_tangents;
 
 /// One batch's mesh, converted for the vertex format its skin reads, and
 /// the skin itself — the payload of one opaque group, or one [`Blended`].
