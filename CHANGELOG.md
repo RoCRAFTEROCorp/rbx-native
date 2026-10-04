@@ -74,6 +74,15 @@
   that never became a drag, as in a desktop file manager: press-and-drag
   on any selected row moves all of them, and a plain click still selects
   just that row. — @chteau
+- **Summoned handles no longer snap on curved meshes.** On a dense mesh
+  such as a sphere or a character's body, Rotate's `Tab` summon used to
+  snap onto whichever tiny triangle edge was nearest. A mesh face's edge
+  now counts only where the surface really creases (more than 30 degrees,
+  this editor's choice — Roblox publishes none) or the mesh is open, and a
+  corner only where two such edges meet; a curved region has neither, so
+  the handles land on the cursor's own point with no magenta dot.
+  Low-poly facets, flat faces and boxes, wedges and cylinders snap as
+  before. — @chteau
 
 ## 2026-10-03
 
