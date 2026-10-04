@@ -16,7 +16,9 @@
   its pivot, so they turn with it; Local space turns Move's and Rotate's
   handles with the pivot too; a whole model scaled at once keeps its pivot
   where the drag showed it on release; and the Snap checkbox is remembered
-  between sessions. — @chteau
+  between sessions. A model's blue selection outline turns with its pivot
+  too, following every pivot edit, and Snap offers each part's own face
+  middles and centre as well as the model box's. — @chteau
 - **The Transform tool.** The ribbon's 5th Tools button — Move's arrows,
   Scale's balls and Rotate's rings, all grabbable over the same selection
   at once — the roadmap could previously only confirm as `creator-docs`'

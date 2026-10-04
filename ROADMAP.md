@@ -387,13 +387,10 @@ Roblox's own engine.
   gizmos it with its own oriented box. One derivation
   (`rbx_viewer::gizmo::bounds_of`) feeds the outline, the gizmo's centre
   and the Scale handles' box alike, and the Align tool's own **Selection
-  Bounds** agrees with it on the world axes. Known divergence, since the
-  docs are explicit: `Model:GetBoundingBox` orients Studio's box by the
-  model's pivot (the `PrimaryPart`'s, or the `WorldPivot`), which matches
-  world alignment only while that pivot is unrotated. The pivot itself is
-  read now (the Properties panel's `Origin` row), but this box does not
-  turn with it yet (see "What's planned" → Renderer's Pivot tools
-  follow-ups).
+  Bounds** agrees with it on the world axes. The outline itself is
+  squared to the model's pivot (the `PrimaryPart`'s, or the `WorldPivot`)
+  the way `Model:GetBoundingBox` orients Studio's box, so it turns with
+  the pivot (`rbx_viewer::gizmo::bounds_along`).
   The box is drawn through whatever stands in front of it, as Studio's is;
   the Viewport dock can ask for it to be depth-tested
   against the scene instead (`Hide Selection Box Behind Parts`, off by
@@ -486,8 +483,11 @@ Roblox's own engine.
   — a part's `PivotOffset`, a model's `PrimaryPart`'s `PivotOffset` or its
   `WorldPivot` (`rbx_lua::pivot::set_pivot`), one undo step per drag. With
   Snap on, the selection's corners, edge middles, face middles and centre
-  are drawn as magenta points and a free drag lands on the nearest one,
-  drawn larger while it holds it. **Reset** puts the pivot back on the
+  — and, on a model, each part's own face middles and centre, as the
+  docs' "Hotspots on a model" shot shows (the first 32 parts) — are drawn
+  as magenta points and a free drag lands on the nearest one, drawn
+  larger while it holds it. A model's selection outline turns with its
+  pivot, refreshed on every pivot edit. **Reset** puts the pivot back on the
   centre of the bounding box (squared to the pivot's own axes for a model).
   Move's and Rotate's handles stand on a lone selection's pivot, so a turn
   goes round it, and a viewport drag carries a dragged model's
@@ -1793,19 +1793,10 @@ Roblox's own engine.
   above existing first regardless of which direction it takes.
 
 ### Renderer
-- [ ] 📋 **Pivot tools follow-ups**, the parts of Studio's pivot behaviour
-  (`studio/pivot-tools.md`) the Edit Pivot tool and its follow-up pass did
-  not bring. The selection *outline* round a model is still world-aligned
-  while the hotspots on it turn with the pivot (`gizmo::box_along`): the
-  renderer's `pick::Selected` carries no pivot, and the outline is not
-  re-sent when a selected model's `WorldPivot` changes, so turning it means
-  plumbing the pivot's rotation into the outline and refreshing it on a
-  pivot edit. Scale's handles still stand on the world-aligned box and
-  scale about it rather than about the pivot. Studio's per-part hotspots
-  on a model are missing (only the model's box has them): the gizmo's
-  vertex buffer is sized for one box's 27 dots (`renderer::gizmo::mesh`),
-  so a lattice per part needs a dynamically sized buffer, and a cap for
-  models of hundreds of parts.
+- [ ] 📋 **Pivot tools follow-ups**, the part of Studio's pivot behaviour
+  (`studio/pivot-tools.md`) the Edit Pivot tool and its follow-up passes
+  did not bring: Scale's handles still stand on the world-aligned box and
+  scale about it rather than about the pivot.
 
 - [ ] 📋 **Explorer export**, the half of Explorer DOM editing that did not
   land with the row affordances above or the search (see "What's been
