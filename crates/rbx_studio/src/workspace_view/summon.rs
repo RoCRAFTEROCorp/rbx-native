@@ -32,7 +32,7 @@ use gpui_kit::{Context, Window};
 use rbx_viewer::gizmo::{self, Gizmo};
 use rbx_viewer::pick::{self, Ray};
 
-use crate::dragger::pixel_size;
+use crate::dragger::{handle_scale, pixel_size, Dot};
 use crate::dragger::surface::{SurfaceFrame, TargetKind};
 use crate::transform::Tool;
 
@@ -69,6 +69,9 @@ pub(super) struct Summon {
     /// Where the handles were summoned to, or `None` to stand them at the
     /// selection's own pivot.
     point: Option<Vec3>,
+    /// Where the summon snapped onto an edge or vertex, marked by
+    /// [`snap_marker`] for as long as the handles stand there.
+    snapped: Option<Vec3>,
     /// Whether `Tab` is down: the handles stay summoned through a drag that
     /// began with it held, and go home at the end of it if it was let go.
     tab: bool,
@@ -97,8 +100,11 @@ impl WorkspaceView {
         if std::mem::replace(&mut self.summon.tab, true) || self.drag.is_some() {
             return;
         }
-        self.summon.point = self.summon_point(window.scale_factor());
+        let (point, snapped) = self.summon_point(window.scale_factor()).unzip();
+        self.summon.point = point;
+        self.summon.snapped = snapped.flatten();
         self.refresh_gizmo();
+        self.refresh_guides();
         cx.notify();
     }
 
@@ -108,6 +114,7 @@ impl WorkspaceView {
         self.summon.tab = false;
         if self.drag.is_none() && self.summon.point.take().is_some() {
             self.refresh_gizmo();
+            self.refresh_guides();
         }
     }
 
@@ -130,6 +137,21 @@ impl WorkspaceView {
             _ => Vec3::ZERO,
         };
         Some(point + carried)
+    }
+
+    /// Studio's magenta indicator on the edge or vertex the handles
+    /// snapped to (staff reply #14: "you'll get a magenta colored indicator
+    /// letting you know that the handles snapped") — shown while they stand
+    /// there and no drag is under way. Its size is not published; it is the
+    /// hover ruler's dot's.
+    pub(super) fn snap_marker(&self) -> Option<Dot> {
+        let snapped = self.summon.snapped?;
+        let pose = self.view?;
+        (self.drag.is_none() && self.summon.point == Some(snapped)).then(|| Dot {
+            centre: snapped,
+            radius: 0.15 * handle_scale(snapped, pose, self.orthographic),
+            color: [1.0, 0.0, 1.0],
+        })
     }
 
     /// Asks the renderer to draw `gizmo`, summoned wherever the handles are.
@@ -163,7 +185,9 @@ impl WorkspaceView {
     /// #9): "it doesn't matter precisely where the handles are summoned to
     /// for Move -- the result is the same regardless." Transform snaps too,
     /// carrying Rotate's very rings; Scale and Move do not.
-    fn summon_point(&self, scale: f32) -> Option<Vec3> {
+    ///
+    /// The second half of the answer is the point again when it snapped.
+    fn summon_point(&self, scale: f32) -> Option<(Vec3, Option<Vec3>)> {
         let (inside, hover) = self.cursor_over();
         if !inside {
             return None;
@@ -171,14 +195,15 @@ impl WorkspaceView {
         let pose = self.view?;
         if let Some((frame, hit)) = hover {
             if !matches!(self.transform.tool, Tool::Rotate | Tool::Transform) {
-                return Some(hit);
+                return Some((hit, None));
             }
             let height = self.viewport.get().size.1 as f32;
             let pixel = pixel_size(hit, pose, self.orthographic, height.max(1.0));
-            return Some(onto_edges(&frame, hit, EDGE_SNAP * scale * pixel));
+            let snapped = onto_edges(&frame, hit, EDGE_SNAP * scale * pixel);
+            return Some((snapped.unwrap_or(hit), snapped));
         }
         let ray = self.cursor_ray(self.cursor?, scale)?;
-        pick::ray_hits_plane(ray, self.targets.centre()?, -ray.direction)
+        pick::ray_hits_plane(ray, self.targets.centre()?, -ray.direction).map(|point| (point, None))
     }
 
     /// The free-drag ball at the gizmo's origin, if `ray` is on it: Move's
@@ -267,27 +292,32 @@ impl WorkspaceView {
 
 /// `hit` on `frame`'s face, moved onto the face's edge or corner when it is
 /// within `reach` of one — Studio's summoned handles "snap to that edge or
-/// vertex". Only a flat face has edges and corners to snap to; a point on a
-/// ball's or a cylinder's curve stays where it is.
+/// vertex" — or `None` when it is near neither. Only a flat face has edges
+/// and corners to snap to; a point on a ball's or a cylinder's curve has
+/// none.
 ///
 /// The frame is cornered on the face corner nearest the hit, with `x` and
 /// `z` along its two edges from there (see [`SurfaceFrame`]); either may
 /// point out of the face, which the sign of the hit's own coordinate gives
 /// away, so the far edge is at that sign times the face's size.
-pub(super) fn onto_edges(frame: &SurfaceFrame, hit: Vec3, reach: f32) -> Vec3 {
+pub(super) fn onto_edges(frame: &SurfaceFrame, hit: Vec3, reach: f32) -> Option<Vec3> {
     if frame.kind != TargetKind::Polygon {
-        return hit;
+        return None;
     }
     let mut local = frame.local(hit);
+    let mut snapped = false;
     for (value, size) in [(&mut local.x, frame.size.x), (&mut local.z, frame.size.y)] {
         let far = size.copysign(*value);
         if value.abs() <= reach {
             *value = 0.0;
         } else if (*value - far).abs() <= reach {
             *value = far;
+        } else {
+            continue;
         }
+        snapped = true;
     }
-    frame.world(local)
+    snapped.then(|| frame.world(local))
 }
 
 #[cfg(test)]

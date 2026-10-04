@@ -251,7 +251,8 @@ impl WorkspaceView {
     }
 
     /// Replaces what the dragger guides draw.
-    fn show_guides(&mut self, guides: Guides) {
+    fn show_guides(&mut self, mut guides: Guides) {
+        guides.dots.extend(self.snap_marker());
         self.guides.drawn = guides;
         self.send_lines();
     }

@@ -22,7 +22,7 @@ fn top(kind: TargetKind) -> SurfaceFrame {
 #[test]
 fn a_point_well_inside_the_face_stays_put() {
     let hit = Vec3::new(2.0, 1.0, 3.0);
-    assert_eq!(onto_edges(&top(TargetKind::Polygon), hit, 0.5), hit);
+    assert_eq!(onto_edges(&top(TargetKind::Polygon), hit, 0.5), None);
 }
 
 #[test]
@@ -30,11 +30,11 @@ fn a_point_near_one_edge_snaps_onto_that_edge() {
     let frame = top(TargetKind::Polygon);
     assert_eq!(
         onto_edges(&frame, Vec3::new(3.7, 1.0, 3.0), 0.5),
-        Vec3::new(4.0, 1.0, 3.0)
+        Some(Vec3::new(4.0, 1.0, 3.0))
     );
     assert_eq!(
         onto_edges(&frame, Vec3::new(2.0, 1.0, 0.2), 0.5),
-        Vec3::new(2.0, 1.0, 0.0)
+        Some(Vec3::new(2.0, 1.0, 0.0))
     );
 }
 
@@ -42,7 +42,7 @@ fn a_point_near_one_edge_snaps_onto_that_edge() {
 fn a_point_near_a_corner_snaps_onto_the_vertex() {
     assert_eq!(
         onto_edges(&top(TargetKind::Polygon), Vec3::new(0.3, 1.0, 5.8), 0.5),
-        Vec3::new(0.0, 1.0, 6.0)
+        Some(Vec3::new(0.0, 1.0, 6.0))
     );
 }
 
@@ -56,7 +56,7 @@ fn an_axis_pointing_out_of_the_face_still_finds_the_far_edge() {
     };
     assert_eq!(
         onto_edges(&frame, Vec3::new(-3.8, 1.0, 3.0), 0.5),
-        Vec3::new(-4.0, 1.0, 3.0)
+        Some(Vec3::new(-4.0, 1.0, 3.0))
     );
 }
 
@@ -64,7 +64,7 @@ fn an_axis_pointing_out_of_the_face_still_finds_the_far_edge() {
 fn a_curved_surface_has_no_edges_to_snap_to() {
     let hit = Vec3::new(0.1, 1.0, 0.1);
     for kind in [TargetKind::Sphere, TargetKind::Cylinder, TargetKind::Round] {
-        assert_eq!(onto_edges(&top(kind), hit, 0.5), hit);
+        assert_eq!(onto_edges(&top(kind), hit, 0.5), None);
     }
 }
 
