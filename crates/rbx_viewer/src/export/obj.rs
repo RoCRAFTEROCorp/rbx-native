@@ -23,7 +23,12 @@ pub fn obj_files(export: &Export, stem: &str) -> Vec<(String, Vec<u8>)> {
             mtl(&export.meshes, stem).into_bytes(),
         ),
     ];
-    let used: BTreeSet<usize> = export.meshes.iter().filter_map(|m| m.texture).collect();
+    let used: BTreeSet<usize> = export
+        .meshes
+        .iter()
+        .flat_map(|m| [m.maps.color, m.maps.normal, m.maps.metalness, m.maps.roughness])
+        .flatten()
+        .collect();
     for index in used {
         files.push((
             texture_file(&no_spaces(stem), index),
@@ -68,7 +73,7 @@ pub fn obj(meshes: &[ExportMesh], stem: &str) -> String {
 }
 
 /// The `.mtl` [`obj`] names: each part's colour as `Kd`, its transparency as
-/// `d`, and its image, when it has one, as `map_Kd`.
+/// `d`, and its images, when it has them, as `map_Kd` and the rest.
 pub fn mtl(meshes: &[ExportMesh], stem: &str) -> String {
     let stem = no_spaces(stem);
     let mut out = String::from("# Exported by rbxstudio\n");
@@ -77,8 +82,18 @@ pub fn mtl(meshes: &[ExportMesh], stem: &str) -> String {
         let _ = writeln!(out, "\nnewmtl {}", material_name(mesh, index));
         let _ = writeln!(out, "Kd {r} {g} {b}");
         let _ = writeln!(out, "d {alpha}");
-        if let Some(texture) = mesh.texture {
-            let _ = writeln!(out, "map_Kd {}", texture_file(&stem, texture));
+        // `map_Bump` rather than the PBR extension's `norm`: it is the key
+        // Blender's importer (and most others) turns into a tangent-space
+        // normal map. `map_Pm`/`map_Pr` are that extension's own.
+        for (key, map) in [
+            ("map_Kd", mesh.maps.color),
+            ("map_Bump", mesh.maps.normal),
+            ("map_Pm", mesh.maps.metalness),
+            ("map_Pr", mesh.maps.roughness),
+        ] {
+            if let Some(texture) = map {
+                let _ = writeln!(out, "{key} {}", texture_file(&stem, texture));
+            }
         }
     }
     out

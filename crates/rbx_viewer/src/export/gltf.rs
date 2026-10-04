@@ -3,7 +3,8 @@
 //! around rather than a `.gltf` and a `.bin` that break apart.
 //!
 //! One node, mesh and material per part; a part drawn with an image carries
-//! it, inline as a PNG data URI, as its material's base colour texture. An
+//! it, inline as a PNG data URI, as its material's base colour texture, and
+//! a `SurfaceAppearance` its normal and metallic-roughness maps too. An
 //! image several parts share is embedded once, as one `images` entry every
 //! one of their materials points at. Vertices are already in world space
 //! (see [`super::meshes_of`]), so no node carries a transform.
@@ -138,9 +139,20 @@ pub fn gltf(export: &Export) -> String {
         .iter()
         .map(|mesh| {
             let mut material = material(mesh);
-            if let Some(index) = mesh.texture {
+            let maps = mesh.maps;
+            if let Some(index) = maps.color {
                 material["pbrMetallicRoughness"]["baseColorTexture"] =
                     json!({ "index": texture(index) });
+            }
+            if let Some(index) = maps.normal {
+                material["normalTexture"] = json!({ "index": texture(index) });
+            }
+            // The factors multiply the texture, so 1 leaves it as authored.
+            if let Some(index) = maps.metallic_roughness {
+                let pbr = &mut material["pbrMetallicRoughness"];
+                pbr["metallicRoughnessTexture"] = json!({ "index": texture(index) });
+                pbr["metallicFactor"] = json!(1.0);
+                pbr["roughnessFactor"] = json!(1.0);
             }
             material
         })
@@ -187,7 +199,7 @@ fn material(mesh: &ExportMesh) -> Value {
             "roughnessFactor": 1.0,
         },
     });
-    if mesh.color[3] < 1.0 {
+    if mesh.blend {
         material["alphaMode"] = json!("BLEND");
     }
     material

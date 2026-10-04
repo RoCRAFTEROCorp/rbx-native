@@ -13,7 +13,9 @@
 //!
 //! A mesh drawn with an image (`MeshPart.TextureID`, a FileMesh's
 //! `TextureId`) carries that image, PNG-encoded, and its UVs, for the writer
-//! to put beside the triangles. Images are pooled in [`Export::textures`]:
+//! to put beside the triangles; a `MeshPart` wearing a `SurfaceAppearance`
+//! carries its four maps instead, with its tint and alpha mode folded in the
+//! way the viewport shades them (see [`wear`]). Images are pooled in [`Export::textures`]:
 //! one the whole place shares is encoded and written once, and every part
 //! wearing it names the same entry.
 //!
@@ -31,10 +33,10 @@ use rbx_dom::{Ref, Variant, WeakDom};
 use rbx_reflection::ReflectionDatabase;
 
 use crate::assets::Image;
-use crate::pick::Meshes;
+use crate::pick::{Meshes, Surface};
 use crate::scene::{
-    cframe_matrix, descendants_of, file_mesh_fit, is_drawable, resolve_shape, srgb_to_linear,
-    union_fit, unit_mesh, FALLBACK_COLOR,
+    cframe_matrix, descendants_of, file_mesh_fit, is_drawable, linear_to_srgb, resolve_shape,
+    srgb_to_linear, union_fit, unit_mesh, AlphaMode, FALLBACK_COLOR,
 };
 
 pub use gltf::gltf;
@@ -55,15 +57,31 @@ pub struct ExportMesh {
     pub positions: Vec<[f32; 3]>,
     pub normals: Vec<[f32; 3]>,
     pub indices: Vec<u32>,
-    /// Linear RGB, and `1 - Transparency` as alpha. Multiplies `texture`,
-    /// as the viewport does.
+    /// Linear RGB, and `1 - Transparency` as alpha. Multiplies the colour
+    /// map, as the viewport does.
     pub color: [f32; 4],
     /// One per position, top-left origin as Roblox and glTF have it; empty
     /// for a procedural solid, which has no image to map.
     pub uvs: Vec<[f32; 2]>,
-    /// The image the mesh is drawn with, as an index into
-    /// [`Export::textures`].
-    pub texture: Option<usize>,
+    pub maps: Maps,
+    /// Whether the surface is see-through anywhere: its `Transparency`, or
+    /// a colour map whose alpha the viewport blends with.
+    pub blend: bool,
+}
+
+/// The images a part is drawn with, each an index into [`Export::textures`].
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Maps {
+    pub color: Option<usize>,
+    /// Tangent space, green up the image, as glTF and Blender read one.
+    pub normal: Option<usize>,
+    /// Greyscale in red, as `SurfaceAppearance` authors them; for OBJ's
+    /// `map_Pm`/`map_Pr`.
+    pub metalness: Option<usize>,
+    pub roughness: Option<usize>,
+    /// The two packed the way glTF's `metallicRoughnessTexture` wants them:
+    /// roughness in green, metalness in blue.
+    pub metallic_roughness: Option<usize>,
 }
 
 /// Every drawable part in `roots`' subtrees, each once even where one root
@@ -90,21 +108,36 @@ pub fn meshes_of(
     }
 }
 
-/// The PNGs encoded so far, by the decoded image they were made from: every
-/// part wearing one asset holds the very same `Arc` (see
-/// [`crate::pick::Meshes`]), so its address is the asset's identity here.
+/// The PNGs encoded so far, by what they were made from: every part wearing
+/// one asset holds the very same `Arc` (see [`crate::pick::Meshes`]), so its
+/// address is the asset's identity here.
 #[derive(Default)]
 struct Textures {
     pngs: Vec<Vec<u8>>,
-    by_image: HashMap<*const Image, Option<usize>>,
+    by_key: HashMap<Key, Option<usize>>,
+}
+
+#[derive(PartialEq, Eq, Hash)]
+enum Key {
+    Image(*const Image),
+    /// A colour map baked over a part colour (see [`overlay`]), by the
+    /// colour's bits.
+    Overlay(*const Image, [u32; 3]),
+    /// Metalness and roughness packed (see [`pack`]), null for a map the set
+    /// does not carry.
+    Packed(*const Image, *const Image),
 }
 
 impl Textures {
-    fn of(&mut self, image: &Arc<Image>) -> Option<usize> {
-        *self.by_image.entry(Arc::as_ptr(image)).or_insert_with(|| {
-            self.pngs.push(png(image)?);
+    fn add(&mut self, key: Key, make: impl FnOnce() -> Option<Vec<u8>>) -> Option<usize> {
+        *self.by_key.entry(key).or_insert_with(|| {
+            self.pngs.push(make()?);
             Some(self.pngs.len() - 1)
         })
+    }
+
+    fn of(&mut self, image: &Arc<Image>) -> Option<usize> {
+        self.add(Key::Image(Arc::as_ptr(image)), || png(image))
     }
 }
 
@@ -165,18 +198,133 @@ fn export_part(
         Some(&Variant::Float32(t)) => 1.0 - t.clamp(0.0, 1.0),
         _ => 1.0,
     };
-    Some(ExportMesh {
+    let surface = meshes.surface(referent).filter(|_| !uvs.is_empty());
+    let image = meshes.texture(referent).filter(|_| !uvs.is_empty());
+    let mut mesh = ExportMesh {
         name: instance.name().to_owned(),
         positions: transform_points(model, positions),
         normals: transform_normals(model, normals),
         indices,
         color: [color[0], color[1], color[2], alpha],
-        texture: meshes
-            .texture(referent)
-            .filter(|_| !uvs.is_empty())
-            .and_then(|image| textures.of(image)),
         uvs,
-    })
+        maps: Maps::default(),
+        blend: alpha < 1.0,
+    };
+    if let Some(surface) = surface {
+        wear(&mut mesh, surface, textures);
+    } else if let Some(image) = image {
+        mesh.maps.color = textures.of(image);
+        // The viewport multiplies the image's alpha into the part's.
+        mesh.blend |= image.has_alpha();
+    }
+    Some(mesh)
+}
+
+/// Dresses `mesh` in a `SurfaceAppearance` the way `renderer/appearance.wgsl`
+/// shades one: the colour map tinted by `Color`, its alpha either blended
+/// (`Transparency`) or revealing the part's own colour (`Overlay`), and the
+/// other three maps as they are.
+///
+/// Neither format can say "mix the part colour in by the map's alpha", so an
+/// `Overlay` map that has any is baked over the part's colour into an opaque
+/// image of its own. Without a colour map the renderer's neutral one is
+/// clear, which leaves the part colour, tinted.
+fn wear(mesh: &mut ExportMesh, surface: &Surface, textures: &mut Textures) {
+    let [color, normal, metalness, roughness] = &surface.maps;
+    let [r, g, b, alpha] = mesh.color;
+    let [tr, tg, tb] = surface.tint;
+    match color {
+        None => mesh.color = [r * tr, g * tg, b * tb, alpha],
+        Some(map) => {
+            mesh.color = [tr, tg, tb, alpha];
+            mesh.maps.color = match surface.alpha_mode {
+                AlphaMode::Transparency => {
+                    mesh.blend |= map.has_alpha();
+                    textures.of(map)
+                }
+                AlphaMode::Overlay if map.has_alpha() => {
+                    let part = [r, g, b];
+                    textures.add(
+                        Key::Overlay(Arc::as_ptr(map), part.map(f32::to_bits)),
+                        || png(&overlay(map, part)),
+                    )
+                }
+                AlphaMode::Overlay => textures.of(map),
+            };
+        }
+    }
+    data_maps(mesh, [normal, metalness, roughness], textures);
+}
+
+/// The three maps that are data rather than colour, as authored, plus the
+/// metalness and roughness packed for glTF.
+fn data_maps(
+    mesh: &mut ExportMesh,
+    [normal, metalness, roughness]: [&Option<Arc<Image>>; 3],
+    textures: &mut Textures,
+) {
+    mesh.maps.normal = normal.as_ref().and_then(|map| textures.of(map));
+    mesh.maps.metalness = metalness.as_ref().and_then(|map| textures.of(map));
+    mesh.maps.roughness = roughness.as_ref().and_then(|map| textures.of(map));
+    if metalness.is_some() || roughness.is_some() {
+        let pointer = |map: &Option<Arc<Image>>| map.as_ref().map_or(std::ptr::null(), Arc::as_ptr);
+        mesh.maps.metallic_roughness = textures.add(
+            Key::Packed(pointer(metalness), pointer(roughness)),
+            || png(&pack(metalness.as_deref(), roughness.as_deref())),
+        );
+    }
+}
+
+/// `map` laid over `part` (linear) by its own alpha, opaque: what an
+/// `Overlay` colour map shows, mixed in linear light as the shader mixes it.
+fn overlay(map: &Image, part: [f32; 3]) -> Image {
+    let pixels = map
+        .pixels
+        .chunks_exact(4)
+        .flat_map(|texel| {
+            let a = f32::from(texel[3]) / 255.0;
+            let mix = |channel: usize| {
+                let painted = srgb_to_linear(f32::from(texel[channel]) / 255.0);
+                let linear = part[channel] * (1.0 - a) + painted * a;
+                (linear_to_srgb(linear).clamp(0.0, 1.0) * 255.0).round() as u8
+            };
+            [mix(0), mix(1), mix(2), u8::MAX]
+        })
+        .collect();
+    Image {
+        width: map.width,
+        height: map.height,
+        pixels,
+    }
+}
+
+/// glTF's metallic-roughness layout: roughness in green, metalness in blue,
+/// each read from its map's red channel, at the larger map's size (the
+/// smaller sampled nearest). A missing map is the renderer's neutral for it
+/// (see `renderer::filemesh::appearance::neutral`).
+fn pack(metalness: Option<&Image>, roughness: Option<&Image>) -> Image {
+    let (width, height) = [metalness, roughness]
+        .into_iter()
+        .flatten()
+        .fold((1, 1), |(w, h), map| (w.max(map.width), h.max(map.height)));
+    let red = |map: Option<&Image>, x: u32, y: u32, neutral: u8| {
+        map.map_or(neutral, |map| {
+            let (mx, my) = (x * map.width / width, y * map.height / height);
+            map.pixels[4 * (my * map.width + mx) as usize]
+        })
+    };
+    let pixels = (0..height)
+        .flat_map(|y| {
+            (0..width).flat_map(move |x| {
+                [u8::MAX, red(roughness, x, y, 230), red(metalness, x, y, 0), u8::MAX]
+            })
+        })
+        .collect();
+    Image {
+        width,
+        height,
+        pixels,
+    }
 }
 
 fn png(image: &Image) -> Option<Vec<u8>> {

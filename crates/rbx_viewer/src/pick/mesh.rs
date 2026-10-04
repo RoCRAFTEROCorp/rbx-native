@@ -11,7 +11,7 @@ use rbx_dom::Ref;
 use rbx_mesh::Mesh;
 
 use crate::assets::Image;
-use crate::scene::Resolved;
+use crate::scene::{AlphaMode, Resolved};
 
 use super::shape::Local;
 use super::Ray;
@@ -27,12 +27,24 @@ use super::Ray;
 /// fallback box it is drawn as.
 ///
 /// Also carries the decoded image each textured mesh instance is drawn with,
-/// by the part it stands for, which nothing picks against but an export
-/// writes out beside the triangles (see `crate::export`).
+/// and the `SurfaceAppearance` maps of each one wearing a set, by the part it
+/// stands for, which nothing picks against but an export writes out beside
+/// the triangles (see `crate::export`).
 #[derive(Clone, Default)]
 pub struct Meshes {
     meshes: Arc<HashMap<AssetRef, Arc<Mesh>>>,
     textures: Arc<HashMap<Ref, Arc<Image>>>,
+    surfaces: Arc<HashMap<Ref, Surface>>,
+}
+
+/// A `SurfaceAppearance` as the renderer binds it: the maps that decoded, in
+/// [`rbx_materials::MapKind::ALL`] order, and the tint and alpha mode the
+/// shader reads beside them (see `renderer/appearance.wgsl`).
+#[derive(Debug, Clone)]
+pub(crate) struct Surface {
+    pub(crate) maps: [Option<Arc<Image>>; 4],
+    pub(crate) tint: [f32; 3],
+    pub(crate) alpha_mode: AlphaMode,
 }
 
 impl Meshes {
@@ -43,15 +55,36 @@ impl Meshes {
         Meshes {
             meshes: Arc::new(meshes),
             textures: Arc::new(textures),
+            surfaces: Arc::default(),
         }
+    }
+
+    pub(crate) fn with_surfaces(mut self, surfaces: HashMap<Ref, Surface>) -> Self {
+        self.surfaces = Arc::new(surfaces);
+        self
     }
 
     /// What the scene resolved, textures as the renderer binds them: the
     /// `TextureID`/`TextureId` that downloaded, and none under a
-    /// `SurfaceAppearance`.
+    /// `SurfaceAppearance`, whose own maps come instead.
     pub(crate) fn of(resolved: &Resolved) -> Self {
         let mut textures = HashMap::new();
+        let mut surfaces = HashMap::new();
         for instance in &resolved.instances {
+            if let Some(appearance) = instance
+                .appearance
+                .and_then(|index| resolved.appearances.get(index))
+            {
+                let maps = appearance
+                    .maps
+                    .clone()
+                    .map(|map| map.and_then(|map| resolved.images.get(&map).cloned()));
+                surfaces.entry(instance.referent).or_insert(Surface {
+                    maps,
+                    tint: appearance.tint,
+                    alpha_mode: appearance.alpha_mode,
+                });
+            }
             let image = instance
                 .texture
                 .as_ref()
@@ -62,7 +95,7 @@ impl Meshes {
                     .or_insert_with(|| Arc::clone(image));
             }
         }
-        Meshes::new(resolved.meshes.clone(), textures)
+        Meshes::new(resolved.meshes.clone(), textures).with_surfaces(surfaces)
     }
 
     pub(crate) fn get(&self, asset: &AssetRef) -> Option<&Arc<Mesh>> {
@@ -71,6 +104,10 @@ impl Meshes {
 
     pub(crate) fn texture(&self, referent: Ref) -> Option<&Arc<Image>> {
         self.textures.get(&referent)
+    }
+
+    pub(crate) fn surface(&self, referent: Ref) -> Option<&Surface> {
+        self.surfaces.get(&referent)
     }
 }
 

@@ -7,6 +7,7 @@ use rbx_dom::{CFrameData, Vector3Data};
 use serde_json::Value;
 
 use super::*;
+use crate::pick::Surface;
 
 const IDENTITY: [f32; 9] = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0];
 
@@ -253,7 +254,7 @@ fn a_textured_mesh_part_brings_its_image_to_both_formats() {
     );
 
     let exported = export(&dom, &meshes, &[rock]);
-    let png = exported.textures[exported.meshes[0].texture.unwrap()].clone();
+    let png = exported.textures[exported.meshes[0].maps.color.unwrap()].clone();
     let mut decoder = png::Decoder::new(std::io::Cursor::new(&png))
         .read_info()
         .unwrap();
@@ -327,7 +328,7 @@ fn a_texture_shared_by_several_parts_is_written_once() {
 
     assert_eq!(exported.meshes.len(), 3);
     assert_eq!(exported.textures.len(), 1);
-    assert!(exported.meshes.iter().all(|m| m.texture == Some(0)));
+    assert!(exported.meshes.iter().all(|m| m.maps.color == Some(0)));
 
     let files = obj_files(&exported, "Rocks");
     let pngs: Vec<_> = files.iter().filter(|(n, _)| n.ends_with(".png")).collect();
@@ -352,6 +353,142 @@ fn a_texture_shared_by_several_parts_is_written_once() {
     let mut pixels = vec![0; decoder.output_buffer_size().unwrap()];
     decoder.next_frame(&mut pixels).unwrap();
     assert_eq!(pixels, image.pixels);
+}
+
+fn decode(png: &[u8]) -> (u32, u32, Vec<u8>) {
+    let mut decoder = png::Decoder::new(std::io::Cursor::new(png))
+        .read_info()
+        .unwrap();
+    let mut pixels = vec![0; decoder.output_buffer_size().unwrap()];
+    let info = decoder.next_frame(&mut pixels).unwrap();
+    (info.width, info.height, pixels)
+}
+
+/// The PNG a glTF texture index embeds.
+fn embedded(document: &Value, texture: &Value) -> Vec<u8> {
+    let source = &document["textures"][texture["index"].as_u64().unwrap() as usize]["source"];
+    let uri = document["images"][source.as_u64().unwrap() as usize]["uri"]
+        .as_str()
+        .unwrap();
+    base64::engine::general_purpose::STANDARD
+        .decode(uri.strip_prefix("data:image/png;base64,").unwrap())
+        .unwrap()
+}
+
+fn image(width: u32, height: u32, pixels: &[u8]) -> Arc<Image> {
+    Arc::new(Image {
+        width,
+        height,
+        pixels: pixels.to_vec(),
+    })
+}
+
+/// A red `MeshPart` wearing a `SurfaceAppearance` with `alpha_mode`, a
+/// two-texel colour map (clear blue, then opaque green), a normal map, a
+/// one-texel metalness map and a two-texel roughness map.
+fn dressed(alpha_mode: AlphaMode) -> (Export, [Arc<Image>; 4]) {
+    let mut dom = WeakDom::new();
+    let statue = part(&mut dom, "MeshPart", "Statue", None, [0.0, 0.0, 0.0]);
+    dom.set_property(statue, "MeshId", Variant::String("rbxassetid://42".into()))
+        .unwrap();
+    dom.set_property(
+        statue,
+        "Color3uint8",
+        Variant::Color3uint8 { r: 255, g: 0, b: 0 },
+    )
+    .unwrap();
+    let maps = [
+        image(2, 1, &[0, 0, 255, 0, 0, 255, 0, 255]),
+        image(1, 1, &[128, 128, 255, 255]),
+        image(1, 1, &[200, 0, 0, 255]),
+        image(2, 1, &[10, 0, 0, 255, 90, 0, 0, 255]),
+    ];
+    let meshes = Meshes::new(
+        HashMap::from([(AssetRef::Id(42), Arc::new(triangle()))]),
+        HashMap::new(),
+    )
+    .with_surfaces(HashMap::from([(
+        statue,
+        Surface {
+            maps: maps.clone().map(Some),
+            tint: [0.5, 1.0, 1.0],
+            alpha_mode,
+        },
+    )]));
+    (export(&dom, &meshes, &[statue]), maps)
+}
+
+/// `Overlay`: the colour map is baked over the part's red where it is clear,
+/// the tint is the base colour factor, and the other maps come as authored —
+/// metalness and roughness packed for glTF, apart for OBJ.
+#[test]
+fn a_surface_appearance_exports_its_four_maps() {
+    let (exported, [_, normal, metalness, roughness]) = dressed(AlphaMode::Overlay);
+    let mesh = &exported.meshes[0];
+    assert_eq!(mesh.color, [0.5, 1.0, 1.0, 1.0]);
+    assert!(!mesh.blend);
+
+    let png_of = |index: Option<usize>| exported.textures[index.unwrap()].clone();
+    assert_eq!(
+        decode(&png_of(mesh.maps.color)).2,
+        [255, 0, 0, 255, 0, 255, 0, 255]
+    );
+    assert_eq!(decode(&png_of(mesh.maps.normal)).2, normal.pixels);
+    assert_eq!(decode(&png_of(mesh.maps.metalness)).2, metalness.pixels);
+    assert_eq!(decode(&png_of(mesh.maps.roughness)).2, roughness.pixels);
+    let (width, height, packed) = decode(&png_of(mesh.maps.metallic_roughness));
+    assert_eq!((width, height), (2, 1));
+    assert_eq!(packed, [255, 10, 200, 255, 255, 90, 200, 255]);
+
+    let files = obj_files(&exported, "Statue");
+    assert_eq!(files.len(), 2 + 4);
+    let material = std::str::from_utf8(&files[1].1).unwrap();
+    for (key, index) in [
+        ("map_Kd", mesh.maps.color),
+        ("map_Bump", mesh.maps.normal),
+        ("map_Pm", mesh.maps.metalness),
+        ("map_Pr", mesh.maps.roughness),
+    ] {
+        let line = format!("{key} Statue_{}.png\n", index.unwrap());
+        assert!(material.contains(&line), "{line} in {material}");
+    }
+
+    let document: Value = serde_json::from_str(&gltf(&exported)).unwrap();
+    let material = &document["materials"][0];
+    let pbr = &material["pbrMetallicRoughness"];
+    assert_eq!(pbr["baseColorFactor"], serde_json::json!([0.5, 1.0, 1.0, 1.0]));
+    assert_eq!(pbr["metallicFactor"], 1.0);
+    assert_eq!(pbr["roughnessFactor"], 1.0);
+    assert!(material.get("alphaMode").is_none());
+    assert_eq!(
+        embedded(&document, &pbr["baseColorTexture"]),
+        png_of(mesh.maps.color)
+    );
+    assert_eq!(
+        embedded(&document, &material["normalTexture"]),
+        png_of(mesh.maps.normal)
+    );
+    assert_eq!(
+        embedded(&document, &pbr["metallicRoughnessTexture"]),
+        png_of(mesh.maps.metallic_roughness)
+    );
+    // The two greyscale maps are OBJ's alone.
+    assert_eq!(document["images"].as_array().unwrap().len(), 3);
+}
+
+/// `Transparency`: the colour map goes out as it is, and its alpha makes the
+/// material blend.
+#[test]
+fn a_transparency_surface_appearance_blends_its_colour_map() {
+    let (exported, [color, ..]) = dressed(AlphaMode::Transparency);
+    let mesh = &exported.meshes[0];
+    assert!(mesh.blend);
+    assert_eq!(
+        decode(&exported.textures[mesh.maps.color.unwrap()]).2,
+        color.pixels
+    );
+    let document: Value = serde_json::from_str(&gltf(&exported)).unwrap();
+    assert_eq!(document["materials"][0]["alphaMode"], "BLEND");
 }
 
 /// Without an image, the `.mtl` still carries the part's colour, and the
@@ -444,7 +581,7 @@ fn a_real_place_exports_its_textures_and_unions() {
     let database = ReflectionDatabase::embedded();
     let exported = meshes_of(&dom, &database, &viewer.pick_meshes(), dom.root_refs());
 
-    let textured = exported.meshes.iter().filter(|m| m.texture.is_some()).count();
+    let textured = exported.meshes.iter().filter(|m| m.maps.color.is_some()).count();
     let unions: Vec<_> = dom
         .root_refs()
         .iter()
@@ -456,14 +593,19 @@ fn a_real_place_exports_its_textures_and_unions() {
         .iter()
         .filter(|(_, asset)| viewer.pick_meshes().get(asset).is_some())
         .count();
+    let surfaced = exported
+        .meshes
+        .iter()
+        .filter(|m| m.maps.normal.is_some() || m.maps.metallic_roughness.is_some())
+        .count();
     eprintln!(
-        "{} parts, {textured} textured, {carved}/{} legacy unions carved",
+        "{} parts, {textured} textured, {surfaced} wearing a SurfaceAppearance, \
+         {} distinct images, {carved}/{} legacy unions carved",
         exported.meshes.len(),
+        exported.textures.len(),
         unions.len()
     );
-    assert!(textured > 0);
-    assert!(carved > 0);
-
+    // Before the asserts, so a place that fails one can still be looked at.
     if let Ok(out) = std::env::var("RBX_EXPORT_OUT") {
         let out = std::path::Path::new(&out);
         for (name, bytes) in obj_files(&exported, "export") {
@@ -471,4 +613,7 @@ fn a_real_place_exports_its_textures_and_unions() {
         }
         std::fs::write(out.join("export.gltf"), gltf(&exported)).unwrap();
     }
+
+    assert!(textured > 0);
+    assert!(carved > 0);
 }

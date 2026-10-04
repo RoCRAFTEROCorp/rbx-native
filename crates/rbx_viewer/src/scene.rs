@@ -819,6 +819,17 @@ pub(crate) fn srgb_to_linear(value: f32) -> f32 {
     }
 }
 
+/// The inverse of [`srgb_to_linear`], for a linear colour that has to be
+/// stored in 8 bits again without banding in the darks: a gradient's ramp
+/// texture, an export's baked image.
+pub(crate) fn linear_to_srgb(value: f32) -> f32 {
+    if value <= 0.003_130_8 {
+        value * 12.92
+    } else {
+        1.055 * value.powf(1.0 / 2.4) - 0.055
+    }
+}
+
 /// Checks if an instance is renderable: a BasePart that is not Terrain.
 pub(crate) fn is_drawable(dom: &WeakDom, database: &ReflectionDatabase, referent: Ref) -> bool {
     dom.get(referent).is_some_and(|instance| {
