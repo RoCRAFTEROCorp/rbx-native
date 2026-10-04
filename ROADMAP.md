@@ -385,8 +385,9 @@ Roblox's own engine.
   same `transform::Targets` machinery multi-select already used, and
   `Alt`/`⌥`-click still reaches one specific part inside the model and
   gizmos it with its own oriented box. One derivation
-  (`rbx_viewer::gizmo::bounds_of`) feeds the outline, the gizmo's centre
-  and the Scale handles' box alike, and the Align tool's own **Selection
+  (`rbx_viewer::gizmo::bounds_of`) feeds the outline and the gizmo's
+  centre alike (the Scale handles stand on the pivot's own box instead,
+  see "Pivot tools follow-ups" under Renderer), and the Align tool's own **Selection
   Bounds** agrees with it on the world axes. The outline itself is
   squared to the model's pivot (the `PrimaryPart`'s, or the `WorldPivot`)
   the way `Model:GetBoundingBox` orients Studio's box, so it turns with
