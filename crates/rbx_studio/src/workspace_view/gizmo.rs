@@ -651,6 +651,7 @@ impl WorkspaceView {
                 self.step_guides(drag, ray, modifiers.shift, scale);
                 cx.emit(ViewportAction::Resized {
                     parts: vec![(referent, size, position)],
+                    pivot: None,
                     first,
                 });
             }
@@ -665,7 +666,11 @@ impl WorkspaceView {
                 let parts = self.targets.scale_about(&held, pivot, factor);
                 self.follow_summon();
                 self.step_guides(drag, ray, modifiers.shift, scale);
-                cx.emit(ViewportAction::Resized { parts, first });
+                cx.emit(ViewportAction::Resized {
+                    parts,
+                    pivot: self.targets.pivot(),
+                    first,
+                });
             }
             // Rotate turns every selected part about the selection's centre
             // (`creator-docs`, `parts/models.md`: a model "transforms based

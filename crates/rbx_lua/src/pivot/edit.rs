@@ -158,11 +158,9 @@ pub fn followers(dom: &WeakDom, db: &ReflectionDatabase, roots: &[Ref]) -> Vec<F
 }
 
 /// Carries each follower's `WorldPivot` exactly as its part moved since
-/// [`followers`] read it.
-///
-/// ponytail: rigid only. A Scale step that resizes the parts about a point
-/// moves the pivot by its part's own shift rather than scaling it about that
-/// point; carrying a scale as well needs the drag's own factor here.
+/// [`followers`] read it. Rigid only: a group Scale, which moves the pivot
+/// about a point rather than with any one part, writes the pivot its view
+/// worked out over this one (`rbx_studio`'s `Shell::resize_parts`).
 pub fn follow(
     dom: &mut WeakDom,
     db: &ReflectionDatabase,

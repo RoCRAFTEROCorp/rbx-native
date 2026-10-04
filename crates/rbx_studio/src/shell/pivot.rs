@@ -65,7 +65,7 @@ impl Shell {
     /// Every selected part or model, a part inside a selected model left to
     /// the model (`pick::selection`'s rule) — the instances with a pivot of
     /// their own to edit.
-    fn pivot_owners(&self) -> Vec<Ref> {
+    pub(super) fn pivot_owners(&self) -> Vec<Ref> {
         pick::selection(&self.dom, &self.database, self.selected_all())
             .iter()
             .map(|entry| entry.referent())

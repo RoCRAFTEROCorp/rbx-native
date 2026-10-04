@@ -131,6 +131,12 @@ pub(crate) enum ViewportAction {
         /// own Scale, every selected part for a group scaled as a whole (see
         /// `transform::Targets::scale_about`).
         parts: Vec<(Ref, Vec3, Vec3)>,
+        /// Where a group scaled as a whole put the selection's pivot —
+        /// scaled about the same point as its parts, which carrying it
+        /// rigidly with one part would not — written as is, so the pivot
+        /// does not jump when the drag ends and the view reads it back.
+        /// `None` for a lone part's Scale, whose pivot rides along with it.
+        pivot: Option<Mat4>,
         first: bool,
     },
     /// A Rotate drag turned the part about its centre, which is where the
