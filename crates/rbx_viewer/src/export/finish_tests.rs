@@ -329,3 +329,6 @@ fn a_union_with_no_geometry_anywhere_exports_nothing() {
 
 #[path = "force_field_tests.rs"]
 mod force_field;
+
+#[path = "budget_tests.rs"]
+mod budget;

@@ -313,3 +313,34 @@ fn an_untextured_part_exports_its_colour_as_its_material() {
         .get("TEXCOORD_0")
         .is_none());
 }
+
+/// The editor's glTF names its images and buffer as files beside it rather
+/// than embedding them, so a large export stays within what a JavaScript
+/// viewer can parse; the files' bytes are the very PNG and vertices.
+#[test]
+fn gltf_files_put_the_buffer_and_images_beside_the_document() {
+    let (exported, _) = dressed(AlphaMode::Overlay);
+
+    let files = gltf_files(&exported, "My Rock");
+    let document: Value = serde_json::from_slice(&files[0].1).unwrap();
+
+    assert_eq!(files[0].0, "My Rock.gltf");
+    assert_eq!(document["buffers"][0]["uri"], "My_Rock.bin");
+    let bin = files
+        .iter()
+        .find(|(name, _)| name == "My_Rock.bin")
+        .unwrap();
+    assert_eq!(document["buffers"][0]["byteLength"], bin.1.len());
+    let images = document["images"].as_array().unwrap();
+    assert!(!images.is_empty());
+    for image in images {
+        let uri = image["uri"].as_str().unwrap();
+        assert!(
+            uri.starts_with("My_Rock_") && uri.ends_with(".png"),
+            "{uri}"
+        );
+        let (_, bytes) = files.iter().find(|(name, _)| name == uri).unwrap();
+        assert!(exported.textures.contains(bytes));
+    }
+    assert_eq!(files.len(), 2 + images.len());
+}

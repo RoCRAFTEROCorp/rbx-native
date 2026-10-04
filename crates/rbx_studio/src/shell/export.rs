@@ -1,7 +1,8 @@
 //! The Explorer row menu's Save / Export rows, named as Studio's own row menu
 //! names them (`creator-docs`): **Save to File…** writes the selection as a
 //! model file (`.rbxm`, or `.rbxmx` when that is the name picked), **Export
-//! Selection…** as a Wavefront `.obj`, and **Export as glTF…** as `.gltf`.
+//! Selection…** as a Wavefront `.obj`, and **Export as glTF…** as `.gltf`
+//! with its `.bin` and `.png`s beside it (see `rbx_viewer::export::gltf`).
 //! The meshes are what the viewport draws (see `rbx_viewer::export`).
 //!
 //! The File menu's own two do the same for the whole place: **Save to File
@@ -103,10 +104,13 @@ fn encode(
                 .map(|(name, bytes)| (path.with_file_name(name), bytes))
                 .collect())
         }
-        Export::Gltf => Ok(vec![(
-            path.to_path_buf(),
-            export::gltf(&solids()?).into_bytes(),
-        )]),
+        Export::Gltf => {
+            let stem = path.file_stem().unwrap_or_default().to_string_lossy();
+            Ok(export::gltf_files(&solids()?, &stem)
+                .into_iter()
+                .map(|(name, bytes)| (path.with_file_name(name), bytes))
+                .collect())
+        }
     }
 }
 

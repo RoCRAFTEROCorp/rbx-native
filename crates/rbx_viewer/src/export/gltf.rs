@@ -1,8 +1,11 @@
-//! glTF 2.0 as a single `.gltf` file: the JSON document with its one binary
-//! buffer inline as a base64 data URI, so the export is one file to move
-//! around — the layout Studio's own glTF export writes too ("a single .gltf
-//! file that includes embedded textures", the beta's announcement, DevForum
-//! thread 3905928).
+//! glTF 2.0 as a `.gltf` document with its binary buffer and its images in
+//! files beside it ([`gltf_files`]), or, for a small document, all of it
+//! inline as base64 data URIs ([`gltf`]). Studio's own glTF export writes the
+//! single embedded file ("a single .gltf file that includes embedded
+//! textures", the beta's announcement, DevForum thread 3905928), but a JSON
+//! document carrying hundreds of megabytes of base64 is past what a
+//! JavaScript viewer or validator can hold as one string, so the editor
+//! writes the separate files, which every glTF reader also takes.
 //!
 //! Like Studio's, the instance tree survives: one node per part and per
 //! container above it, named after the instance, each placed relative to
@@ -40,7 +43,35 @@ const LINEAR: u32 = 9729;
 const LINEAR_MIPMAP_LINEAR: u32 = 9987;
 const REPEAT: u32 = 10497;
 
+/// The whole export as one self-contained `.gltf` document.
 pub fn gltf(export: &Export) -> String {
+    write(export, None).0
+}
+
+/// The `.gltf` document named for `stem`, first, then the `.bin` and the
+/// `.png`s it names, all meant for the same directory. Only the `.gltf`
+/// keeps `stem` as it is: the files it points at are named from inside it,
+/// as URIs, so they keep to characters a URI needs no escaping for.
+pub fn gltf_files(export: &Export, stem: &str) -> Vec<(String, Vec<u8>)> {
+    let safe: String = stem
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || "-_.".contains(c) {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    let (document, mut files) = write(export, Some(&safe));
+    files.insert(0, (format!("{stem}.gltf"), document.into_bytes()));
+    files
+}
+
+/// The document, and (with `stem`) the files it points at rather than
+/// embedding.
+fn write(export: &Export, stem: Option<&str>) -> (String, Vec<(String, Vec<u8>)>) {
+    let mut files = Vec::new();
     let mut out = Buffers::default();
     // Each part's vertices back in its own frame, which its node places.
     let worlds = node_worlds(export);
@@ -144,12 +175,19 @@ pub fn gltf(export: &Export) -> String {
     let mut image_of = HashMap::new();
     let mut texture = |index: usize| {
         *image_of.entry(index).or_insert_with(|| {
-            images.push(json!({
-                "uri": format!(
+            let png = &export.textures[index];
+            let uri = match stem {
+                Some(stem) => {
+                    let name = format!("{stem}_{index}.png");
+                    files.push((name.clone(), png.clone()));
+                    name
+                }
+                None => format!(
                     "data:image/png;base64,{}",
-                    base64::engine::general_purpose::STANDARD.encode(&export.textures[index])
+                    base64::engine::general_purpose::STANDARD.encode(png)
                 ),
-            }));
+            };
+            images.push(json!({ "uri": uri }));
             images.len() - 1
         })
     };
@@ -163,6 +201,21 @@ pub fn gltf(export: &Export) -> String {
         .map(|index| json!({ "source": index, "sampler": 0 }))
         .collect();
 
+    let buffer_uri = match stem {
+        Some(stem) => {
+            let name = format!("{stem}.bin");
+            files.push((name.clone(), std::mem::take(&mut out.bytes)));
+            name
+        }
+        None => format!(
+            "data:application/octet-stream;base64,{}",
+            base64::engine::general_purpose::STANDARD.encode(&out.bytes)
+        ),
+    };
+    let byte_length = files
+        .last()
+        .filter(|_| stem.is_some())
+        .map_or(out.bytes.len(), |(_, bytes)| bytes.len());
     let mut document = json!({
         "asset": { "version": "2.0", "generator": "rbxstudio" },
         "scene": 0,
@@ -175,11 +228,8 @@ pub fn gltf(export: &Export) -> String {
         "accessors": out.accessors,
         "bufferViews": out.views,
         "buffers": [{
-            "byteLength": out.bytes.len(),
-            "uri": format!(
-                "data:application/octet-stream;base64,{}",
-                base64::engine::general_purpose::STANDARD.encode(&out.bytes)
-            ),
+            "byteLength": byte_length,
+            "uri": buffer_uri,
         }],
     });
     // The specification forbids an empty array where one may be left out.
@@ -207,11 +257,15 @@ pub fn gltf(export: &Export) -> String {
         }
         if export.meshes.is_empty() {
             document.remove("buffers");
+            files.retain(|(name, _)| !name.ends_with(".bin"));
         }
     }
     // `json!` cannot fail to serialize: every key is a string and every
     // number a finite one (a NaN would have become `null`).
-    serde_json::to_string_pretty(&document).unwrap_or_default()
+    (
+        serde_json::to_string_pretty(&document).unwrap_or_default(),
+        files,
+    )
 }
 
 /// The one binary buffer, its views and their accessors.

@@ -85,12 +85,17 @@ pub(super) struct Baked {
 /// finer). A surface too large for one page spills onto more, a triangle
 /// too large for any page is split until its pieces fit, and the pages are
 /// shaded in parallel.
-pub(super) fn bake(triangles: &[[Corner; 3]], pack: &Pack, image: Option<&Image>) -> Vec<Baked> {
+pub(super) fn bake(
+    triangles: &[[Corner; 3]],
+    pack: &Pack,
+    image: Option<&Image>,
+    scale: f32,
+) -> Vec<Baked> {
     let charts: Vec<Chart> = triangles.iter().filter_map(Chart::of).collect();
     if charts.is_empty() {
         return Vec::new();
     }
-    let density = atlas::density(&charts, pack, image);
+    let density = atlas::density(&charts, pack, image) * scale;
     let charts: Vec<Chart> = charts
         .into_iter()
         .flat_map(|chart| split(chart, density))
@@ -120,6 +125,28 @@ pub(super) fn bake(triangles: &[[Corner; 3]], pack: &Pack, image: Option<&Image>
             .filter_map(|handle| handle.join().ok())
             .collect()
     })
+}
+
+/// The texels [`bake`] at `scale` would write: every page's whole square.
+pub(super) fn texels(
+    triangles: &[[Corner; 3]],
+    pack: &Pack,
+    image: Option<&Image>,
+    scale: f32,
+) -> u64 {
+    let charts: Vec<Chart> = triangles.iter().filter_map(Chart::of).collect();
+    if charts.is_empty() {
+        return 0;
+    }
+    let density = atlas::density(&charts, pack, image) * scale;
+    let charts: Vec<Chart> = charts
+        .into_iter()
+        .flat_map(|chart| split(chart, density))
+        .collect();
+    atlas::pages(&charts, density)
+        .iter()
+        .map(|page| u64::from(page.size) * u64::from(page.size))
+        .sum()
 }
 
 fn shade_page(page: &Page, charts: &[Chart], maps: &Maps, density: f32) -> Baked {

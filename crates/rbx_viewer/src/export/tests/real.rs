@@ -64,7 +64,9 @@ fn a_real_place_exports_its_textures_and_unions() {
         for (name, bytes) in obj_files(&exported, "export") {
             std::fs::write(out.join(name), bytes).unwrap();
         }
-        std::fs::write(out.join("export.gltf"), gltf(&exported)).unwrap();
+        for (name, bytes) in gltf_files(&exported, "export") {
+            std::fs::write(out.join(name), bytes).unwrap();
+        }
     }
 
     assert!(textured > 0);

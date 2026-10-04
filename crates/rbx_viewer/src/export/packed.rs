@@ -89,7 +89,19 @@ pub(super) fn dress(
         surface::data_maps(&mut mesh, [normal, metalness, roughness], textures);
         out.push(mesh);
     }
-    if !blended.is_empty() {
+    if !blended.is_empty() && textures.measuring {
+        let key = bake_key(&blended, pack, image);
+        if !textures.planned.contains_key(&key) {
+            textures.planned.insert(
+                key,
+                Planned {
+                    triangles: blended,
+                    pack: pack.clone(),
+                    image: image.cloned(),
+                },
+            );
+        }
+    } else if !blended.is_empty() {
         let key = bake_key(&blended, pack, image);
         let pages = match textures.bakes.get(&key) {
             Some(pages) => Arc::clone(pages),
@@ -125,6 +137,20 @@ pub(super) fn dress(
     out
 }
 
+/// A bake the export will make, kept from the first pass so the texel
+/// budget can be weighed against all of them before any is shaded.
+pub(super) struct Planned {
+    triangles: Vec<[Corner; 3]>,
+    pack: Pack,
+    image: Option<Arc<Image>>,
+}
+
+impl Planned {
+    pub(super) fn texels(&self, scale: f32) -> u64 {
+        bake::texels(&self.triangles, &self.pack, self.image.as_deref(), scale)
+    }
+}
+
 /// Everything a bake depends on: each corner's studs, normals and UV, the
 /// pack and the image (by identity, as [`Textures`] pools them).
 fn bake_key(triangles: &[[Corner; 3]], pack: &Pack, image: Option<&Arc<Image>>) -> u64 {
@@ -152,7 +178,7 @@ fn bake_maps(
     image: Option<&Image>,
     textures: &mut Textures,
 ) -> Vec<Bake> {
-    bake::bake(triangles, pack, image)
+    bake::bake(triangles, pack, image, textures.scale)
         .into_iter()
         .map(|baked| page_maps(baked, pack, image.is_some(), textures))
         .collect()

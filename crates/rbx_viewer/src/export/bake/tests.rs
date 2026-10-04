@@ -73,7 +73,7 @@ fn a_tilted_facet_bakes_the_three_way_blend() {
         ..corner
     });
 
-    let baked = bake(&[triangle], &pack, None).remove(0);
+    let baked = bake(&[triangle], &pack, None, 1.0).remove(0);
 
     // Each leg's own projection of the centroid, as `sample_axis` takes it.
     let studs = (triangle[0].studs + triangle[1].studs + triangle[2].studs) / 3.0;
@@ -112,6 +112,7 @@ fn a_flat_normal_map_bakes_flat() {
         &[facet(Vec3::new(1.0, 2.0, 3.0), 2.0)],
         &pack(None, Some(flat)),
         None,
+        1.0,
     )
     .remove(0);
 
@@ -131,6 +132,7 @@ fn baked_tangents_follow_the_chart() {
         &[facet(Vec3::new(0.3, 1.0, -0.7), 3.0)],
         &pack(None, None),
         None,
+        1.0,
     )
     .remove(0);
 
@@ -156,6 +158,7 @@ fn a_mesh_image_multiplies_the_pack() {
         &[facet(Vec3::ONE, 1.0)],
         &pack(Some(white), None),
         Some(&half),
+        1.0,
     )
     .remove(0);
 
@@ -175,7 +178,7 @@ fn charts_are_packed_apart() {
             )
         })
         .collect();
-    let baked = bake(&triangles, &pack(None, None), None).remove(0);
+    let baked = bake(&triangles, &pack(None, None), None, 1.0).remove(0);
 
     let boxes: Vec<(Vec2, Vec2)> = baked
         .uvs
@@ -212,7 +215,7 @@ fn an_oversized_facet_spills_onto_pages_at_full_density() {
         maps: [Some(map), None, None, None],
         studs_per_tile: 1.0,
     };
-    let pages = bake(&[facet(Vec3::ONE, 6.0)], &pack, None);
+    let pages = bake(&[facet(Vec3::ONE, 6.0)], &pack, None, 1.0);
 
     assert!(pages.len() > 1, "{} page(s)", pages.len());
     for page in &pages {

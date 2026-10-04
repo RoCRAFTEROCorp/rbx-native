@@ -43,7 +43,7 @@ use crate::assets::Image;
 use crate::pick::Meshes;
 use crate::scene::{descendants_of, is_drawable};
 
-pub use gltf::gltf;
+pub use gltf::{gltf, gltf_files};
 pub use obj::{mtl, obj, obj_files};
 
 /// Everything an export writes: each part's surfaces, the PNGs their
@@ -143,8 +143,58 @@ pub fn meshes_of(
     meshes: &Meshes,
     roots: &[Ref],
 ) -> Export {
+    within(dom, database, meshes, roots, TEXEL_BUDGET)
+}
+
+/// Every baked texel an export may write, across all its pages. A viewer
+/// uploads each of a page's four maps (colour, normal, metalness-roughness,
+/// and the `.mtl`'s separate pair aside) as RGBA8 with a third more for its
+/// mips: 128 Mtexels is about 2.7 GiB of GPU memory at most, what a 4 GB
+/// card can still hold beside the rest of a scene, and 32 full 2048 pages —
+/// a few hundred megabytes of PNG. Below it every bake keeps the pack's own
+/// density; above it every bake is coarsened by the same factor, so no part
+/// is singled out.
+const TEXEL_BUDGET: u64 = 128 << 20;
+
+/// [`meshes_of`] with every bake together kept to `budget` texels: a first
+/// pass finds every bake the export needs and what each costs at its own
+/// density, and the second bakes them all at the one density factor that
+/// fits.
+fn within(
+    dom: &WeakDom,
+    database: &ReflectionDatabase,
+    meshes: &Meshes,
+    roots: &[Ref],
+    budget: u64,
+) -> Export {
+    let mut textures = Textures {
+        measuring: true,
+        ..Textures::default()
+    };
+    collect(dom, database, meshes, roots, &mut textures);
+    let planned = std::mem::take(&mut textures.planned);
+    let total = |scale: f32| planned.values().map(|bake| bake.texels(scale)).sum::<u64>();
+    textures.scale = 1.0;
+    if total(1.0) > budget {
+        // Page squares round up to powers of two, so the area does not fall
+        // exactly with the square of the scale; step down until it fits.
+        textures.scale = (budget as f64 / total(1.0) as f64).sqrt() as f32;
+        while total(textures.scale) > budget && textures.scale > 1e-3 {
+            textures.scale *= 0.9;
+        }
+    }
+    textures.measuring = false;
+    collect(dom, database, meshes, roots, &mut textures)
+}
+
+fn collect(
+    dom: &WeakDom,
+    database: &ReflectionDatabase,
+    meshes: &Meshes,
+    roots: &[Ref],
+    textures: &mut Textures,
+) -> Export {
     let mut seen = HashSet::new();
-    let mut textures = Textures::default();
     let mut tree = Tree::default();
     let mut export = Export::default();
     for &root in roots {
@@ -153,7 +203,7 @@ pub fn meshes_of(
                 continue;
             }
             let Some((surfaces, placement)) =
-                part::export_part(dom, database, meshes, &mut textures, referent)
+                part::export_part(dom, database, meshes, textures, referent)
             else {
                 continue;
             };
@@ -165,7 +215,7 @@ pub fn meshes_of(
             export.nodes[node].meshes = (first..export.meshes.len()).collect();
         }
     }
-    export.textures = textures.pngs;
+    export.textures = textures.pngs.clone();
     export
 }
 
@@ -221,6 +271,12 @@ struct Textures {
     /// Each bake once, by a hash of everything it depends on (see
     /// [`packed::bake_key`]).
     bakes: HashMap<u64, Arc<Vec<packed::Bake>>>,
+    /// The first of [`within`]'s two passes: bakes are listed in
+    /// `planned`, not made.
+    measuring: bool,
+    planned: HashMap<u64, packed::Planned>,
+    /// The density factor every bake is made at (1 below the budget).
+    scale: f32,
 }
 
 #[derive(PartialEq, Eq, Hash)]

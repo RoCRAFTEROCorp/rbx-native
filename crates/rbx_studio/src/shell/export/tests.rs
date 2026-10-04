@@ -182,6 +182,11 @@ fn export_as_gltf_of_the_place_is_rooted_at_workspace() {
     )
     .unwrap();
     let document: serde_json::Value = serde_json::from_slice(&files[0].1).unwrap();
+    // The buffer is a file beside the document, which names it.
+    assert_eq!(files[0].0, Path::new("Place.gltf"));
+    assert_eq!(files[1].0, Path::new("Place.bin"));
+    assert_eq!(document["buffers"][0]["uri"], "Place.bin");
+    assert_eq!(document["buffers"][0]["byteLength"], files[1].1.len());
 
     let roots = document["scenes"][0]["nodes"].as_array().unwrap();
     assert_eq!(roots.len(), 1);
