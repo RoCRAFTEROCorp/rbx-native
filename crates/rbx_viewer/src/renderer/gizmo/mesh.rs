@@ -55,17 +55,10 @@ const TUBE_SEGMENTS: usize = 6;
 const VERTICES_PER_SLICE: usize = TUBE_SEGMENTS * 6;
 const RING_VERTICES: usize = Axis::ALL.len() * RING_SEGMENTS * VERTICES_PER_SLICE;
 
-const fn larger(a: usize, b: usize) -> usize {
-    if a > b {
-        a
-    } else {
-        b
-    }
-}
-
 /// The buffer has to hold whichever tool draws the most, since the tool
-/// changes without the renderer being rebuilt.
-pub(super) const CAPACITY: usize = larger(larger(ARROW_VERTICES, BALL_VERTICES), RING_VERTICES);
+/// changes without the renderer being rebuilt. Transform draws all three at
+/// once, so it alone decides this — the other tools each need less.
+pub(super) const CAPACITY: usize = ARROW_VERTICES + BALL_VERTICES + RING_VERTICES;
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
@@ -98,7 +91,78 @@ pub(super) fn mesh(shape: &Shape, held: Option<End>, eye: Vec3) -> Vec<Vertex> {
         Shape::Move(handles) => arms(handles, eye, arrow, shown),
         Shape::Scale(faces) => balls(faces, eye, shown),
         Shape::Rotate(handles) => rings(handles, eye),
+        Shape::Transform(handles, faces) => transform(handles, faces, eye, shown),
     }
+}
+
+/// One piece of Transform's combined gizmo, carrying enough to build it once
+/// its turn in the painter's order comes up.
+enum Piece {
+    Arm(Axis, f32),
+    Ball(Axis, f32),
+    Ring(Axis, usize),
+}
+
+/// Transform's arms, balls and rings as one triangle list, sorted back to
+/// front across all three kinds together.
+///
+/// [`arms`], [`balls`] and [`rings`] each already paint their own six (or,
+/// for a ring, `RING_SEGMENTS`) pieces furthest-from-`eye` first, but that
+/// sort never looked outside its own kind — which was fine while only one
+/// kind was ever on screen at once. Transform is the first shape where that
+/// stops being true: a ball nearer the eye than some arm has to be painted
+/// after it regardless of which kind either belongs to, or the depth-test-off
+/// painter's algorithm every handle relies on (see this module's own doc
+/// comment) paints the far arm over the near ball.
+fn transform(
+    handles: &Handles,
+    faces: &Faces,
+    eye: Vec3,
+    shown: impl Fn(Axis, f32) -> bool,
+) -> Vec<Vertex> {
+    let mut pieces: Vec<(f32, Piece)> =
+        Vec::with_capacity(ARMS + ARMS + Axis::ALL.len() * RING_SEGMENTS);
+    for axis in Axis::ALL {
+        for sign in [1.0f32, -1.0] {
+            if shown(axis, sign) {
+                let tip = handles.origin() + handles.direction(axis) * handles.arm() * sign;
+                pieces.push(((tip - eye).length(), Piece::Arm(axis, sign)));
+                pieces.push((
+                    (faces.handle(axis, sign) - eye).length(),
+                    Piece::Ball(axis, sign),
+                ));
+            }
+        }
+        let (_, zero, quarter) = handles.ring_frame(axis);
+        let radius = RING_RADIUS * handles.arm();
+        for step in 0..RING_SEGMENTS {
+            let angle = std::f32::consts::TAU * (step as f32 + 0.5) / RING_SEGMENTS as f32;
+            let middle = handles.origin() + (zero * angle.cos() + quarter * angle.sin()) * radius;
+            pieces.push(((middle - eye).length(), Piece::Ring(axis, step)));
+        }
+    }
+    pieces.sort_by(|(a, ..), (b, ..)| b.total_cmp(a));
+
+    let mut vertices = Vec::with_capacity(ARROW_VERTICES + BALL_VERTICES + RING_VERTICES);
+    for (_, piece) in pieces {
+        match piece {
+            Piece::Arm(axis, sign) => arrow(
+                &mut vertices,
+                handles.origin(),
+                handles.direction(axis) * sign,
+                handles.arm(),
+                axis.color(),
+            ),
+            Piece::Ball(axis, sign) => ball(
+                &mut vertices,
+                faces.handle(axis, sign),
+                faces.radius(axis, sign),
+                axis.color(),
+            ),
+            Piece::Ring(axis, step) => slice(&mut vertices, handles, axis, step),
+        }
+    }
+    vertices
 }
 
 /// How one arm of an axis gizmo is built: into `vertices`, from `origin`,

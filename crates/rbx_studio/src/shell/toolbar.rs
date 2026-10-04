@@ -1,12 +1,16 @@
 //! The transform tools, as the ribbon's Tools group draws them (§2):
-//! Select/Move/Scale/Rotate as tight 32x32 icon buttons, the local-axis
-//! toggle beside them, then the chevron that opens the snap increments and
-//! the Align popover.
+//! Select/Move/Scale/Rotate/Transform as tight 32x32 icon buttons, the
+//! local-axis toggle beside them, then the chevron that opens the snap
+//! increments and the Align popover.
 //!
-//! Studio's fifth **Transform** button is deliberately absent.
-//! `creator-docs` only uses "transform" as the umbrella name for
-//! Move+Scale+Rotate together and documents no distinct tool behind it, so
-//! there is nothing here to implement against yet.
+//! `creator-docs`' own prose never names Transform as a distinct tool — it
+//! only uses "transform" as the umbrella term for Move+Scale+Rotate
+//! together — but Roblox's enum reference does:
+//! `reference/engine/enums/RibbonTool.yaml` and the API dump this project
+//! syncs daily (`assets/API-Dump.json`) both give `Enum.RibbonTool.Transform`
+//! the summary "provides combined move, scale, and rotate handles in a
+//! single gizmo", which is what `crate::transform::Tool::Transform` and
+//! `rbx_viewer::gizmo::Kind::Transform` implement.
 
 use gpui_kit::assets::IconName;
 use gpui_kit::component::popover::Popover;
@@ -43,6 +47,7 @@ impl Shell {
                 "move" => self.transform_action(Action::Use(Tool::Move), cx),
                 "scale" => self.transform_action(Action::Use(Tool::Scale), cx),
                 "rotate" => self.transform_action(Action::Use(Tool::Rotate), cx),
+                "transform" => self.transform_action(Action::Use(Tool::Transform), cx),
                 "sun" => self.transform_action(Action::Use(Tool::Sun), cx),
                 "local" => self.transform_action(Action::ToggleLocal, cx),
                 "nosnap" => self.transform_action(Action::ToggleSnap(SnapKind::Translate), cx),

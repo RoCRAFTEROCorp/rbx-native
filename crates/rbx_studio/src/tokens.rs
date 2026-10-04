@@ -346,6 +346,13 @@ pub(crate) fn tool_rotate() -> Rgba {
     theme::color("tool_rotate")
 }
 
+/// Transform's own, distinct from every other tool's hue — it is Move,
+/// Scale and Rotate's handles all drawn at once, so its button needs a
+/// colour none of theirs already carries.
+pub(crate) fn tool_transform() -> Rgba {
+    theme::color("tool_transform")
+}
+
 /// Align's own, for the button beside the four tools.
 pub(crate) fn tool_align() -> Rgba {
     theme::color("tool_align")
@@ -375,11 +382,12 @@ pub(crate) type Named = (&'static str, fn() -> Rgba);
 
 /// Every pastel, for the test that checks them all against [`tile`].
 #[cfg(test)]
-pub(crate) const TOOL_ACCENTS: [Named; 7] = [
+pub(crate) const TOOL_ACCENTS: [Named; 8] = [
     ("select", tool_select),
     ("move", tool_move),
     ("scale", tool_scale),
     ("rotate", tool_rotate),
+    ("transform", tool_transform),
     ("align", tool_align),
     ("local", tool_local),
     ("sun", tool_sun),

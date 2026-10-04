@@ -358,7 +358,14 @@ impl WorkspaceView {
         let end = match self.transform.tool {
             Tool::Move => self.handles().and_then(|handles| handles.grab_arm(ray)),
             Tool::Scale => self.faces().and_then(|faces| faces.grab(ray)),
-            Tool::Select | Tool::Rotate | Tool::Sun => None,
+            // Transform's three kinds share one `End`, which cannot say
+            // *which* of them was grabbed — an arm and a ball can carry the
+            // same axis and sign. Isolating one would risk hiding a ball
+            // that was never touched just because it happens to share an
+            // arm's tag, so Transform never isolates at all: every handle of
+            // every kind stays drawn through the whole drag, the same choice
+            // already made for Rotate below.
+            Tool::Select | Tool::Rotate | Tool::Transform | Tool::Sun => None,
         };
         if let Some(end) = end {
             let held = self.transform.gizmo().map(|gizmo| Gizmo {
@@ -380,19 +387,40 @@ impl WorkspaceView {
             Tool::Move => self.grab_axis(&handles, ray),
             Tool::Scale if self.targets.len() > 1 => grab_box(&self.faces()?, ray),
             Tool::Scale => grab_face(&self.faces()?, anchor, ray, lock_shape),
-            Tool::Rotate => {
-                let axis = handles.grab_ring(ray)?;
-                let frame = handles.ring_frame(axis);
-                let (angle, ..) = gizmo::ring_crossing(handles.origin(), frame, ray)?;
-                Some(Drag::Ring {
-                    origin: handles.origin(),
-                    frame,
-                    orientation: anchor.orientation(),
-                    last: angle,
-                    turned: 0.0,
+            Tool::Rotate => self.grab_ring(&handles, anchor, ray),
+            // Innermost first: Move's arms sit closest to the part, Scale's
+            // balls stand on its own surface a little further out, and
+            // Rotate's rings reach the furthest, the same distance as an
+            // arm's own tip (`gizmo::RING_RADIUS` is `1.0`, an arm length).
+            // A user aiming at one specific handle is aiming at the nearest
+            // thing that reads as one, so that is the order tried here.
+            Tool::Transform => self.grab_axis(&handles, ray).or_else(|| {
+                self.grab_ring(&handles, anchor, ray).or_else(|| {
+                    if self.targets.len() > 1 {
+                        grab_box(&self.faces()?, ray)
+                    } else {
+                        grab_face(&self.faces()?, anchor, ray, lock_shape)
+                    }
                 })
-            }
+            }),
         }
+    }
+
+    /// What grabbing Rotate's ring opens: the ring's own frame, frozen at the
+    /// grab, and the anchor's orientation to turn from. Shared by Rotate's
+    /// own arm above and Transform's, which tries the same ring after its
+    /// arrows come up empty.
+    fn grab_ring(&self, handles: &Handles, anchor: Target, ray: Ray) -> Option<Drag> {
+        let axis = handles.grab_ring(ray)?;
+        let frame = handles.ring_frame(axis);
+        let (angle, ..) = gizmo::ring_crossing(handles.origin(), frame, ray)?;
+        Some(Drag::Ring {
+            origin: handles.origin(),
+            frame,
+            orientation: anchor.orientation(),
+            last: angle,
+            turned: 0.0,
+        })
     }
 
     /// The body grab this ray would open on the current selection — Move's
@@ -408,7 +436,10 @@ impl WorkspaceView {
     /// `surface` is the frame under the press and where the press met it,
     /// once `Shell` has found it; before then the box's own face stands in.
     fn grab_body(&self, ray: Ray, surface: Option<(SurfaceFrame, Vec3)>) -> Option<Drag> {
-        if self.transform.tool != Tool::Move {
+        // Transform includes Move's own handles, so its cursor dragging
+        // comes along too — `creator-docs` only documents the gesture under
+        // Move, but Transform draws Move's very arrows over the same part.
+        if !matches!(self.transform.tool, Tool::Move | Tool::Transform) {
             return None;
         }
         let anchor = self.targets.anchor()?;

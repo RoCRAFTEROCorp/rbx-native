@@ -581,6 +581,11 @@ fn tool_icon(tool: Tool) -> IconName {
         Tool::Move => IconName::Move3d,
         Tool::Scale => IconName::Scale3d,
         Tool::Rotate => IconName::Rotate3d,
+        // Roblox's own glyph is a bounding box with a handle at each corner
+        // — this project ships no Roblox icon assets (see `AGENTS.md`), so a
+        // generic Lucide glyph standing for the same idea, a frame with its
+        // own corner handles, is this editor's equivalent rather than a copy.
+        Tool::Transform => IconName::SquareDashed,
         Tool::Sun => IconName::Sun,
     }
 }
@@ -593,6 +598,7 @@ pub(super) fn tool_accent(tool: Tool) -> Rgba {
         Tool::Move => tokens::tool_move(),
         Tool::Scale => tokens::tool_scale(),
         Tool::Rotate => tokens::tool_rotate(),
+        Tool::Transform => tokens::tool_transform(),
         Tool::Sun => tokens::tool_sun(),
     }
 }

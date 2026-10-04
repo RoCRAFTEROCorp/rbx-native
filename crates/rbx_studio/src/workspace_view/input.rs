@@ -72,14 +72,14 @@ pub(crate) fn camera_key(key: &str, layout: Layout) -> Option<CameraKey> {
 }
 
 /// The key and modifiers a keystroke means to the transform toolbar, whose
-/// shortcuts are the digits `1`-`4` and `Shift`+`2`. Studio binds the
+/// shortcuts are the digits `1`-`5` and `Shift`+`2`. Studio binds the
 /// physical key, and on an AZERTY keyboard the digits sit on the *shifted*
-/// row: unshifted, the keys type `&`, `é`, `"` and `'`, which GPUI reports as
-/// those characters — `é`, having no ASCII form, under its keysym name. A
-/// digit, then, means `Shift` was down, though GPUI drops `Shift` from any
-/// key that has no case; it is put back, so `Shift`+`2` reaches the increment
-/// field. On QWERTY the same drop turns `Shift`+`2` into the bare `@` it
-/// types, which is read back the same way.
+/// row: unshifted, the keys type `&`, `é`, `"`, `'` and `(`, which GPUI
+/// reports as those characters — `é`, having no ASCII form, under its keysym
+/// name. A digit, then, means `Shift` was down, though GPUI drops `Shift`
+/// from any key that has no case; it is put back, so `Shift`+`2` reaches the
+/// increment field. On QWERTY the same drop turns `Shift`+`2` into the bare
+/// `@` it types, which is read back the same way.
 pub(crate) fn tool_key(key: &str, modifiers: Modifiers, layout: Layout) -> (&str, Modifiers) {
     let shifted = Modifiers {
         shift: true,
@@ -96,7 +96,8 @@ pub(crate) fn tool_key(key: &str, modifiers: Modifiers, layout: Layout) -> (&str
         "eacute" | "é" => ("2", modifiers),
         "\"" => ("3", modifiers),
         "'" => ("4", modifiers),
-        "1" | "2" | "3" | "4" => (key, shifted),
+        "(" => ("5", modifiers),
+        "1" | "2" | "3" | "4" | "5" => (key, shifted),
         _ => (key, modifiers),
     }
 }
@@ -231,11 +232,17 @@ mod tests {
 
     #[test]
     fn azerty_s_unshifted_digit_row_reaches_the_tool_shortcuts() {
-        let tools = ["&", "eacute", "\"", "'"].map(|key| tool(key, Layout::Azerty));
+        let tools = ["&", "eacute", "\"", "'", "("].map(|key| tool(key, Layout::Azerty));
         assert_eq!(
             tools,
-            [Tool::Select, Tool::Move, Tool::Scale, Tool::Rotate]
-                .map(|tool| Some(Action::Use(tool)))
+            [
+                Tool::Select,
+                Tool::Move,
+                Tool::Scale,
+                Tool::Rotate,
+                Tool::Transform
+            ]
+            .map(|tool| Some(Action::Use(tool)))
         );
         // Shifted, the same keys type the digits: Shift+2 is the field.
         assert_eq!(
@@ -243,12 +250,17 @@ mod tests {
             Some(Action::FocusIncrement(SnapKind::Translate))
         );
         assert_eq!(tool("3", Layout::Azerty), None);
+        assert_eq!(tool("5", Layout::Azerty), None);
     }
 
     #[test]
     fn qwerty_s_digits_are_the_tools_and_its_punctuation_is_not() {
         assert_eq!(tool("2", Layout::Qwerty), Some(Action::Use(Tool::Move)));
         assert_eq!(tool("4", Layout::Qwerty), Some(Action::Use(Tool::Rotate)));
+        assert_eq!(
+            tool("5", Layout::Qwerty),
+            Some(Action::Use(Tool::Transform))
+        );
         assert_eq!(tool("'", Layout::Qwerty), None);
         // Shift+2 arrives as the `@` it types, Shift dropped.
         assert_eq!(

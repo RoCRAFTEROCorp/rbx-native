@@ -55,6 +55,7 @@
     "tool_move": "#8FE0B0",
     "tool_scale": "#FF9B9B",
     "tool_rotate": "#FFC98F",
+    "tool_transform": "#FF9BE0",
     "tool_align": "#C9A8FF",
     "tool_local": "#8FE0D8",
     "tool_sun": "#FFE88F",
