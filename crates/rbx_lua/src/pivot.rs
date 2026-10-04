@@ -7,6 +7,9 @@
 //! `PrimaryPart`'s when it has one, else its `WorldPivot`, else — a file from
 //! before pivots, which stores none — the centre of its parts' bounds, where
 //! Studio's pivot Reset puts it.
+//!
+//! Moving the pivot itself, with the instance left where it is, is
+//! [`set_pivot`] and [`reset`] — see `edit`.
 
 use std::collections::HashSet;
 
@@ -23,6 +26,10 @@ const SIZE: &str = "Size";
 const BASE_PART: &str = "BasePart";
 const MODEL: &str = "Model";
 
+mod edit;
+
+pub use edit::{follow, followers, keep_pivots, reset, set_pivot, Follower};
+
 /// `reference`'s pivot in world space, if it is a part or a model.
 pub fn pivot(dom: &WeakDom, db: &ReflectionDatabase, reference: Ref) -> Option<CFrameData> {
     let instance = dom.get(reference)?;
@@ -37,18 +44,27 @@ pub fn pivot(dom: &WeakDom, db: &ReflectionDatabase, reference: Ref) -> Option<C
     if !db.is_subclass_of(class, MODEL) {
         return None;
     }
-    if let Some(Variant::Ref(primary)) = instance.properties().get(PRIMARY_PART) {
-        if dom
-            .get(*primary)
-            .is_some_and(|part| db.is_subclass_of(part.class(), BASE_PART))
-        {
-            return pivot(dom, db, *primary);
-        }
+    if let Some(primary) = primary_part(dom, db, reference) {
+        return pivot(dom, db, primary);
     }
     if let Some(Variant::CFrame(world)) = instance.properties().get(WORLD_PIVOT) {
         return Some(*world);
     }
-    bounds_centre(dom, db, reference)
+    bounds_centre(dom, db, reference, &IDENTITY.rotation)
+}
+
+/// `model`'s `PrimaryPart`, while it names a part that still exists.
+fn primary_part(dom: &WeakDom, db: &ReflectionDatabase, model: Ref) -> Option<Ref> {
+    match dom.get(model)?.properties().get(PRIMARY_PART) {
+        Some(Variant::Ref(primary))
+            if dom
+                .get(*primary)
+                .is_some_and(|part| db.is_subclass_of(part.class(), BASE_PART)) =>
+        {
+            Some(*primary)
+        }
+        _ => None,
+    }
 }
 
 /// `PivotTo`: moves `reference` so its pivot lands on `to`, carrying every
@@ -140,9 +156,20 @@ fn carried(frame: &CFrameData, from: &CFrameData, to: &CFrameData) -> CFrameData
     compose(&compose(to, &LuaCFrame(*from).inverse().0), frame)
 }
 
-/// The centre of the world bounds of every part under `reference`, facing
-/// the world's axes.
-fn bounds_centre(dom: &WeakDom, db: &ReflectionDatabase, reference: Ref) -> Option<CFrameData> {
+/// The centre of the bounds of every part under `reference`, the box
+/// squared to `rotation` (and facing that way) rather than to the world —
+/// `Model:GetBoundingBox` orients a model's box by its pivot.
+fn bounds_centre(
+    dom: &WeakDom,
+    db: &ReflectionDatabase,
+    reference: Ref,
+    rotation: &[f32; 9],
+) -> Option<CFrameData> {
+    let axes = LuaCFrame(CFrameData {
+        position: IDENTITY.position,
+        rotation: *rotation,
+    });
+    let into = axes.inverse();
     let mut pending = vec![reference];
     let (mut low, mut high) = ([f32::INFINITY; 3], [f32::NEG_INFINITY; 3]);
     while let Some(current) = pending.pop() {
@@ -159,6 +186,8 @@ fn bounds_centre(dom: &WeakDom, db: &ReflectionDatabase, reference: Ref) -> Opti
         ) else {
             continue;
         };
+        // The part as the box's own axes see it.
+        let frame = into.compose(&LuaCFrame(frame)).0;
         // A box's world extent along each axis is its half-size projected
         // through the absolute rotation.
         let absolute = CFrameData {
@@ -178,12 +207,12 @@ fn bounds_centre(dom: &WeakDom, db: &ReflectionDatabase, reference: Ref) -> Opti
         }
     }
     (low[0] <= high[0]).then(|| CFrameData {
-        position: Vector3Data {
+        position: axes.rotate(Vector3Data {
             x: (low[0] + high[0]) * 0.5,
             y: (low[1] + high[1]) * 0.5,
             z: (low[2] + high[2]) * 0.5,
-        },
-        rotation: IDENTITY.rotation,
+        }),
+        rotation: *rotation,
     })
 }
 
