@@ -22,6 +22,20 @@ pub(crate) fn parent_of(dom: &WeakDom, target: Ref) -> Option<Ref> {
     None
 }
 
+/// `Instance:GetFullName`: names from the topmost ancestor down, joined by
+/// periods and left unescaped. The `DataModel` is not a DOM node, so a service
+/// is already the top; an unparented instance is a root too.
+pub(crate) fn full_name(dom: &WeakDom, target: Ref) -> Option<String> {
+    let mut names = Vec::new();
+    let mut at = Some(target);
+    while let Some(current) = at {
+        names.push(dom.get(current)?.name().to_string());
+        at = parent_of(dom, current);
+    }
+    names.reverse();
+    Some(names.join("."))
+}
+
 pub(crate) fn is_ancestor_of(dom: &WeakDom, ancestor: Ref, target: Ref) -> bool {
     ancestor == target || descendants(dom, ancestor).contains(&target)
 }

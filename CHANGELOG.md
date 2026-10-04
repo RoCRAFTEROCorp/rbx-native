@@ -2,6 +2,11 @@
 
 ## 2026-10-04
 
+- **`Instance:GetFullName()` in Luau.** The Command Bar and scripts can
+  now ask for an instance's dotted path (`Workspace.Terrain`), as Roblox
+  documents it: the `DataModel` is left out, an unparented instance's path
+  starts at its topmost ancestor, and dots in names are not escaped.
+  — @chteau
 - **Edit Pivot and Reset, on the Model tab.** Studio's pivot tools
   (`studio/pivot-tools.md`): a sixth tool whose arrows, rings and
   free-drag ball move and turn a part's or model's pivot without moving

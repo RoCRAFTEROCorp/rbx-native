@@ -96,6 +96,9 @@ impl UserData for LuaGame {
                 ))),
             }
         });
+        // The `DataModel` is left out of every path, so on its own it has only
+        // its own name to give.
+        methods.add_method("GetFullName", |_, _, ()| Ok("game"));
         methods.add_meta_method(MetaMethod::ToString, |_, _, ()| Ok("game"));
     }
 }

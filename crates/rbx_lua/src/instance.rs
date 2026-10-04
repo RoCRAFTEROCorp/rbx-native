@@ -104,6 +104,9 @@ impl UserData for LuaInstance {
                 .ok_or_else(property::missing_instance)?;
             instance_list(lua, &this.ctx, children)
         });
+        methods.add_method("GetFullName", |_, this, ()| {
+            tree::full_name(&this.ctx.dom(), this.referent).ok_or_else(property::missing_instance)
+        });
         methods.add_method("GetDescendants", |lua, this, ()| {
             let found = tree::descendants(&this.ctx.dom(), this.referent);
             instance_list(lua, &this.ctx, found)
