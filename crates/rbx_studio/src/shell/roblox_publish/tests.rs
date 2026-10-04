@@ -3,8 +3,8 @@ use std::path::{Path, PathBuf};
 use rbx_cloud::{CloudError, PublishMode};
 
 use super::{
-    describe, linked_target, lookup_finished, mocked, outcome, refused, upload_with, Dialog,
-    Failure, Target,
+    describe, linked_target, lookup_finished, mocked, not_updated, outcome, refused, upload_with,
+    Dialog, Failure, Target,
 };
 use crate::command_bar::Feedback;
 use crate::home::RecentPlace;
@@ -202,4 +202,22 @@ fn only_a_refusal_claims_the_place_was_not_changed() {
     assert!(!refused(&CloudError::Transport("timed out".to_string())));
     let unreadable = serde_json::from_str::<u64>("<html>").unwrap_err();
     assert!(!refused(&CloudError::Json(unreadable)));
+}
+
+#[test]
+fn a_place_with_unions_warns_that_publish_leaves_them_alone() {
+    let mut dom = rbx_dom::WeakDom::new();
+    let workspace = dom.new_instance("Workspace", "Workspace", None);
+    let model = dom.new_instance("Model", "Model", Some(workspace));
+    dom.new_instance("Part", "Part", Some(model));
+    assert_eq!(not_updated(&dom), None);
+
+    dom.new_instance("UnionOperation", "Union", Some(model));
+    dom.new_instance("SurfaceAppearance", "Look", Some(workspace));
+    dom.new_instance("UnionOperation", "Union", Some(workspace));
+    let warning = not_updated(&dom).unwrap();
+    assert!(
+        warning.contains("SurfaceAppearance, UnionOperation instances"),
+        "{warning}"
+    );
 }

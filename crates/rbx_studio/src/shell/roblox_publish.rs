@@ -14,14 +14,20 @@
 //! like a local save; a failure also opens a dialog with Roblox's answer,
 //! because a publish the user believes went through is the costly mistake.
 //!
+//! Roblox's API doesn't update every class (unions, SurfaceAppearance,
+//! wraps, Editable*; see [`NOT_UPDATED_BY_PUBLISH`]), so a successful upload
+//! of a place holding any adds a warning row naming them.
+//!
 //! `RBX_STUDIO_PUBLISH_MOCK=ok|<HTTP status>|network` answers both calls
 //! with a canned result instead of the network, for scripted captures.
 
+use std::collections::BTreeSet;
 use std::path::Path;
 
 use gpui_kit::component::input::{InputEvent, InputState};
 use gpui_kit::*;
 use rbx_cloud::{ApiKey, Client, CloudError, PublishMode};
+use rbx_dom::WeakDom;
 
 use crate::command_bar::Feedback;
 use crate::home::{self, RecentPlace};
@@ -254,6 +260,9 @@ impl Shell {
         let feedback = outcome(target, mode, &result);
         self.output.push(SOURCE, feedback.clone());
         self.command_bar.set_feedback(feedback);
+        if let Some(warning) = result.as_ref().ok().and_then(|_| not_updated(&self.dom)) {
+            self.output.push(SOURCE, Feedback::Warning(warning));
+        }
         if let Err(failure) = result {
             self.roblox.dialog = Some(Dialog::Failed {
                 mode,
@@ -298,6 +307,44 @@ fn lookup_finished(
             None
         }
     }
+}
+
+/// Classes Roblox's place-publishing API leaves as they were
+/// (`creator-docs`, `cloud/guides/usage-place-publishing.md`: EditableImage,
+/// EditableMesh, PartOperation, SurfaceAppearance, BaseWrap): edits to them
+/// only go live when published from Roblox Studio.
+const NOT_UPDATED_BY_PUBLISH: [&str; 9] = [
+    "EditableImage",
+    "EditableMesh",
+    "PartOperation",
+    "UnionOperation",
+    "NegateOperation",
+    "IntersectOperation",
+    "SurfaceAppearance",
+    "WrapLayer",
+    "WrapTarget",
+];
+
+/// The warning a successful upload adds when the place holds any of
+/// [`NOT_UPDATED_BY_PUBLISH`], naming the ones it holds.
+fn not_updated(dom: &WeakDom) -> Option<String> {
+    let mut found = BTreeSet::new();
+    let mut stack = dom.root_refs().to_vec();
+    while let Some(instance) = stack.pop().and_then(|r| dom.get(r)) {
+        if let Some(class) = NOT_UPDATED_BY_PUBLISH
+            .iter()
+            .find(|c| **c == instance.class())
+        {
+            found.insert(*class);
+        }
+        stack.extend_from_slice(instance.children());
+    }
+    (!found.is_empty()).then(|| {
+        format!(
+            "Note: Roblox doesn\u{2019}t update {} instances through this upload \u{2014} changes to them only go live when published from Roblox Studio.",
+            found.into_iter().collect::<Vec<_>>().join(", ")
+        )
+    })
 }
 
 /// The ing-form and past tense each mode's messages use.

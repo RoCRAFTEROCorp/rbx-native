@@ -1620,7 +1620,12 @@ Roblox's own engine.
   in its Recent entry. Success and failure are rows in the Output dock, and
   a failure also opens a dialog with Roblox's documented reason for the
   status. Browsing and restoring older versions is its own item under
-  "What's planned".
+  "What's planned". Roblox's own limit, from `creator-docs`
+  (`cloud/guides/usage-place-publishing.md`): this API does **not** update
+  `EditableImage`, `EditableMesh`, `PartOperation` (unions),
+  `SurfaceAppearance` or `BaseWrap` instances — edits to those only go live
+  when published from Roblox Studio. A successful upload of a place holding
+  any of them adds a warning row to the Output dock saying so.
 
 ### Platform
 - [x] Linux (X11) — the daily-driven target.
