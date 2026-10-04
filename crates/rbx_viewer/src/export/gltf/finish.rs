@@ -89,9 +89,19 @@ pub(super) fn finish(
             if let Some(material) = material.as_object_mut() {
                 material.remove("alphaMode");
             }
-            material["pbrMetallicRoughness"]["baseColorFactor"] = json!([r, g, b, 1.0]);
-            let mut transmission =
-                json!({ "transmissionFactor": 1.0 - (alpha * FORCE_FIELD_FACE_OPACITY).min(1.0) });
+            // Transmission tints what is behind by the base colour, where
+            // the viewport lays its colour over it at the face-on opacity:
+            // `bg * (1 - o) + colour * o`. Against a backdrop about as
+            // bright as the light, a tint of `mix(1, colour, o)` lands on
+            // the same.
+            let opacity = (alpha * FORCE_FIELD_FACE_OPACITY).min(1.0);
+            let tint = |c: f32| 1.0 + (c - 1.0) * opacity;
+            material["pbrMetallicRoughness"]["baseColorFactor"] =
+                json!([tint(r), tint(g), tint(b), 1.0]);
+            // A smooth shell: rough transmission would frost what is seen
+            // through it, which `material.wgsl` never does.
+            material["pbrMetallicRoughness"]["roughnessFactor"] = json!(GLASS_ROUGHNESS);
+            let mut transmission = json!({ "transmissionFactor": 1.0 - opacity });
             // Where the mesh's pattern shows, the shell is solid and glows.
             if let Some(index) = mesh.maps.see_through {
                 transmission["transmissionTexture"] = json!({ "index": texture(index) });
