@@ -3,9 +3,10 @@
 ## 2026-10-04
 
 - **Whole-place export, and exports that look like the viewport.** File ›
-  Save to File… writes the whole place under a name of your choosing
-  (`.rbxl`/`.rbxlx`), and File › Export as glTF… writes `Workspace` with
-  the instance tree kept, as Studio's own glTF export does. Unions Studio
+  Save to File As… writes the whole place under a name of your choosing
+  (`.rbxl`/`.rbxlx`) and carries on editing that file, as Studio's Save As
+  does; File › Export as glTF… writes `Workspace` with the instance tree
+  kept, as Studio's own glTF export does. Unions Studio
   writes today (their parts inline in `ChildData2`) are carved instead of
   drawn as boxes, nested ones are followed, and real unions no longer fail
   the boolean on Roblox's float noise — in the viewport as well as the
@@ -13,8 +14,9 @@
   and cylinders keep a round cross-section on a non-square part. A
   material across a tilted facet exports the viewport's three-way blend,
   a textured mesh keeps its `Material` pack under its image (both baked
-  into a texture of the part's own), and Neon, Glass and ForceField export
-  as emission, transmission and a glowing shell rather than flat colour.
+  into a texture of the part's own, never coarser than the pack), and
+  Neon, Glass and ForceField export as emission, transmission and a shell
+  that clears face-on and lights at its rim rather than flat colour.
   — @chteau
 - **`Instance:GetFullName()` in Luau.** The Command Bar and scripts can
   now ask for an instance's dotted path (`Workspace.Terrain`), as Roblox
