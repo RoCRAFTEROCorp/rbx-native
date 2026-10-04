@@ -1722,8 +1722,8 @@ Roblox's own engine.
   version and makes it the one players join, Save saves one without
   publishing it. Success and failure are rows in the Output dock, and
   a failure also opens a dialog with Roblox's documented reason for the
-  status. Browsing and restoring older versions is its own item under
-  "What's planned". Roblox's own limit, from `creator-docs`
+  status. Browsing and restoring older versions is File › Version
+  History, the next bullet. Roblox's own limit, from `creator-docs`
   (`cloud/guides/usage-place-publishing.md`): this API does **not** update
   `EditableImage`, `EditableMesh`, `PartOperation` (unions),
   `SurfaceAppearance` or `BaseWrap` instances — edits to those only go live
