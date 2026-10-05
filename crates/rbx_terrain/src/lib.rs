@@ -6,14 +6,17 @@
 //! write the voxels, [`VoxelGrid`] to hold and change them.
 
 mod cell;
+pub mod edit;
 mod grid;
 mod material;
 mod material_colors;
 pub mod physics_grid;
+mod raycast;
 pub mod smooth_grid;
 
 pub use cell::{quantize, Cell, FULL};
 pub use grid::{ChunkKey, VoxelGrid, CHUNK, VOXEL_STUDS};
 pub use material::Material;
 pub use material_colors::MaterialColors;
+pub use raycast::{raycast, Hit};
 pub use smooth_grid::SmoothGridError;
