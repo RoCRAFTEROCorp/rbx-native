@@ -1,162 +1,107 @@
-//! Freeze Rotation: a `MeshPart`'s turn baked into its mesh, so it keeps
-//! looking exactly as it did with `Orientation` back at `0, 0, 0` — what
-//! Blender calls applying the rotation.
+//! Freeze Rotation: an instance's turn cleared to `0, 0, 0` while it keeps
+//! looking exactly as it did — Blender's Apply › Rotation ("rotation values
+//! are cleared to zero … the geometry itself is adjusted so that the object
+//! continues to appear unchanged"). Its origin stays where it was, unturned:
+//! the pivot keeps its place in the world and loses its turn, as a Blender
+//! object's origin does. Everything else hanging off the instance's own
+//! frame — child `Attachment`s, the `C0`/`C1` of joints naming it — keeps
+//! its whole world frame, as Blender adjusts children.
 //!
-//! Format-honest by construction. A primitive `Part` has no vertices to turn
-//! (its shape is `Shape` and `Size` alone), so only a `MeshPart` qualifies,
-//! and its new geometry is a real Roblox mesh asset: [`plan`] bakes the
-//! drawn triangles into a one-mesh glTF, the shell uploads it as a `Model`
-//! (the Assets API's only route for geometry not downloaded from Roblox,
-//! see `rbx_cloud::create_asset`) and reads back the `MeshId` Roblox's
-//! importer gave it, and [`apply`] points the part at that mesh. Nothing
-//! non-standard is ever stored in the place.
+//! Format-honest: what a place stores after a freeze is only ever what
+//! Roblox itself stores. Three cases qualify (see [`route`]):
 //!
-//! The bake carries the part's `Size` too, not only its turn: a stretched
-//! mesh that is then turned cannot be stretched back along the new axes, so
-//! the new mesh holds the shape as drawn and its `InitialSize` is read off
-//! the uploaded mesh itself. Everything that hangs off the part's own frame
-//! — `PivotOffset`, child `Attachment`s, the `C0`/`C1` of joints naming it —
-//! is re-expressed in the new frame, so none of it moves in the world.
+//! - A `Model`: it has no geometry of its own, its turn is its pivot's, and
+//!   clearing that is a pivot write ([`local`]).
+//! - A `Block` part turned by quarter turns, or a `Ball`: the same shape can
+//!   be described unturned — a block by swapping its `Size` axes and moving
+//!   its surfaces and decals to the faces now pointing their way, a ball as
+//!   it is ([`local`]). A block at any other angle, a cylinder or a wedge
+//!   cannot: its shape comes from `Shape` and `Size` alone, axis-aligned.
+//! - A `MeshPart`: its triangles are baked into a new mesh that is uploaded
+//!   as a real Roblox asset ([`mesh`]).
 
-use glam::{Mat3, Mat4, Vec3};
-use std::collections::BTreeMap;
-
-use rbx_dom::{CFrameData, Content, Ref, Variant, Vector3Data, WeakDom};
+use glam::{Mat4, Vec3};
+use rbx_dom::{CFrameData, Ref, Variant, Vector3Data, WeakDom};
 use rbx_reflection::ReflectionDatabase;
-use rbx_viewer::export::{Export, ExportMesh, ExportNode};
 
 use crate::transform;
 
-type Properties = BTreeMap<String, Variant>;
+mod local;
+mod mesh;
 
-const MESH_PART: &str = "MeshPart";
+pub(crate) use local::freeze_local;
+pub(crate) use mesh::{apply, mesh_asset_id, mesh_uri, plan, same_shape, Plan};
+
 const JOINT: &str = "JointInstance";
-
-/// How far the uploaded mesh's proportions may stray from the bake's before
-/// it is refused. The importer may rescale (glTF is metres, Roblox studs) but
-/// a uniform scale leaves proportions alone; anything past rounding means it
-/// changed the shape, and repointing the part at it would be a lie.
-const PROPORTION_TOLERANCE: f32 = 0.01;
 
 /// Below this a rotation counts as none: nothing to freeze.
 const UNTURNED: f32 = 1e-5;
 
-/// Everything [`apply`] writes once the upload is back, worked out up front
-/// from the part as it stood when the command ran.
-#[derive(Debug, Clone)]
-pub(crate) struct Plan {
-    pub(crate) target: Ref,
-    pub(crate) name: String,
-    /// The baked mesh, ready for `rbx_viewer::export::gltf`.
-    pub(crate) export: Export,
-    /// The part's new `CFrame`: unturned, on the centre of the baked bounds.
-    frame: CFrameData,
-    /// The baked bounds, the part's new `Size`.
-    pub(crate) size: Vec3,
-    /// Every other `CFrame` that hangs off the part's frame, re-expressed.
-    rewrites: Vec<(Ref, &'static str, CFrameData)>,
+const IDENTITY: [f32; 9] = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0];
+
+/// How a freezable instance is frozen.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Route {
+    /// A `MeshPart`: bake, upload, then [`apply`].
+    Upload,
+    /// A `Model`, a quarter-turned block or a ball: [`freeze_local`] at once.
+    Local,
 }
 
-/// Whether `target` is a part Freeze Rotation can act on: a `MeshPart` with
-/// a mesh, turned at all.
+/// How `target` can be frozen, or `None` when it cannot: unturned already,
+/// or a shape no unturned `Size` describes.
+pub(crate) fn route(dom: &WeakDom, database: &ReflectionDatabase, target: Ref) -> Option<Route> {
+    if mesh::freezable(dom, database, target) {
+        return Some(Route::Upload);
+    }
+    local::freezable(dom, database, target).then_some(Route::Local)
+}
+
 pub(crate) fn freezable(dom: &WeakDom, database: &ReflectionDatabase, target: Ref) -> bool {
-    let Some(instance) = dom.get(target) else {
-        return false;
-    };
-    database.is_subclass_of(instance.class(), MESH_PART)
-        && mesh_uri(instance.properties()).is_some()
-        && cframe_of(database, instance, "CFrame").is_some_and(|frame| turned(&frame))
+    route(dom, database, target).is_some()
 }
 
-/// The bake for `target` drawn with `mesh`, or why there is none.
-pub(crate) fn plan(
+fn turned(frame: &CFrameData) -> bool {
+    frame
+        .rotation
+        .iter()
+        .zip(IDENTITY)
+        .any(|(a, b)| (a - b).abs() > UNTURNED)
+}
+
+/// What has to be rewritten so nothing hanging off `target` moves when its
+/// frame goes from `old` to `new`: its pivot (kept in place, its turn
+/// cleared), child attachments and joint offsets (kept whole).
+fn rehang(
     dom: &WeakDom,
     database: &ReflectionDatabase,
     target: Ref,
-    mesh: &rbx_mesh::Mesh,
-) -> Result<Plan, String> {
-    let instance = dom.get(target).ok_or("the part is gone")?;
-    if !freezable(dom, database, target) {
-        return Err(format!("{} is not a turned MeshPart", instance.name()));
-    }
-    if has_bones(dom, target) {
-        // A skinned mesh's vertices are bound to its bones' rest poses;
-        // turning them alone would tear the skin from the rig.
-        return Err(format!(
-            "{} is skinned (it has Bones); freezing would break its rig",
-            instance.name()
-        ));
-    }
-    let old = cframe_of(database, instance, "CFrame").ok_or("the part has no CFrame")?;
-    let size = vector_of(database, instance, "Size").ok_or("the part has no Size")?;
-    // Only a stored `InitialSize` counts, as in `rbx_viewer`'s fit: a class
-    // default is not the extent of any particular mesh.
-    let native = match instance.properties().get("InitialSize") {
-        Some(Variant::Vector3(v)) => Some(Vec3::new(v.x, v.y, v.z)),
-        _ => None,
-    }
-    .filter(|v| v.min_element() > f32::EPSILON)
-    .unwrap_or_else(|| Vec3::from(mesh.bounds.size()))
-    .max(Vec3::splat(f32::EPSILON));
-    let stretch = size / native;
-    let turn = Mat3::from_mat4(transform::rigid(&old));
-    let (vertices, indices) = lod0(mesh);
-    let positions: Vec<Vec3> = vertices
-        .iter()
-        .map(|v| turn * (Vec3::from(v.position) * stretch))
-        .collect();
-    let (min, max) = positions.iter().fold(
-        (Vec3::splat(f32::INFINITY), Vec3::splat(f32::NEG_INFINITY)),
-        |(lo, hi), &p| (lo.min(p), hi.max(p)),
-    );
-    if !min.is_finite() {
-        return Err("the mesh has no vertices".to_string());
-    }
-    let centre = (min + max) / 2.0;
-    let baked = ExportMesh {
-        name: instance.name().to_string(),
-        positions: positions.iter().map(|&p| (p - centre).to_array()).collect(),
-        // Normals go through the inverse transpose: the stretch is diagonal,
-        // so that is dividing by it, then the turn.
-        normals: vertices
-            .iter()
-            .map(|v| {
-                (turn * (Vec3::from(v.normal) / stretch))
-                    .normalize_or_zero()
-                    .to_array()
-            })
-            .collect(),
-        tangents: Vec::new(),
-        indices,
-        color: [1.0; 4],
-        uvs: vertices.iter().map(|v| v.uv).collect(),
-        maps: Default::default(),
-        blend: false,
-        finish: Default::default(),
+    old: &CFrameData,
+    new: &CFrameData,
+) -> Vec<(Ref, &'static str, Variant)> {
+    let Some(instance) = dom.get(target) else {
+        return Vec::new();
     };
-    let export = Export {
-        meshes: vec![baked],
-        textures: Vec::new(),
-        nodes: vec![ExportNode {
-            name: instance.name().to_string(),
-            class: MESH_PART.to_string(),
-            parent: None,
-            placement: None,
-            meshes: vec![0],
-            material: None,
-        }],
-    };
-
-    let position = Vec3::new(old.position.x, old.position.y, old.position.z) + centre;
-    let frame = transform::cframe(Mat4::from_translation(position));
+    let (old, new) = (transform::rigid(old), transform::rigid(new));
     // `new⁻¹ · old`: what takes a frame relative to the old part to the same
     // world frame relative to the new one.
-    let carry = transform::rigid(&frame).inverse() * transform::rigid(&old);
-    let rewrite = |local: &CFrameData| transform::cframe(carry * transform::rigid(local));
+    let carry = new.inverse() * old;
+    let rewrite =
+        |local: &CFrameData| Variant::CFrame(transform::cframe(carry * transform::rigid(local)));
     let mut rewrites = Vec::new();
-    if let Some(offset) = cframe_of(database, instance, "PivotOffset") {
-        rewrites.push((target, "PivotOffset", rewrite(&offset)));
+
+    let offset = cframe_of(database, instance, "PivotOffset")
+        .map_or(Mat4::IDENTITY, |offset| transform::rigid(&offset));
+    let pivot = (old * offset).w_axis.truncate();
+    let kept = transform::cframe(new.inverse() * Mat4::from_translation(pivot));
+    let stored = instance.properties().contains_key("PivotOffset");
+    if stored
+        || turned(&kept)
+        || Vec3::new(kept.position.x, kept.position.y, kept.position.z).length() > UNTURNED
+    {
+        rewrites.push((target, "PivotOffset", Variant::CFrame(kept)));
     }
+
     for &child in instance.children() {
         let Some(attachment) = dom.get(child).filter(|c| c.class() == "Attachment") else {
             continue;
@@ -170,150 +115,31 @@ pub(crate) fn plan(
             rewrites.push((joint, key, rewrite(&local)));
         }
     }
-
-    Ok(Plan {
-        target,
-        name: instance.name().to_string(),
-        export,
-        frame,
-        size: max - min,
-        rewrites,
-    })
+    rewrites
 }
 
-/// Whether the uploaded mesh, whose own extent is `native`, has the bake's
-/// proportions — anything but a uniform rescale is refused.
-pub(crate) fn same_shape(baked: Vec3, native: Vec3) -> bool {
-    if baked.min_element() <= f32::EPSILON || native.min_element() <= f32::EPSILON {
-        // A flat mesh: compare only the axes that have extent.
-        let flat = |v: Vec3| v.to_array().map(|c| c <= f32::EPSILON);
-        if flat(baked) != flat(native) {
-            return false;
-        }
-    }
-    let ratios: Vec<f32> = (0..3)
-        .filter(|&axis| baked[axis] > f32::EPSILON)
-        .map(|axis| native[axis] / baked[axis])
-        .collect();
-    let first = ratios.first().copied().unwrap_or(1.0);
-    ratios
-        .iter()
-        .all(|r| ((r - first) / first).abs() <= PROPORTION_TOLERANCE)
-}
-
-/// Points the part at `mesh_id` (whose own extent is `native`) and writes
-/// every frame [`plan`] worked out. The part keeps the kind of value its
-/// `MeshId` already held, and a `MeshContent` naming the old mesh follows.
-pub(crate) fn apply(
+/// Writes every `(instance, property, value)`, each under the spelling its
+/// instance already stores it as (`size` stays `size`).
+fn write_all(
     dom: &mut WeakDom,
     database: &ReflectionDatabase,
-    plan: &Plan,
-    mesh_id: u64,
-    native: Vec3,
+    writes: Vec<(Ref, &str, Variant)>,
 ) -> Result<(), String> {
-    let instance = dom
-        .get(plan.target)
-        .ok_or("the part was deleted meanwhile")?;
-    let uri = format!("rbxassetid://{mesh_id}");
-    let mut writes: Vec<(Ref, String, Variant)> = Vec::new();
-    for key in ["MeshId", "MeshContent"] {
-        match instance.properties().get(key) {
-            Some(Variant::String(_)) => {
-                writes.push((plan.target, key.into(), Variant::String(uri.clone())))
-            }
-            Some(Variant::Content(Content::Uri(_))) => writes.push((
-                plan.target,
-                key.into(),
-                Variant::Content(Content::Uri(uri.clone())),
-            )),
-            _ => {}
-        }
-    }
-    for (name, value) in [
-        ("Size", Variant::Vector3(vector3(plan.size))),
-        ("InitialSize", Variant::Vector3(vector3(native))),
-        ("CFrame", Variant::CFrame(plan.frame)),
-    ] {
-        let key = database
-            .stored_or_default(instance, name)
-            .map_or(name, |(key, _)| key);
-        writes.push((plan.target, key.to_string(), value));
-    }
-    for &(referent, name, frame) in &plan.rewrites {
-        let Some(owner) = dom.get(referent) else {
-            continue;
-        };
-        let key = database
-            .stored_or_default(owner, name)
-            .map_or(name, |(key, _)| key);
-        writes.push((referent, key.to_string(), Variant::CFrame(frame)));
-    }
-    for (referent, key, value) in writes {
+    let keyed: Vec<(Ref, String, Variant)> = writes
+        .into_iter()
+        .filter_map(|(referent, name, value)| {
+            let owner = dom.get(referent)?;
+            let key = database
+                .stored_or_default(owner, name)
+                .map_or(name, |(key, _)| key);
+            Some((referent, key.to_string(), value))
+        })
+        .collect();
+    for (referent, key, value) in keyed {
         dom.set_property(referent, &key, value)
             .map_err(|err| err.to_string())?;
     }
     Ok(())
-}
-
-/// The asset id in a `MeshPart`'s `MeshId` (or `MeshContent`), where it is
-/// an uploaded asset rather than one shipped with Studio.
-pub(crate) fn mesh_asset_id(properties: &Properties) -> Option<u64> {
-    match rbx_assets::AssetRef::parse(mesh_uri(properties)?).ok()? {
-        rbx_assets::AssetRef::Id(id) => Some(id),
-        _ => None,
-    }
-}
-
-/// The URI of the mesh a `MeshPart` draws, empty strings counting as none.
-pub(crate) fn mesh_uri(properties: &Properties) -> Option<&str> {
-    ["MeshId", "MeshContent"].iter().find_map(|key| {
-        let uri = match properties.get(*key)? {
-            Variant::String(text) => text.as_str(),
-            Variant::Content(Content::Uri(uri)) => uri.as_str(),
-            _ => return None,
-        };
-        (!uri.is_empty()).then_some(uri)
-    })
-}
-
-/// The vertices LOD 0 draws, renumbered: coarser LODs keep vertices of
-/// their own, which would only widen the bounds of a mesh that has none.
-fn lod0(mesh: &rbx_mesh::Mesh) -> (Vec<rbx_mesh::Vertex>, Vec<u32>) {
-    let mut renumbered = vec![u32::MAX; mesh.vertices.len()];
-    let mut vertices = Vec::new();
-    let indices = mesh
-        .indices
-        .iter()
-        .map(|&index| {
-            let slot = &mut renumbered[index as usize];
-            if *slot == u32::MAX {
-                *slot = vertices.len() as u32;
-                vertices.push(mesh.vertices[index as usize]);
-            }
-            *slot
-        })
-        .collect();
-    (vertices, indices)
-}
-
-fn turned(frame: &CFrameData) -> bool {
-    const IDENTITY: [f32; 9] = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0];
-    frame
-        .rotation
-        .iter()
-        .zip(IDENTITY)
-        .any(|(a, b)| (a - b).abs() > UNTURNED)
-}
-
-fn has_bones(dom: &WeakDom, target: Ref) -> bool {
-    let mut stack = vec![target];
-    while let Some(instance) = stack.pop().and_then(|r| dom.get(r)) {
-        if instance.class() == "Bone" {
-            return true;
-        }
-        stack.extend_from_slice(instance.children());
-    }
-    false
 }
 
 /// Every joint anywhere in the place whose `Part0` or `Part1` is `part`,
@@ -358,22 +184,18 @@ fn vector_of(
     instance: &rbx_dom::Instance,
     name: &str,
 ) -> Option<Vec3> {
-    match instance
-        .properties()
-        .get(name)
-        .or_else(|| database.stored_or_default(instance, name).map(|(_, v)| v))?
-    {
-        Variant::Vector3(v) => Some(Vec3::new(v.x, v.y, v.z)),
+    match database.stored_or_default(instance, name)? {
+        (_, Variant::Vector3(v)) => Some(Vec3::new(v.x, v.y, v.z)),
         _ => None,
     }
 }
 
-fn vector3(v: Vec3) -> Vector3Data {
-    Vector3Data {
+fn vector3(v: Vec3) -> Variant {
+    Variant::Vector3(Vector3Data {
         x: v.x,
         y: v.y,
         z: v.z,
-    }
+    })
 }
 
 #[cfg(test)]

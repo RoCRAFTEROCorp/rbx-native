@@ -13,7 +13,7 @@ use rbx_dom::{Ref, WeakDom};
 use rbx_reflection::ReflectionDatabase;
 
 use crate::command_bar::Feedback;
-use crate::freeze::{self, Plan};
+use crate::freeze::{self, Plan, Route};
 
 use super::Shell;
 
@@ -40,15 +40,22 @@ pub(super) fn has_freezable(
 }
 
 impl Shell {
+    /// Every selected instance that can be frozen: models, blocks and balls
+    /// at once as one undo step, each `MeshPart` once its upload is back.
     pub(super) fn freeze_selected(&mut self, cx: &mut Context<Self>) {
-        let targets: Vec<Ref> = self
-            .selected_all()
-            .iter()
-            .copied()
-            .filter(|&target| freeze::freezable(&self.dom, &self.database, target))
-            .collect();
+        let (mut local, mut uploads) = (Vec::new(), Vec::new());
+        for &target in self.selected_all() {
+            match freeze::route(&self.dom, &self.database, target) {
+                Some(Route::Local) => local.push(target),
+                Some(Route::Upload) => uploads.push(target),
+                None => {}
+            }
+        }
+        if !local.is_empty() {
+            self.freeze_in_place(&local, cx);
+        }
         let meshes = self.viewport.read(cx).meshes().clone();
-        for target in targets {
+        for target in uploads {
             let Some(instance) = self.dom.get(target) else {
                 continue;
             };
@@ -86,6 +93,34 @@ impl Shell {
             .detach();
         }
         cx.notify();
+    }
+
+    fn freeze_in_place(&mut self, targets: &[Ref], cx: &mut Context<Self>) {
+        self.push_history();
+        let mut lines = Vec::new();
+        for &target in targets {
+            let name = self
+                .dom
+                .get(target)
+                .map(|i| i.name().to_string())
+                .unwrap_or_default();
+            match freeze::freeze_local(&mut self.dom, &self.database, target) {
+                Ok(notes) => {
+                    lines.push(Ok(format!("Froze {name}\u{2019}s rotation")));
+                    lines.extend(notes.into_iter().map(Err));
+                }
+                Err(err) => lines.push(Err(err)),
+            }
+        }
+        let changes = self.dom.take_changes();
+        self.reflect_changes(&changes, cx);
+        self.record_history_change(changes);
+        for line in lines {
+            match line {
+                Ok(done) => self.report(Ok(done), cx),
+                Err(note) => self.output.push(SOURCE, Feedback::Warning(note)),
+            }
+        }
     }
 
     fn finish_freeze(

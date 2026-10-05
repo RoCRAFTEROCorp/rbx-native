@@ -133,7 +133,7 @@ fn what_hangs_off_the_part_keeps_its_place_in_the_world() {
         Some(Variant::CFrame(f)) => *f,
         other => panic!("{other:?}"),
     };
-    for (owner, key) in [(part, "PivotOffset"), (attachment, "CFrame"), (weld, "C1")] {
+    for (owner, key) in [(attachment, "CFrame"), (weld, "C1")] {
         let Some(Variant::CFrame(local)) = dom.get(owner).unwrap().properties().get(key) else {
             panic!("{key} not written");
         };
@@ -143,6 +143,33 @@ fn what_hangs_off_the_part_keeps_its_place_in_the_world() {
             "{key}: {before} vs {after}"
         );
     }
+    // The pivot is the origin Blender's Apply clears: it keeps its place
+    // and loses its turn.
+    let Some(Variant::CFrame(local)) = dom.get(part).unwrap().properties().get("PivotOffset")
+    else {
+        panic!("PivotOffset not written");
+    };
+    let pivot = world(&new, local);
+    assert!(close(pivot.w_axis.truncate(), before.w_axis.truncate()));
+    assert!(Mat3::from_mat4(pivot).abs_diff_eq(Mat3::IDENTITY, 1e-5));
+}
+
+#[test]
+fn an_unset_pivot_stays_on_the_old_centre() {
+    let (dom, part, old) = scene();
+    let database = ReflectionDatabase::embedded();
+    let mut dom = dom;
+    let plan = plan(&dom, &database, part, &bar()).unwrap();
+    apply(&mut dom, &database, &plan, 1, Vec3::ONE).unwrap();
+    let pivot = rbx_lua::pivot::pivot(&dom, &database, part).unwrap();
+    assert!(close(
+        Vec3::new(pivot.position.x, pivot.position.y, pivot.position.z),
+        Vec3::new(old.position.x, old.position.y, old.position.z)
+    ));
+    assert_eq!(
+        pivot.rotation,
+        [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]
+    );
 }
 
 #[test]
@@ -171,18 +198,19 @@ fn apply_points_the_part_at_the_upload() {
 }
 
 #[test]
-fn only_a_turned_meshpart_with_a_mesh_qualifies() {
+fn a_turned_meshpart_qualifies_and_a_cylinder_does_not() {
     let database = ReflectionDatabase::embedded();
     let (mut dom, part, _) = scene();
     assert!(freezable(&dom, &database, part));
 
-    let block = dom.new_instance("Part", "Block", None);
+    let cylinder = dom.new_instance("Part", "Cylinder", None);
+    let _ = dom.set_property(cylinder, "Shape", Variant::Enum(2));
     let _ = dom.set_property(
-        block,
+        cylinder,
         "CFrame",
         Variant::CFrame(placed(Mat3::from_rotation_y(1.0), Vec3::ZERO)),
     );
-    assert!(!freezable(&dom, &database, block));
+    assert!(!freezable(&dom, &database, cylinder));
 
     let flat = dom.new_instance("MeshPart", "Flat", None);
     let _ = dom.set_property(flat, "MeshId", Variant::String("rbxassetid://1".into()));
@@ -223,7 +251,7 @@ fn only_a_uniform_rescale_counts_as_the_same_shape() {
 
 #[test]
 fn the_mesh_asset_id_is_read_from_either_spelling() {
-    let mut properties = Properties::new();
+    let mut properties = std::collections::BTreeMap::new();
     assert_eq!(mesh_asset_id(&properties), None);
     properties.insert("MeshId".into(), Variant::String("rbxassetid://77".into()));
     assert_eq!(mesh_asset_id(&properties), Some(77));
