@@ -19,7 +19,7 @@
 //! Last, a `u8` LOD count and that many `u32` offsets into the indices; only
 //! the first LOD is kept.
 
-use super::{f32s, Decoded, Error, Reader};
+use super::{f32s, first_lod, Decoded, Error, Reader};
 
 /// The bit that marks an index delta as 3 bytes wide.
 pub(super) const WIDE: u8 = 0x80;
@@ -70,19 +70,14 @@ pub(super) fn read(reader: &mut Reader) -> Result<Decoded, Error> {
     }
 
     let lods = reader.u8()?;
-    let offsets = (0..lods)
-        .map(|_| reader.u32().map(|offset| offset as usize))
-        .collect::<Result<Vec<_>, _>>()?;
-    if let [first, second, ..] = offsets[..] {
-        indices = indices.get(first..second).ok_or(Error::Index)?.to_vec();
-    }
-
-    Ok(Decoded {
+    let mut decoded = Decoded {
         positions,
         normals,
         colors,
         indices,
-    })
+    };
+    first_lod(reader, lods.into(), &mut decoded)?;
+    Ok(decoded)
 }
 
 /// A `u16` count that must be the document's vertex count.
