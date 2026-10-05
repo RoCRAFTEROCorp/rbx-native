@@ -631,7 +631,7 @@ fn parallel_csg_evaluation_matches_evaluating_each_asset_alone() {
     let expected: HashMap<AssetRef, Arc<rbx_mesh::Mesh>> = assets
         .iter()
         .map(|(asset, bytes)| {
-            let evaluated = evaluate(bytes, &database, &tree::Assets::new(), None)
+            let evaluated = evaluate(bytes, &database, &tree::Assets::new(), None, None)
                 .flatten()
                 .expect("synthetic asset must parse");
             (

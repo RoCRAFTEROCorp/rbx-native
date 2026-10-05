@@ -7,6 +7,7 @@ use std::collections::HashMap;
 use rbx_dom::{Instance, Ref, Variant, WeakDom};
 
 use super::super::tests::{database, dom_with, operation};
+use super::super::tests_support::{asset_bytes, fallback_leaves, inline_bytes};
 use super::super::{fit, plan, resolve, Catalog, Evaluations};
 use super::*;
 
@@ -246,6 +247,11 @@ fn a_real_version_four_blob_decodes_its_first_lod_to_a_closed_mesh() {
 
 /// A `PartOperationAsset` holding only a baked mesh, as asset 305197512 does.
 fn mesh_only_asset(blob: Vec<u8>) -> Vec<u8> {
+    baked_asset(Vec::new(), blob)
+}
+
+/// A `PartOperationAsset` holding the tree `child_data` and its bake `blob`.
+fn baked_asset(child_data: Vec<u8>, blob: Vec<u8>) -> Vec<u8> {
     let mut dom = WeakDom::new();
     let root = Ref::new(1);
     let mut asset = Instance::new(root, "PartOperationAsset", "Union");
@@ -254,7 +260,7 @@ fn mesh_only_asset(blob: Vec<u8>) -> Vec<u8> {
         "ChildData".into(),
         Variant::Unknown {
             type_id: 0x01,
-            raw: Vec::new(),
+            raw: child_data,
         },
     );
     properties.insert(
@@ -324,6 +330,98 @@ fn a_union_carrying_only_a_baked_mesh_inline_draws_it_with_nothing_to_fetch() {
     let (key, _) = fit(&dom, &database, referent).expect("keyed by its inline mesh");
     assert!(resolution.meshes.contains_key(&key));
     assert!(resolution.hidden.contains(&referent));
+}
+
+#[test]
+fn a_union_whose_tree_will_not_carve_draws_its_assets_bake() {
+    let asset_id = "rbxassetid://4500696697";
+    let referent = Ref::new(1);
+    let dom = dom_with(operation(referent, "UnionOperation", Some(asset_id)));
+    let database = database();
+    let mut materials = Catalog::new(&dom, &database);
+    let plan = plan(&dom, &database, &mut materials);
+    let (key, _) = fit(&dom, &database, referent).expect("planned by its AssetId");
+
+    let tree = inline_bytes(&fallback_leaves(2));
+    let assets = HashMap::from([(key.clone(), baked_asset(tree, scrambled(&two_triangles())))]);
+    let resolution = resolve(
+        &plan,
+        assets,
+        &database,
+        &mut materials,
+        &mut Evaluations::default(),
+    );
+
+    assert_eq!(
+        resolution.meshes[&key].indices.len(),
+        6,
+        "the bake, not pieces"
+    );
+    assert!(resolution.parts.is_empty());
+    assert_eq!(resolution.instances.len(), 1);
+}
+
+#[test]
+fn a_union_whose_inline_tree_will_not_carve_draws_its_own_bake() {
+    let referent = Ref::new(1);
+    let mut instance = operation(referent, "UnionOperation", None);
+    let properties = instance.properties_mut();
+    properties.insert(
+        "ChildData2".into(),
+        Variant::Unknown {
+            type_id: 0x1c,
+            raw: inline_bytes(&fallback_leaves(2)),
+        },
+    );
+    properties.insert(
+        "MeshData2".into(),
+        Variant::Unknown {
+            type_id: 0x1c,
+            raw: scrambled(&two_triangles()),
+        },
+    );
+    let dom = dom_with(instance);
+    let database = database();
+    let mut materials = Catalog::new(&dom, &database);
+    let plan = plan(&dom, &database, &mut materials);
+    let resolution = resolve(
+        &plan,
+        HashMap::new(),
+        &database,
+        &mut materials,
+        &mut Evaluations::default(),
+    );
+
+    let (key, _) = fit(&dom, &database, referent).expect("keyed by its inline tree");
+    assert_eq!(
+        resolution.meshes[&key].indices.len(),
+        6,
+        "the bake, not pieces"
+    );
+    assert!(resolution.parts.is_empty());
+}
+
+#[test]
+fn a_union_whose_tree_will_not_carve_and_has_no_bake_draws_its_pieces() {
+    let asset_id = "rbxassetid://4500696697";
+    let referent = Ref::new(1);
+    let dom = dom_with(operation(referent, "UnionOperation", Some(asset_id)));
+    let database = database();
+    let mut materials = Catalog::new(&dom, &database);
+    let plan = plan(&dom, &database, &mut materials);
+    let (key, _) = fit(&dom, &database, referent).expect("planned by its AssetId");
+
+    let assets = HashMap::from([(key.clone(), asset_bytes(&fallback_leaves(2)))]);
+    let resolution = resolve(
+        &plan,
+        assets,
+        &database,
+        &mut materials,
+        &mut Evaluations::default(),
+    );
+
+    assert!(!resolution.meshes.contains_key(&key));
+    assert_eq!(resolution.parts.len(), 2);
 }
 
 #[test]

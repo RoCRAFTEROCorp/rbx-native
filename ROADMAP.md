@@ -410,8 +410,9 @@ Roblox's own engine.
   against the scene instead (`Hide Selection Box Behind Parts`, off by
   default and persisted the same way `Orthographic` is).
 - [x] Legacy union/negate parts reconstruct the real constituent
-  geometry via a from-scratch CSG boolean. Where no tree survives, the
-  union's own baked `MeshData` is drawn instead (next bullet).
+  geometry via a from-scratch CSG boolean. Where no tree survives, or the
+  boolean cannot carve the one there is, the union's own baked `MeshData`
+  is drawn instead (next bullet).
 - [x] **Export and draw unions baked only as `MeshData`.** A union whose
   only geometry is a baked `MeshData`/CSGMDL blob — no `ChildData` inline
   or behind its `AssetId` (asset 305197512, 7 instances in marked.rbxl) —
@@ -431,8 +432,11 @@ Roblox's own engine.
   exactly, version 2 within 1.3%. The version 4 blob's first LOD holds
   its asset's tree to within 0.001% and spans the same box; that tree (a
   wedge and five 0.05-thin wedge slivers) is measured by hand, since the
-  boolean finds it leaky. It is read only where no tree exists,
-  so every union with one still carves through the boolean above. A union
+  boolean finds it leaky. It is read where no tree exists, and where the
+  boolean fails on the tree there is (that union now draws its 350-triangle
+  bake instead of six pieces); every union whose tree carves still draws
+  the carve. The bake comes from the asset beside the tree, or from the
+  union's own `MeshData2` when it carries its tree inline. A union
   carrying `MeshData` inline with no tree and no `AssetId` is drawn the
   same way. Every union in the test places now resolves: in marked.rbxl,
   467 carve, the 7 decode and 13 are empty.
@@ -1302,8 +1306,8 @@ Roblox's own engine.
     minimum of the day it was baked is carved at it when that is what
     `InitialSize` says (marked.rbxl 217 → 467 of 487 carved,
     FindTheCode 89 → 189 of 189, GUI_TEST 80 of 80, testrust 0 → 11 of
-    11). A union whose boolean still cannot run exports the pieces the
-    viewport draws instead, and one with no geometry anywhere
+    11). A union whose boolean still cannot run exports what the viewport
+    draws instead (its baked mesh, or its pieces where it has none), and one with no geometry anywhere
     (`TriangleCount` 0) draws and exports as nothing, as in Studio.
   - **Material packs.** A facet tilted off every axis is baked into an
     atlas of the part's own with the viewport's three-way blend (the same
@@ -2726,7 +2730,8 @@ and no amount of reverse engineering changes that:
   exactly as Roblox's own boolean does) — undocumented and
   version-unstable; not worth chasing when a real from-scratch boolean
   already exists. Roblox's baked `MeshData` itself is read where a union
-  has no tree (versions 2, 4 and 5, see "What's been implemented").
+  has no tree or its tree will not carve (versions 2, 4 and 5, see
+  "What's been implemented").
 - **Physics simulation and anti-cheat** — proprietary physics engine, no
   real server authority possible from rbx-native. That covers Roblox's new
   Server Authority model too: client prediction, rollback and resimulation

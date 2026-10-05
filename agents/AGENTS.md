@@ -135,8 +135,9 @@ Roblox:
   the actual primary source, documenting what's verified vs. approximated).
 - Roblox's proprietary CSG mesh format (`MeshData`/CSGMDL) is decoded
   (versions 2, 4 and 5) in `rbx_viewer`'s `scene::union::baked`, and only for
-  a union with no operation tree, at the maintainer's request. Changes to it
-  need the same care as the shader derivation above: work from real blobs,
+  a union with no operation tree or one the boolean cannot carve, at the
+  maintainer's request. Changes to it need the same care as the shader
+  derivation above: work from real blobs,
   check them against what the union's own tree carves (the ignored
   real-place test does this), and say in the module doc what is verified
   and what is not.

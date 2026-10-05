@@ -198,9 +198,9 @@ fn a_tree_waiting_on_a_nested_asset_is_not_carved_yet() {
     );
     let database = database();
 
-    assert!(evaluate(&document, &database, &tree::Assets::new(), None).is_none());
+    assert!(evaluate(&document, &database, &tree::Assets::new(), None, None).is_none());
     let assets = HashMap::from([(AssetRef::Id(77), asset_bytes(&notched()))]);
-    let carved = evaluate(&document, &database, &assets, None)
+    let carved = evaluate(&document, &database, &assets, None, None)
         .flatten()
         .expect("parses");
     assert!(carved.is_carved());

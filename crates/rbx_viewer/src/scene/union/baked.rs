@@ -1,7 +1,8 @@
 //! Roblox's own baked union mesh (`MeshData`/`MeshData2`, the CSGMDL
-//! format), read only for a union whose operation tree is gone: no
-//! `ChildData` inline and none in the `PartOperationAsset` its `AssetId`
-//! names. Anything with a tree is still carved from it (`super::csg`).
+//! format), read for a union whose operation tree is gone (no `ChildData`
+//! inline and none in the `PartOperationAsset` its `AssetId` names), or
+//! whose tree the boolean cannot carve. Anything with a tree is carved from
+//! it first (`super::csg`).
 //!
 //! Nothing here comes from Roblox documentation, which does not describe the
 //! format. It was worked out by reading real blobs: asset 305197512, and the
