@@ -1,7 +1,8 @@
 //! Rays against the voxel grid: where the Terrain Editor's brush lands
 //! under the cursor.
 
-use crate::{Material, VoxelGrid, VOXEL_STUDS};
+use crate::grid::Voxels;
+use crate::{Material, VOXEL_STUDS};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Hit {
@@ -16,21 +17,21 @@ pub struct Hit {
 
 /// The first voxel at least half full along the ray, stepping voxel by
 /// voxel (Amanatides–Woo). Water counts unless `ignore_water` is set.
-pub fn raycast(
-    grid: &VoxelGrid,
+pub fn raycast<V: Voxels + ?Sized>(
+    grid: &V,
     origin: [f32; 3],
     direction: [f32; 3],
     max_distance: f32,
     ignore_water: bool,
 ) -> Option<Hit> {
     let length = (direction[0].powi(2) + direction[1].powi(2) + direction[2].powi(2)).sqrt();
-    if grid.is_empty() || length < f32::EPSILON {
+    if length < f32::EPSILON {
         return None;
     }
     let dir = direction.map(|d| d / length);
     // Start where the ray enters the grid's bounds, so a camera far away
     // does not walk thousands of empty voxels.
-    let (min, max) = grid.chunk_bounds()?;
+    let (min, max) = grid.extent()?;
     let (enter, exit) = slab(
         origin,
         dir,
@@ -69,7 +70,7 @@ pub fn raycast(
     // empty voxel.
     let mut outside = start > 0.0;
     while t <= stop {
-        let cell = grid.get(voxel);
+        let cell = grid.voxel(voxel);
         let fill = if cell.material == Material::Water {
             if ignore_water {
                 0.0
@@ -130,9 +131,9 @@ fn slab(origin: [f32; 3], dir: [f32; 3], min: [f32; 3], max: [f32; 3]) -> Option
 
 /// Points from full toward empty, so it faces out of the terrain. Falls back
 /// to facing the ray when the neighbourhood is uniform.
-fn gradient_normal(grid: &VoxelGrid, v: [i32; 3], dir: [f32; 3]) -> [f32; 3] {
+fn gradient_normal<V: Voxels + ?Sized>(grid: &V, v: [i32; 3], dir: [f32; 3]) -> [f32; 3] {
     let fill = |dx: i32, dy: i32, dz: i32| {
-        let cell = grid.get([v[0] + dx, v[1] + dy, v[2] + dz]);
+        let cell = grid.voxel([v[0] + dx, v[1] + dy, v[2] + dz]);
         cell.solid_fraction() + cell.water_fraction()
     };
     let g = [
@@ -150,7 +151,7 @@ fn gradient_normal(grid: &VoxelGrid, v: [i32; 3], dir: [f32; 3]) -> [f32; 3] {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::Cell;
+    use crate::{Cell, VoxelGrid};
 
     fn floor() -> VoxelGrid {
         let mut grid = VoxelGrid::new();
@@ -195,6 +196,24 @@ mod tests {
         grid.set([3, 2, 0], Cell::full(Material::Rock));
         let hit = raycast(&grid, [2.0, 10.0, 2.0], [1.0, 0.0, 0.0], 1000.0, false).unwrap();
         assert_eq!(hit.voxel, [3, 2, 0]);
+    }
+
+    #[test]
+    fn a_before_view_aims_at_the_terrain_an_edit_has_not_made_yet() {
+        let mut grid = floor();
+        let mut chunks = std::collections::HashMap::new();
+        let key = crate::ChunkKey::containing([0, 5, 0]);
+        chunks.insert(key, grid.chunk(key).map(Box::from));
+        // The edit raises a pillar the ray would otherwise hit first.
+        grid.set([0, 5, 0], Cell::full(Material::Rock));
+        let before = crate::Before {
+            grid: &grid,
+            chunks: &chunks,
+        };
+        let hit = raycast(&before, [2.0, 50.0, 2.0], [0.0, -1.0, 0.0], 1000.0, false).unwrap();
+        assert_eq!(hit.voxel, [0, -1, 0]);
+        let now = raycast(&grid, [2.0, 50.0, 2.0], [0.0, -1.0, 0.0], 1000.0, false).unwrap();
+        assert_eq!(now.voxel, [0, 5, 0]);
     }
 
     #[test]

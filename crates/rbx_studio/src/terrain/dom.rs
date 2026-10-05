@@ -6,6 +6,7 @@
 //! frames both the same way.
 
 use rbx_dom::{Ref, Variant, WeakDom};
+#[cfg(test)]
 use rbx_terrain::VoxelGrid;
 
 /// `Workspace.Terrain`, the only terrain Roblox draws.
@@ -23,6 +24,7 @@ pub(crate) fn find_terrain(dom: &WeakDom) -> Option<Ref> {
 }
 
 /// What the terrain's `SmoothGrid` held.
+#[cfg(test)]
 #[derive(Debug)]
 pub(crate) enum GridRead {
     Grid(VoxelGrid),
@@ -31,6 +33,19 @@ pub(crate) enum GridRead {
     Unreadable(String),
 }
 
+/// The terrain's `SmoothGrid` bytes as the DOM holds them (empty if none).
+pub(crate) fn grid_bytes(dom: &WeakDom, terrain: Ref) -> &[u8] {
+    match dom
+        .get(terrain)
+        .and_then(|i| i.properties().get("SmoothGrid"))
+    {
+        Some(Variant::String(text)) => text.as_bytes(),
+        Some(Variant::Unknown { raw, .. }) => raw.as_slice(),
+        _ => &[],
+    }
+}
+
+#[cfg(test)]
 pub(crate) fn read_grid(dom: &WeakDom, terrain: Ref) -> GridRead {
     let bytes = match dom
         .get(terrain)
@@ -56,9 +71,24 @@ fn blob(bytes: Vec<u8>) -> Variant {
     }
 }
 
-/// Writes `grid` as the terrain's `SmoothGrid`, and, with `physics`, the
-/// `PhysicsGrid` Roblox saves beside it. `PhysicsGrid` walks every voxel,
-/// so a drag writes it once at the end rather than every step.
+/// Writes already-encoded `SmoothGrid` bytes (an editor keeps encoders
+/// that only redo the chunks an edit touched), and the `PhysicsGrid`
+/// Roblox saves beside them when given. A drag writes `PhysicsGrid` once at
+/// the end rather than every step.
+pub(crate) fn write_encoded(
+    dom: &mut WeakDom,
+    terrain: Ref,
+    smooth: Vec<u8>,
+    physics: Option<Vec<u8>>,
+) -> Result<(), rbx_dom::DomError> {
+    dom.set_property(terrain, "SmoothGrid", blob(smooth))?;
+    if let Some(physics) = physics {
+        dom.set_property(terrain, "PhysicsGrid", blob(physics))?;
+    }
+    Ok(())
+}
+
+#[cfg(test)]
 pub(crate) fn write_grid(
     dom: &mut WeakDom,
     terrain: Ref,

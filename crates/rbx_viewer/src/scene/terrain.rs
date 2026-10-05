@@ -45,6 +45,9 @@ pub(crate) struct Terrain {
     /// The `SmoothGrid` bytes `grid` was decoded from, so a write that left
     /// them alone (a colour edit) skips the decode and the diff.
     source: Vec<u8>,
+    /// Where each chunk sits in `source`, so the next write decodes only the
+    /// chunks whose bytes changed (see [`Terrain::resync`]).
+    index: rbx_terrain::smooth_grid::Index,
     pub(crate) grid: VoxelGrid,
     pub(crate) colors: MaterialColors,
     pub(crate) water: Water,
@@ -85,16 +88,16 @@ impl Terrain {
         let referent = find(dom)?;
         let properties = dom.get(referent)?.properties();
         let source = blob(properties, "SmoothGrid").unwrap_or_default().to_vec();
-        let (grid, error) = match blob(properties, "SmoothGrid") {
-            None => (VoxelGrid::new(), None),
-            Some(bytes) => match rbx_terrain::smooth_grid::decode(bytes) {
-                Ok(grid) => (grid, None),
-                Err(error) => (VoxelGrid::new(), Some(error.to_string())),
-            },
+        let mut grid = VoxelGrid::new();
+        let (index, error) = match apply_blob(&mut grid, &source, &[], &[]) {
+            Ok(index) => (index, None),
+            Err(error) => (Vec::new(), Some(error)),
         };
+        grid.take_dirty();
         let mut terrain = Terrain {
             referent,
             source,
+            index,
             grid,
             colors: read_colors(properties),
             water: read_water(properties),
@@ -116,19 +119,33 @@ impl Terrain {
         if bytes == self.source.as_slice() {
             return BTreeSet::new();
         }
-        self.source = bytes.to_vec();
-        let (grid, error) = if bytes.is_empty() {
-            (VoxelGrid::new(), None)
-        } else {
-            match rbx_terrain::smooth_grid::decode(bytes) {
-                Ok(grid) => (grid, None),
-                Err(error) => (VoxelGrid::new(), Some(error.to_string())),
+        match apply_blob(&mut self.grid, bytes, &self.source, &self.index) {
+            Ok(index) => {
+                self.index = index;
+                self.error = None;
             }
-        };
-        let changed = self.grid.changed_meshes(&grid);
-        self.grid = grid;
-        self.error = error;
-        changed
+            Err(error) => {
+                self.grid.clear();
+                self.index = Vec::new();
+                self.error = Some(error);
+            }
+        }
+        self.source = bytes.to_vec();
+        self.grid.take_dirty()
+    }
+
+    /// An editor's live preview of chunks it is still changing: put straight
+    /// into the grid, without a `SmoothGrid` round trip, answering the chunks
+    /// to re-mesh. The finished write lands later through [`Terrain::resync`],
+    /// which then finds those chunks already in place.
+    pub(crate) fn preview(
+        &mut self,
+        chunks: Vec<(ChunkKey, Option<Box<[rbx_terrain::Cell]>>)>,
+    ) -> BTreeSet<ChunkKey> {
+        for (key, cells) in chunks {
+            self.grid.replace_chunk(key, cells);
+        }
+        self.grid.take_dirty()
     }
 
     /// Gives every solid material the grid holds a texture-array layer,
@@ -193,11 +210,54 @@ impl Terrain {
         })
     }
 
+    #[cfg(test)]
     pub(crate) fn has_water(&self) -> bool {
         self.grid
             .voxels()
             .any(|(_, cell)| cell.water_fraction() > 0.0)
     }
+}
+
+/// Brings `grid` in line with the `SmoothGrid` bytes `new`, given the bytes
+/// (`old`) and index it last followed: only chunks whose bytes differ are
+/// decoded, and only voxels that differ dirty a mesh. Answers the new index.
+fn apply_blob(
+    grid: &mut VoxelGrid,
+    new: &[u8],
+    old: &[u8],
+    old_index: &[(ChunkKey, std::ops::Range<usize>)],
+) -> Result<rbx_terrain::smooth_grid::Index, String> {
+    use rbx_terrain::smooth_grid;
+    let index = if new.is_empty() {
+        Vec::new()
+    } else {
+        smooth_grid::index(new).map_err(|error| error.to_string())?
+    };
+    let previous: HashMap<ChunkKey, &std::ops::Range<usize>> =
+        old_index.iter().map(|(key, range)| (*key, range)).collect();
+    let mut present = std::collections::HashSet::new();
+    for (key, range) in &index {
+        present.insert(*key);
+        let same = previous
+            .get(key)
+            .is_some_and(|before| old.get((*before).clone()) == new.get(range.clone()));
+        if same {
+            continue;
+        }
+        let cells =
+            smooth_grid::decode_chunk(new, range.clone()).map_err(|error| error.to_string())?;
+        grid.replace_chunk(*key, Some(cells));
+    }
+    // Chunks the new bytes no longer hold, and any a preview added that the
+    // write did not keep.
+    let stale: Vec<ChunkKey> = grid
+        .chunk_keys()
+        .filter(|key| !present.contains(key))
+        .collect();
+    for key in stale {
+        grid.replace_chunk(key, None);
+    }
+    Ok(index)
 }
 
 fn read_colors(properties: &Properties) -> MaterialColors {
@@ -242,6 +302,18 @@ fn read_water(properties: &Properties) -> Water {
 }
 
 impl super::Scene {
+    /// See [`Terrain::preview`]; `None` with no terrain to preview into.
+    pub(crate) fn preview_terrain(
+        &mut self,
+        chunks: Vec<(ChunkKey, Option<Box<[rbx_terrain::Cell]>>)>,
+    ) -> Option<BTreeSet<ChunkKey>> {
+        let keys = self.terrain.as_mut()?.preview(chunks);
+        if !keys.is_empty() {
+            self.extent_stale = true;
+        }
+        Some(keys)
+    }
+
     /// Brings the terrain in line with `dom` after an edit to the `Terrain`
     /// instance, answering the chunks to re-mesh. A material the place had
     /// never drawn needs a pack only a reload fetches.

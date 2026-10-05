@@ -613,7 +613,6 @@ impl Renderer {
             &crate::scene::Catalog,
         ),
         keys: &std::collections::BTreeSet<rbx_terrain::ChunkKey>,
-        refracting: bool,
     ) {
         match terrain {
             Some(terrain) => {
@@ -625,7 +624,6 @@ impl Renderer {
             }
             None => self.terrain.replace(device, queue, None, catalog),
         }
-        self.refracting = refracting;
     }
 
     /// Moves the `ForceField` shimmer to where it is `elapsed` into the
@@ -762,7 +760,8 @@ impl Renderer {
         // After `prepare`, which is what allocates (or resizes) the targets
         // the copy lives beside; a bind group holding the old view has to be
         // rebuilt before anything samples it.
-        if self.post.want_refraction(device, self.refracting) {
+        let refracting = self.refracting || self.terrain.has_water();
+        if self.post.want_refraction(device, refracting) {
             self.rebind_frames(device);
         }
         let Some(targets) = self.post.targets() else {

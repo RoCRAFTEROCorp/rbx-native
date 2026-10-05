@@ -2,6 +2,7 @@
 //! layout `SmoothGrid` serializes and Roblox keeps in memory.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::Cell;
 
@@ -55,6 +56,33 @@ pub(crate) fn local_of_index(index: usize) -> [i32; 3] {
     ]
 }
 
+/// One stored chunk: its voxels, how many of them are not Air (so finding
+/// the empty ones never scans 32³ cells), and a stamp unique across every
+/// grid in the process that changes whenever the voxels do (what lets an
+/// encoder reuse the bytes it wrote for a chunk nothing has touched since).
+#[derive(Clone, Debug)]
+struct Chunk {
+    cells: Box<[Cell]>,
+    filled: u32,
+    revision: u64,
+}
+
+fn next_revision() -> u64 {
+    static NEXT: AtomicU64 = AtomicU64::new(1);
+    NEXT.fetch_add(1, Ordering::Relaxed)
+}
+
+impl Chunk {
+    fn new(cells: Box<[Cell]>) -> Chunk {
+        let filled = cells.iter().filter(|c| !c.is_air()).count() as u32;
+        Chunk {
+            cells,
+            filled,
+            revision: next_revision(),
+        }
+    }
+}
+
 /// A sparse grid of voxels. Chunks that are all Air are never kept, so an
 /// empty grid is an empty map and serializes to the two header bytes.
 ///
@@ -63,10 +91,68 @@ pub(crate) fn local_of_index(index: usize) -> [i32; 3] {
 // pays full price for it. Add a uniform-chunk variant if memory ever bites.
 #[derive(Clone, Debug, Default)]
 pub struct VoxelGrid {
-    chunks: BTreeMap<ChunkKey, Box<[Cell]>>,
+    chunks: BTreeMap<ChunkKey, Chunk>,
     /// Chunks whose voxels changed since the last [`VoxelGrid::take_dirty`],
     /// so a mesher can rebuild only those (and their neighbours).
     dirty: BTreeSet<ChunkKey>,
+}
+
+/// Read access to voxels: a grid, or a view of one (see [`Before`]).
+pub trait Voxels {
+    fn voxel(&self, voxel: [i32; 3]) -> Cell;
+    /// A voxel box, `(min, max)` with `max` exclusive, outside which every
+    /// voxel is Air; `None` when there are none at all.
+    fn extent(&self) -> Option<([i32; 3], [i32; 3])>;
+}
+
+impl Voxels for VoxelGrid {
+    fn voxel(&self, voxel: [i32; 3]) -> Cell {
+        self.get(voxel)
+    }
+
+    fn extent(&self) -> Option<([i32; 3], [i32; 3])> {
+        if self.is_empty() {
+            None
+        } else {
+            self.chunk_bounds()
+        }
+    }
+}
+
+/// A grid as it stood before an edit in progress: `chunks` holds the
+/// original of every chunk the edit has touched (`None` where there was
+/// none), copied as the edit first reaches it — so an editor can keep
+/// aiming at, or restore, the old terrain without copying the whole map.
+pub struct Before<'a> {
+    pub grid: &'a VoxelGrid,
+    pub chunks: &'a std::collections::HashMap<ChunkKey, Option<Box<[Cell]>>>,
+}
+
+impl Voxels for Before<'_> {
+    fn voxel(&self, voxel: [i32; 3]) -> Cell {
+        match self.chunks.get(&ChunkKey::containing(voxel)) {
+            Some(original) => original
+                .as_ref()
+                .map_or(Cell::AIR, |cells| cells[index_in_chunk(voxel)]),
+            None => self.grid.get(voxel),
+        }
+    }
+
+    fn extent(&self) -> Option<([i32; 3], [i32; 3])> {
+        let mut extent = self.grid.chunk_bounds();
+        for (key, original) in self.chunks {
+            if original.is_none() {
+                continue;
+            }
+            let origin = key.origin();
+            let (min, max) = extent.get_or_insert((origin, origin.map(|v| v + CHUNK)));
+            for a in 0..3 {
+                min[a] = min[a].min(origin[a]);
+                max[a] = max[a].max(origin[a] + CHUNK);
+            }
+        }
+        extent
+    }
 }
 
 /// Two grids are equal when they hold the same voxels; pending dirty marks
@@ -85,9 +171,7 @@ impl VoxelGrid {
     }
 
     pub fn is_empty(&self) -> bool {
-        self.chunks
-            .values()
-            .all(|cells| cells.iter().all(|c| c.is_air()))
+        self.chunks.values().all(|chunk| chunk.filled == 0)
     }
 
     /// Stored chunks, including any emptied since the last [`VoxelGrid::prune`].
@@ -115,7 +199,7 @@ impl VoxelGrid {
     pub fn get(&self, voxel: [i32; 3]) -> Cell {
         self.chunks
             .get(&ChunkKey::containing(voxel))
-            .map_or(Cell::AIR, |chunk| chunk[index_in_chunk(voxel)])
+            .map_or(Cell::AIR, |chunk| chunk.cells[index_in_chunk(voxel)])
     }
 
     /// Emptying a chunk this way leaves it stored (checking every write for
@@ -126,16 +210,19 @@ impl VoxelGrid {
         let index = index_in_chunk(voxel);
         match self.chunks.get_mut(&key) {
             Some(chunk) => {
-                if chunk[index] == cell {
+                let old = chunk.cells[index];
+                if old == cell {
                     return;
                 }
-                chunk[index] = cell;
+                chunk.filled = chunk.filled + u32::from(!cell.is_air()) - u32::from(!old.is_air());
+                chunk.cells[index] = cell;
+                chunk.revision = next_revision();
             }
             None if cell.is_air() => return,
             None => {
-                let mut chunk = vec![Cell::AIR; CHUNK_CELLS].into_boxed_slice();
-                chunk[index] = cell;
-                self.chunks.insert(key, chunk);
+                let mut cells = vec![Cell::AIR; CHUNK_CELLS].into_boxed_slice();
+                cells[index] = cell;
+                self.chunks.insert(key, Chunk::new(cells));
             }
         }
         self.mark_dirty(key, voxel);
@@ -183,24 +270,63 @@ impl VoxelGrid {
 
     /// Drops stored chunks that edits have emptied.
     pub fn prune(&mut self) {
-        self.chunks
-            .retain(|_, cells| cells.iter().any(|c| !c.is_air()));
+        self.chunks.retain(|_, chunk| chunk.filled > 0);
     }
 
     /// Stores a whole chunk read from a file. All-Air chunks are dropped, the
     /// same as an edit that empties one.
     pub(crate) fn insert_chunk(&mut self, key: ChunkKey, cells: Box<[Cell]>) {
         debug_assert_eq!(cells.len(), CHUNK_CELLS);
-        if cells.iter().all(|c| c.is_air()) {
+        let chunk = Chunk::new(cells);
+        if chunk.filled == 0 {
             self.chunks.remove(&key);
         } else {
-            self.chunks.insert(key, cells);
+            self.chunks.insert(key, chunk);
         }
         self.mark_with_neighbours(key);
     }
 
-    pub(crate) fn chunk(&self, key: ChunkKey) -> Option<&[Cell]> {
-        self.chunks.get(&key).map(|c| &c[..])
+    /// Puts `cells` (`None` for all Air) in place of a chunk, marking dirty
+    /// exactly the chunks whose meshes read a voxel that changed — what a
+    /// renderer holding a copy of a grid needs to follow an editor's edits
+    /// one chunk at a time.
+    pub fn replace_chunk(&mut self, key: ChunkKey, cells: Option<Box<[Cell]>>) {
+        let origin = key.origin();
+        let old = self.chunks.remove(&key);
+        {
+            let before = |i: usize| old.as_ref().map_or(Cell::AIR, |c| c.cells[i]);
+            let after = |i: usize| cells.as_ref().map_or(Cell::AIR, |c| c[i]);
+            let changed: Vec<usize> = (0..CHUNK_CELLS)
+                .filter(|&i| before(i) != after(i))
+                .collect();
+            for index in changed {
+                let local = local_of_index(index);
+                self.mark_dirty(
+                    key,
+                    [
+                        origin[0] + local[0],
+                        origin[1] + local[1],
+                        origin[2] + local[2],
+                    ],
+                );
+            }
+        }
+        if let Some(cells) = cells {
+            let chunk = Chunk::new(cells);
+            if chunk.filled > 0 {
+                self.chunks.insert(key, chunk);
+            }
+        }
+    }
+
+    /// One chunk's voxels, in `SmoothGrid`'s order, if it is stored.
+    pub fn chunk(&self, key: ChunkKey) -> Option<&[Cell]> {
+        self.chunks.get(&key).map(|c| &c.cells[..])
+    }
+
+    /// A stamp that changes whenever the chunk's voxels do (see `Chunk`).
+    pub fn chunk_revision(&self, key: ChunkKey) -> Option<u64> {
+        self.chunks.get(&key).map(|c| c.revision)
     }
 
     pub fn chunk_keys(&self) -> impl Iterator<Item = ChunkKey> + '_ {
@@ -211,15 +337,24 @@ impl VoxelGrid {
     pub(crate) fn chunks(&self) -> impl Iterator<Item = (ChunkKey, &[Cell])> {
         self.chunks
             .iter()
-            .filter(|(_, c)| c.iter().any(|cell| !cell.is_air()))
-            .map(|(k, c)| (*k, &c[..]))
+            .filter(|(_, c)| c.filled > 0)
+            .map(|(k, c)| (*k, &c.cells[..]))
+    }
+
+    /// [`VoxelGrid::chunks`] with each one's revision.
+    pub(crate) fn revised_chunks(&self) -> impl Iterator<Item = (ChunkKey, &[Cell], u64)> {
+        self.chunks
+            .iter()
+            .filter(|(_, c)| c.filled > 0)
+            .map(|(k, c)| (*k, &c.cells[..], c.revision))
     }
 
     /// Every non-Air voxel with its coordinate.
     pub fn voxels(&self) -> impl Iterator<Item = ([i32; 3], Cell)> + '_ {
-        self.chunks.iter().flat_map(|(key, cells)| {
+        self.chunks.iter().flat_map(|(key, chunk)| {
             let origin = key.origin();
-            cells
+            chunk
+                .cells
                 .iter()
                 .enumerate()
                 .filter(|(_, c)| !c.is_air())
@@ -248,11 +383,11 @@ impl VoxelGrid {
             }
         };
         match keys {
-            None => self.chunks.values().for_each(|cells| mark(cells)),
+            None => self.chunks.values().for_each(|chunk| mark(&chunk.cells)),
             Some(keys) => keys
                 .iter()
                 .filter_map(|key| self.chunks.get(key))
-                .for_each(|cells| mark(cells)),
+                .for_each(|chunk| mark(&chunk.cells)),
         }
         present
     }
@@ -291,7 +426,10 @@ impl VoxelGrid {
             .collect();
         let mut marks = VoxelGrid::new();
         for key in keys {
-            let (a, b) = (self.chunks.get(&key), other.chunks.get(&key));
+            let (a, b) = (
+                self.chunks.get(&key).map(|c| &c.cells),
+                other.chunks.get(&key).map(|c| &c.cells),
+            );
             if a == b {
                 continue;
             }
@@ -394,6 +532,24 @@ mod tests {
         after.set([40, 3, 3], Cell::AIR);
         assert_eq!(before.changed_meshes(&after), after.take_dirty());
         assert!(before.changed_meshes(&before).is_empty());
+    }
+
+    #[test]
+    fn replacing_a_chunk_dirties_what_its_changes_reach() {
+        let mut grid = VoxelGrid::new();
+        grid.set([3, 3, 3], Cell::full(Material::Rock));
+        let mut copy = grid.clone();
+        copy.take_dirty();
+        let key = ChunkKey { x: 0, y: 0, z: 0 };
+        // An edit on the chunk's face, shipped as the whole chunk.
+        grid.set([0, 3, 3], Cell::full(Material::Sand));
+        let expected = grid.take_dirty();
+        copy.replace_chunk(key, grid.chunk(key).map(Box::from));
+        assert_eq!(copy.take_dirty(), expected);
+        assert_eq!(copy, grid);
+        copy.replace_chunk(key, None);
+        assert!(copy.is_empty());
+        assert_ne!(grid.chunk_revision(key), None);
     }
 
     #[test]

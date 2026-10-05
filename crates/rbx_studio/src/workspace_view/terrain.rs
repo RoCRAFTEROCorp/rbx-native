@@ -167,6 +167,14 @@ impl WorkspaceView {
         true
     }
 
+    /// A terrain edit in progress, straight to the renderer — see
+    /// `Headless::preview_terrain`.
+    pub(crate) fn preview_terrain(&self, chunks: super::pump::TerrainChunks) {
+        if !chunks.is_empty() {
+            self.pump.terrain_preview(chunks);
+        }
+    }
+
     /// `Shell`'s answer: the outline to draw, or nothing to clear it.
     pub(crate) fn show_terrain(&mut self, segments: Vec<Segment>) {
         self.pump.lines(TERRAIN_LINES, segments);

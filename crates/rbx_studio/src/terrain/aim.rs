@@ -2,7 +2,9 @@
 //! a locked plane — and how the brush sits against it.
 
 use glam::Vec3;
-use rbx_terrain::{VoxelGrid, VOXEL_STUDS};
+#[cfg(test)]
+use rbx_terrain::VoxelGrid;
+use rbx_terrain::{Voxels, VOXEL_STUDS};
 use rbx_viewer::pick::Ray;
 
 use super::settings::{Pivot, PlaneLock, Settings};
@@ -16,7 +18,7 @@ const EMPTY_REACH: f32 = 96.0;
 /// What a ray can land on besides the voxels: the nearest part along it, as
 /// a distance and the surface normal there (`None` with Ignore Parts on).
 pub(crate) struct Surfaces<'a> {
-    pub(crate) grid: &'a VoxelGrid,
+    pub(crate) grid: &'a dyn Voxels,
     pub(crate) part: Option<&'a dyn Fn(Ray) -> Option<(f32, Vec3)>>,
 }
 

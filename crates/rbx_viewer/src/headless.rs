@@ -333,6 +333,27 @@ impl Headless {
         self.view.set_preview(boxes);
     }
 
+    /// An editor's terrain edit still in progress, shown at once: the chunks
+    /// it changed, as whole chunks (`None` for emptied), put straight into
+    /// the scene's grid and re-meshed — no `SmoothGrid` encode, snapshot or
+    /// decode per step of a brush stroke. The finished write still arrives
+    /// through [`Headless::apply_changes`], and finds these already in
+    /// place. A material the place never drew shows as plastic until then,
+    /// when the reload that fetches its pack runs.
+    pub fn preview_terrain(
+        &mut self,
+        chunks: Vec<(rbx_terrain::ChunkKey, Option<Box<[rbx_terrain::Cell]>>)>,
+    ) {
+        let Some(keys) = self.loaded.scene_mut().preview_terrain(chunks) else {
+            return;
+        };
+        let scene = self.loaded.scene();
+        let (terrain, catalog) = (scene.terrain(), scene.materials());
+        self.offscreen.with_renderer(|renderer, device, queue| {
+            renderer.sync_terrain(device, queue, (terrain, catalog), &keys)
+        });
+    }
+
     /// Draws world-space line segments over the scene — Studio's light
     /// guides (see [`crate::light_guides`]), an editor's dragger guides.
     /// Replaces every segment sent before on `layer` alone: each source of

@@ -374,11 +374,10 @@ impl Scene {
     /// for the copy it reads (see `renderer::post::Targets`).
     pub(crate) fn has_glass(&self) -> bool {
         let glass = |slot: &Slot| slot.kind == Kind::Glass;
-        // Terrain water bends what is under it the same way.
-        self.terrain
-            .as_ref()
-            .is_some_and(terrain::Terrain::has_water)
-            || self.parts.iter().any(|part| glass(&part.material))
+        // Terrain water bends what is under it too, but the renderer knows
+        // that from its own water meshes (see `Renderer::draw`), without a
+        // walk of every voxel here on each edit.
+        self.parts.iter().any(|part| glass(&part.material))
             || self
                 .resolved_file_meshes
                 .instances

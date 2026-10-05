@@ -3,10 +3,12 @@
 //! as a new `SmoothGrid` (and, once a gesture ends, `PhysicsGrid`).
 //!
 //! A stroke is one undo step, the way a transform drag is: opened by the
-//! press, its later steps overwriting the entry's change log (see
-//! `shell::sun` for the same pattern). The voxels are edited in a working
-//! copy decoded once at the press, and written back each step so the
-//! viewport follows the brush.
+//! press, written once at the release. The voxels live in a working copy
+//! kept between edits (re-decoded only when something else changed the
+//! terrain) with an encoder that re-encodes only the chunks an edit
+//! touched. While a gesture runs, each step's changed chunks go straight to
+//! the renderer (`Headless::preview_terrain`): no encode, DOM snapshot or
+//! decode per mouse move, whatever the size of the map.
 
 mod fields;
 mod ops;
@@ -17,38 +19,95 @@ use gpui_kit::*;
 use rbx_dom::Ref;
 use rbx_terrain::edit::clip::{self, Clip, Placement};
 use rbx_terrain::edit::region::StudBox;
-use rbx_terrain::VoxelGrid;
+use rbx_terrain::smooth_grid::Encoder;
+use rbx_terrain::{Before, Cell, ChunkKey, VoxelGrid};
 use rbx_viewer::pick::{self, PartSurface, Ray};
+use std::collections::HashMap;
 
 use crate::terrain::{
-    self, Aim, Effect, GridRead, Plane, RegionDrag, RegionGrab, Settings, Surfaces, Tab,
-    TerrainTool,
+    self, Aim, Effect, Plane, RegionDrag, RegionGrab, Settings, Surfaces, Tab, TerrainTool,
 };
 use crate::transform::{Action, Tool};
-use crate::workspace_view::{Dial, TerrainInput, TerrainPhase};
+use crate::workspace_view::{Dial, TerrainChunks, TerrainInput, TerrainPhase};
 
 use super::Shell;
 
 pub(super) use fields::TerrainFields;
 
-/// A brush stroke in progress.
-struct Stroke {
+/// The editor's decoded terrain, kept between edits.
+struct Working {
     terrain: Ref,
     grid: VoxelGrid,
-    /// The terrain as the press found it, which every step aims against:
-    /// aiming at what the stroke itself just added would walk the brush
-    /// up its own new terrain toward the camera.
-    aim: VoxelGrid,
+    encoder: Encoder,
+    physics: rbx_terrain::physics_grid::Encoder,
+    /// The `SmoothGrid` bytes `grid` matches: what the editor last wrote, or
+    /// last decoded. A DOM holding anything else (an undo, a script) means
+    /// decoding again.
+    bytes: Vec<u8>,
+}
+
+/// What a gesture in progress has changed, beyond the working grid itself:
+/// each chunk as it stood before the gesture first reached it, and the
+/// revision of each chunk the renderer was last shown.
+#[derive(Default)]
+struct Touched {
+    before: HashMap<ChunkKey, Option<Box<[Cell]>>>,
+    shown: HashMap<ChunkKey, Option<u64>>,
+}
+
+impl Touched {
+    /// Copies the chunks in the voxel box `(min, max)` (exclusive) that have
+    /// not been copied yet: called before an edit reaches them. The renderer
+    /// already shows each as it is now.
+    fn keep(&mut self, grid: &VoxelGrid, (min, max): ([i32; 3], [i32; 3])) {
+        let low = ChunkKey::containing(min);
+        let high = ChunkKey::containing(max.map(|v| v - 1));
+        for x in low.x..=high.x {
+            for y in low.y..=high.y {
+                for z in low.z..=high.z {
+                    let key = ChunkKey { x, y, z };
+                    if let std::collections::hash_map::Entry::Vacant(entry) = self.before.entry(key)
+                    {
+                        entry.insert(grid.chunk(key).map(Box::from));
+                        self.shown.insert(key, grid.chunk_revision(key));
+                    }
+                }
+            }
+        }
+    }
+
+    /// The kept chunks whose voxels changed since the renderer last saw
+    /// them, ready to send. (A dirty mark on a chunk never kept is a
+    /// neighbour's seam, already covered by sending that neighbour.)
+    fn changed(&mut self, grid: &mut VoxelGrid) -> TerrainChunks {
+        grid.take_dirty();
+        let mut chunks = Vec::new();
+        for (key, shown) in &mut self.shown {
+            let now = grid.chunk_revision(*key);
+            if now != *shown {
+                *shown = now;
+                chunks.push((*key, grid.chunk(*key).map(Box::from)));
+            }
+        }
+        chunks
+    }
+}
+
+/// A brush stroke in progress.
+struct Stroke {
+    working: Working,
+    touched: Touched,
     plane: Option<Plane>,
     start_y: f32,
 }
 
-/// A Transform drag's starting point: the terrain before it, and the
-/// region it lifts, so every step re-applies the move from scratch.
+/// A Transform drag: the region it lifts, and the chunks the last step
+/// changed, which the next step puts back before moving the region again.
 struct Lift {
-    terrain: Ref,
-    base: VoxelGrid,
+    working: Working,
+    touched: Touched,
     source: StudBox,
+    last: Vec<ChunkKey>,
 }
 
 /// The Terrain Editor's state: which tool, its settings, and the gesture in
@@ -75,9 +134,8 @@ pub(crate) struct TerrainEditor {
     transform_source: Option<StudBox>,
     /// Where the `Alt`-click material picker stands, while it is open.
     pub(super) picker_at: Option<Point<Pixels>>,
-    /// The voxels hovers aim against, and the bytes they were decoded from.
-    overlay_grid: Option<VoxelGrid>,
-    overlay_source: Vec<u8>,
+    /// The decoded terrain, between gestures (a gesture holds it meanwhile).
+    working: Option<Working>,
 }
 
 impl Default for TerrainEditor {
@@ -96,8 +154,7 @@ impl Default for TerrainEditor {
             last_ray: None,
             transform_source: None,
             picker_at: None,
-            overlay_grid: None,
-            overlay_source: Vec::new(),
+            working: None,
         }
     }
 }
@@ -198,37 +255,71 @@ impl Shell {
         self.redraw_terrain_overlay(cx);
     }
 
-    /// The terrain instance and its voxels, or a warning in Output saying
-    /// why there is nothing to edit.
-    fn terrain_grid(&mut self) -> Option<(Ref, VoxelGrid)> {
-        let Some(terrain) = terrain::find_terrain(&self.dom) else {
-            self.output
-                .push_warning("Terrain Editor: this place has no Workspace.Terrain");
-            return None;
-        };
-        match terrain::read_grid(&self.dom, terrain) {
-            GridRead::Grid(grid) => Some((terrain, grid)),
-            GridRead::Unreadable(why) => {
-                self.output.push_warning(&format!(
-                    "Terrain Editor: the terrain's voxels could not be read ({why}); \
-                     editing would discard them, so nothing was changed"
-                ));
-                None
+    /// Brings the working copy in line with the DOM, decoding only when the
+    /// terrain's bytes are not the ones it already holds. `Err` says why
+    /// there is nothing to edit.
+    fn sync_working(&mut self) -> Result<(), String> {
+        let terrain =
+            terrain::find_terrain(&self.dom).ok_or("this place has no Workspace.Terrain")?;
+        let bytes = terrain::grid_bytes(&self.dom, terrain);
+        if let Some(working) = &self.terrain.working {
+            if working.terrain == terrain && working.bytes == bytes {
+                return Ok(());
             }
         }
+        self.terrain.working = None;
+        let grid = if bytes.is_empty() {
+            VoxelGrid::new()
+        } else {
+            rbx_terrain::smooth_grid::decode(bytes).map_err(|why| {
+                format!(
+                    "the terrain's voxels could not be read ({why}); editing would \
+                     discard them, so nothing was changed"
+                )
+            })?
+        };
+        self.terrain.working = Some(Working {
+            terrain,
+            grid,
+            encoder: Encoder::default(),
+            physics: Default::default(),
+            bytes: bytes.to_vec(),
+        });
+        Ok(())
     }
 
-    /// Writes `grid` back and reflects it; `physics` adds `PhysicsGrid`.
-    fn store_grid(
-        &mut self,
-        terrain: Ref,
-        grid: &VoxelGrid,
-        physics: bool,
-        cx: &mut Context<Self>,
-    ) {
-        if let Err(err) = terrain::write_grid(&mut self.dom, terrain, grid, physics) {
+    /// The working copy, taken for an edit (put back by `check_in`), or a
+    /// warning in Output saying why there is nothing to edit.
+    fn check_out(&mut self) -> Option<Working> {
+        if let Err(why) = self.sync_working() {
+            self.output.push_warning(&format!("Terrain Editor: {why}"));
+            return None;
+        }
+        self.terrain.working.take()
+    }
+
+    /// The terrain to read from, current with the DOM.
+    pub(super) fn terrain_voxels(&mut self) -> Option<&VoxelGrid> {
+        if let Err(why) = self.sync_working() {
+            self.output.push_warning(&format!("Terrain Editor: {why}"));
+            return None;
+        }
+        self.terrain.working.as_ref().map(|w| &w.grid)
+    }
+
+    /// Writes the working copy back (with `PhysicsGrid`, which only a
+    /// finished edit needs) and keeps it for the next edit.
+    fn check_in(&mut self, mut working: Working, physics: bool, cx: &mut Context<Self>) {
+        let bytes = working.encoder.encode(&working.grid);
+        working.grid.take_dirty();
+        let physics = physics.then(|| working.physics.encode(&working.grid));
+        if let Err(err) =
+            terrain::write_encoded(&mut self.dom, working.terrain, bytes.clone(), physics)
+        {
             self.output.push_warning(&format!("Terrain Editor: {err}"));
         }
+        working.bytes = bytes;
+        self.terrain.working = Some(working);
         let changes = self.dom.take_changes();
         self.reflect_changes(&changes, cx);
         self.record_history_change(changes);
@@ -240,14 +331,19 @@ impl Shell {
         edit: impl FnOnce(&mut VoxelGrid),
         cx: &mut Context<Self>,
     ) {
-        let Some((terrain, mut grid)) = self.terrain_grid() else {
+        let Some(mut working) = self.check_out() else {
             cx.notify();
             return;
         };
         self.push_history();
-        edit(&mut grid);
-        self.store_grid(terrain, &grid, true, cx);
+        edit(&mut working.grid);
+        self.check_in(working, true, cx);
         cx.notify();
+    }
+
+    fn preview(&self, chunks: TerrainChunks, cx: &mut Context<Self>) {
+        self.viewport
+            .update(cx, |viewport, _| viewport.preview_terrain(chunks));
     }
 
     /// Everything the viewport sends while the Terrain Editor has it.
@@ -298,9 +394,16 @@ impl Shell {
                 })
         };
         let empty = VoxelGrid::new();
-        let grid = match &self.terrain.stroke {
-            Some(stroke) => &stroke.aim,
-            None => self.terrain.overlay_grid.as_ref().unwrap_or(&empty),
+        let before;
+        let grid: &dyn rbx_terrain::Voxels = match &self.terrain.stroke {
+            Some(stroke) => {
+                before = Before {
+                    grid: &stroke.working.grid,
+                    chunks: &stroke.touched.before,
+                };
+                &before
+            }
+            None => self.terrain.working.as_ref().map_or(&empty, |w| &w.grid),
         };
         let surfaces = Surfaces {
             grid,
@@ -312,24 +415,23 @@ impl Shell {
     fn brush_step(&mut self, tool: TerrainTool, input: TerrainInput, cx: &mut Context<Self>) {
         match input.phase {
             TerrainPhase::Hover => {
-                self.refresh_overlay_grid();
+                let _ = self.sync_working();
                 let aim = input.ray.and_then(|ray| self.aim_brush(ray, None, cx));
                 self.show_brush(aim, input.ctrl, input.shift, cx);
             }
             TerrainPhase::Press => {
                 let Some(ray) = input.ray else { return };
-                let Some((terrain, grid)) = self.terrain_grid() else {
+                let Some(working) = self.check_out() else {
                     return;
                 };
                 self.terrain.stroke = Some(Stroke {
-                    terrain,
-                    aim: grid.clone(),
-                    grid,
+                    working,
+                    touched: Touched::default(),
                     plane: None,
                     start_y: 0.0,
                 });
                 let Some(aim) = self.aim_brush(ray, None, cx) else {
-                    self.terrain.stroke = None;
+                    self.finish_stroke(false, cx);
                     return;
                 };
                 let forward = input.pose.map_or(Vec3::NEG_Z, |pose| pose.basis().2);
@@ -351,12 +453,21 @@ impl Shell {
                     self.apply_stroke(tool, aim, input, cx);
                 }
             }
-            TerrainPhase::Release => {
-                if let Some(stroke) = self.terrain.stroke.take() {
-                    self.store_grid(stroke.terrain, &stroke.grid, true, cx);
-                }
-            }
+            TerrainPhase::Release => self.finish_stroke(true, cx),
             TerrainPhase::Adjust { .. } | TerrainPhase::Delete | TerrainPhase::Picker { .. } => {}
+        }
+    }
+
+    /// Ends the stroke: written (`write`), or — a press that found nothing
+    /// to aim at — just put back.
+    fn finish_stroke(&mut self, write: bool, cx: &mut Context<Self>) {
+        let Some(stroke) = self.terrain.stroke.take() else {
+            return;
+        };
+        if write {
+            self.check_in(stroke.working, true, cx);
+        } else {
+            self.terrain.working = Some(stroke.working);
         }
     }
 
@@ -372,10 +483,18 @@ impl Shell {
         };
         let settings = &self.terrain.settings;
         if let Some(effect) = Effect::of(tool, settings, input.ctrl, input.shift, stroke.start_y) {
-            terrain::apply_brush(&mut stroke.grid, settings, effect, aim.center);
+            let brush = terrain::brush(settings, aim.center);
+            // Smooth reads a voxel past the brush; the copy takes one more.
+            let (min, max) = brush.voxel_bounds();
+            stroke.touched.keep(
+                &stroke.working.grid,
+                (min.map(|v| v - 1), max.map(|v| v + 1)),
+            );
+            terrain::apply_brush(&mut stroke.working.grid, settings, effect, aim.center);
         }
-        self.store_grid(stroke.terrain, &stroke.grid, false, cx);
+        let chunks = stroke.touched.changed(&mut stroke.working.grid);
         self.terrain.stroke = Some(stroke);
+        self.preview(chunks, cx);
         self.show_brush(Some(aim), input.ctrl, input.shift, cx);
     }
 
@@ -393,28 +512,6 @@ impl Shell {
             .update(cx, |viewport, _| viewport.show_terrain(segments));
     }
 
-    /// The voxels a hover aims against, re-decoded only when the terrain's
-    /// bytes changed (an undo, a script, another tool), not on every move.
-    fn refresh_overlay_grid(&mut self) {
-        let bytes = terrain::find_terrain(&self.dom)
-            .and_then(|terrain| self.dom.get(terrain))
-            .and_then(|instance| match instance.properties().get("SmoothGrid") {
-                Some(rbx_dom::Variant::String(text)) => Some(text.as_bytes().to_vec()),
-                Some(rbx_dom::Variant::Unknown { raw, .. }) => Some(raw.clone()),
-                _ => None,
-            })
-            .unwrap_or_default();
-        if self.terrain.overlay_grid.is_some() && bytes == self.terrain.overlay_source {
-            return;
-        }
-        self.terrain.overlay_grid = if bytes.is_empty() {
-            Some(VoxelGrid::new())
-        } else {
-            rbx_terrain::smooth_grid::decode(&bytes).ok()
-        };
-        self.terrain.overlay_source = bytes;
-    }
-
     fn region_step(&mut self, tool: TerrainTool, input: TerrainInput, cx: &mut Context<Self>) {
         let pose = input.pose;
         match input.phase {
@@ -426,7 +523,7 @@ impl Shell {
                 let (Some(ray), Some(pose)) = (input.ray, pose) else {
                     return;
                 };
-                self.refresh_overlay_grid();
+                let _ = self.sync_working();
                 let surface = self
                     .aim_brush(ray, None, cx)
                     .map_or(Vec3::ZERO, |aim| aim.hit);
@@ -442,16 +539,17 @@ impl Shell {
                 // Transform's own gesture moves terrain; drawing a new box
                 // with it only re-selects.
                 if transform && !matches!(drag.grab, RegionGrab::Draw { .. }) {
-                    if let Some((terrain, base)) = self.terrain_grid() {
+                    if let Some(working) = self.check_out() {
                         self.push_history();
                         let source = self
                             .terrain
                             .transform_source
                             .unwrap_or_else(|| self.terrain.settings.active_region());
                         self.terrain.lift = Some(Lift {
-                            terrain,
-                            base,
+                            working,
+                            touched: Touched::default(),
                             source,
+                            last: Vec::new(),
                         });
                     }
                 }
@@ -467,14 +565,16 @@ impl Shell {
                 self.terrain.settings.region = region;
                 self.terrain.rotation = rotation;
                 if self.terrain.settings.live_edit {
-                    self.apply_lift(false, cx);
+                    self.apply_lift(cx);
                 }
             }
             TerrainPhase::Release => {
                 self.terrain.region_drag = None;
                 if self.terrain.lift.is_some() {
-                    self.apply_lift(true, cx);
-                    self.terrain.lift = None;
+                    self.apply_lift(cx);
+                    if let Some(lift) = self.terrain.lift.take() {
+                        self.check_in(lift.working, true, cx);
+                    }
                     if self.terrain.settings.live_edit {
                         self.terrain.transform_source = Some(self.terrain.settings.region);
                     }
@@ -566,21 +666,28 @@ impl Shell {
         cx.notify();
     }
 
-    /// Re-applies the Transform drag to its starting terrain.
-    fn apply_lift(&mut self, physics: bool, cx: &mut Context<Self>) {
-        let Some(lift) = &self.terrain.lift else {
+    /// Re-applies the Transform drag: the chunks the last step changed put
+    /// back as they were, then the region moved to where it now stands —
+    /// work in proportion to the region, not the map.
+    fn apply_lift(&mut self, cx: &mut Context<Self>) {
+        let placement = self.placement();
+        let merge = self.terrain.settings.merge_empty;
+        let Some(lift) = &mut self.terrain.lift else {
             return;
         };
-        let mut grid = lift.base.clone();
-        let placement = self.placement();
-        clip::transform(
-            &mut grid,
-            &lift.source,
-            &placement,
-            self.terrain.settings.merge_empty,
-        );
-        let terrain = lift.terrain;
-        self.store_grid(terrain, &grid, physics, cx);
+        for key in std::mem::take(&mut lift.last) {
+            if let Some(original) = lift.touched.before.get(&key) {
+                lift.working.grid.replace_chunk(key, original.clone());
+            }
+        }
+        lift.touched
+            .keep(&lift.working.grid, lift.source.snapped().voxels());
+        lift.touched
+            .keep(&lift.working.grid, placement.bounds().voxels());
+        clip::transform(&mut lift.working.grid, &lift.source, &placement, merge);
+        let chunks = lift.touched.changed(&mut lift.working.grid);
+        lift.last = lift.touched.before.keys().copied().collect();
+        self.preview(chunks, cx);
     }
 
     /// Redraws whatever the active tool shows: the region and its handles,

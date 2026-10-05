@@ -16,8 +16,8 @@ mod region;
 mod settings;
 
 pub(crate) use aim::{aim, plane_normal, plane_tilt, stroke_plane, Aim, Plane, Surfaces};
-pub(crate) use apply::{apply_brush, Effect};
-pub(crate) use dom::{find_terrain, read_grid, write_grid, GridRead};
+pub(crate) use apply::{apply_brush, brush, Effect};
+pub(crate) use dom::{find_terrain, grid_bytes, write_encoded};
 pub(crate) use outline::{brush_outline, region_model, region_outline};
 pub(crate) use region::{region_handles, RegionDrag, RegionGrab};
 pub(crate) use settings::{

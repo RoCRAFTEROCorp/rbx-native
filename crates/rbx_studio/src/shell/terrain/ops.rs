@@ -73,10 +73,10 @@ impl Shell {
     /// Ctrl+C (`cut` false) or Ctrl+X: the region's voxels to the clipboard.
     pub(in crate::shell) fn terrain_copy(&mut self, cut: bool, cx: &mut Context<Self>) {
         let area = self.terrain.settings.active_region();
-        let Some((_, grid)) = self.terrain_grid() else {
+        let Some(grid) = self.terrain_voxels() else {
             return;
         };
-        self.terrain.clipboard = Some(clip::copy(&grid, &area));
+        self.terrain.clipboard = Some(clip::copy(grid, &area));
         if cut {
             self.edit_terrain(|grid| region::delete(grid, &area), cx);
         }
@@ -89,8 +89,8 @@ impl Shell {
     pub(in crate::shell) fn terrain_paste(&mut self, duplicate: bool, cx: &mut Context<Self>) {
         let area = self.terrain.settings.active_region();
         if duplicate {
-            if let Some((_, grid)) = self.terrain_grid() {
-                self.terrain.clipboard = Some(clip::copy(&grid, &area));
+            if let Some(grid) = self.terrain_voxels() {
+                self.terrain.clipboard = Some(clip::copy(grid, &area));
             }
         }
         let Some(clip) = self.terrain.clipboard.clone() else {

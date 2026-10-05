@@ -16,7 +16,6 @@
 
 use std::collections::BTreeSet;
 
-use crate::grid::index_in_chunk;
 use crate::VoxelGrid;
 
 const VERSION: u8 = 2;
@@ -25,12 +24,39 @@ const REGION: i32 = 1 << REGION_LOG2;
 
 /// The `PhysicsGrid` Roblox would save alongside `grid`.
 pub fn encode(grid: &VoxelGrid) -> Vec<u8> {
-    let regions = regions(grid);
+    Encoder::default().encode(grid)
+}
+
+/// [`encode`] that remembers each chunk's regions by revision, so encoding
+/// again after an edit only scans the chunks the edit touched.
+#[derive(Debug, Default)]
+pub struct Encoder {
+    chunks: std::collections::HashMap<crate::ChunkKey, (u64, Vec<[i32; 3]>)>,
+}
+
+impl Encoder {
+    pub fn encode(&mut self, grid: &VoxelGrid) -> Vec<u8> {
+        let mut regions = BTreeSet::new();
+        let mut kept = std::collections::HashSet::new();
+        for (key, cells, revision) in grid.revised_chunks() {
+            kept.insert(key);
+            let entry = self.chunks.entry(key).or_insert((0, Vec::new()));
+            if entry.0 != revision {
+                *entry = (revision, chunk_regions(key, cells));
+            }
+            regions.extend(entry.1.iter().copied());
+        }
+        self.chunks.retain(|key, _| kept.contains(key));
+        write(&regions)
+    }
+}
+
+fn write(regions: &BTreeSet<[i32; 3]>) -> Vec<u8> {
     let mut out = Vec::with_capacity(2 + 12 + regions.len() * 12);
     out.extend([VERSION, REGION_LOG2]);
     out.extend((regions.len() as u32).to_be_bytes());
     let mut previous = [0i32; 3];
-    for region in &regions {
+    for region in regions {
         let delta: [u32; 3] =
             std::array::from_fn(|axis| region[axis].wrapping_sub(previous[axis]) as u32);
         previous = *region;
@@ -42,33 +68,65 @@ pub fn encode(grid: &VoxelGrid) -> Vec<u8> {
     out
 }
 
+#[cfg(test)]
 fn regions(grid: &VoxelGrid) -> BTreeSet<[i32; 3]> {
-    let mut regions = BTreeSet::new();
-    for (key, cells) in grid.chunks() {
-        let origin = key.origin();
-        // A chunk spans exactly four regions per axis, so only voxels on a
-        // region's border can reach a neighbour; interior ones add their own.
-        for y in 0..crate::CHUNK {
-            for z in 0..crate::CHUNK {
-                for x in 0..crate::CHUNK {
-                    if cells[index_in_chunk([x, y, z])].is_air() {
-                        continue;
-                    }
-                    let voxel = [origin[0] + x, origin[1] + y, origin[2] + z];
-                    let low = voxel.map(|v| (v - 1).div_euclid(REGION));
-                    let high = voxel.map(|v| (v + 1).div_euclid(REGION));
-                    for rx in low[0]..=high[0] {
-                        for ry in low[1]..=high[1] {
-                            for rz in low[2]..=high[2] {
-                                regions.insert([rx, ry, rz]);
+    grid.chunks()
+        .flat_map(|(key, cells)| chunk_regions(key, cells))
+        .collect()
+}
+
+/// Which of the 6×6×6 regions around one chunk (its own 4×4×4 plus a ring,
+/// since a voxel on a region's face reaches the one beside it) any of its
+/// voxels touches. A flag per region rather than a set insert per voxel: a
+/// large map is tens of millions of voxels and a few thousand regions.
+fn chunk_regions(key: crate::ChunkKey, cells: &[crate::Cell]) -> Vec<[i32; 3]> {
+    const SIDE: usize = 6;
+    let mut touched = [false; SIDE * SIDE * SIDE];
+    let mut index = 0;
+    for y in 0..crate::CHUNK {
+        let ys = reach(y);
+        for z in 0..crate::CHUNK {
+            let zs = reach(z);
+            for x in 0..crate::CHUNK {
+                if !cells[index].is_air() {
+                    let xs = reach(x);
+                    for ry in ys.0..=ys.1 {
+                        for rz in zs.0..=zs.1 {
+                            for rx in xs.0..=xs.1 {
+                                touched[rx + SIDE * (rz + SIDE * ry)] = true;
                             }
                         }
                     }
+                }
+                index += 1;
+            }
+        }
+    }
+    let base = key.origin().map(|v| v.div_euclid(REGION) - 1);
+    let mut regions = Vec::new();
+    for ry in 0..SIDE {
+        for rz in 0..SIDE {
+            for rx in 0..SIDE {
+                if touched[rx + SIDE * (rz + SIDE * ry)] {
+                    regions.push([
+                        base[0] + rx as i32,
+                        base[1] + ry as i32,
+                        base[2] + rz as i32,
+                    ]);
                 }
             }
         }
     }
     regions
+}
+
+/// The regions, numbered from one before the chunk's first, that a voxel at
+/// chunk-local `v` reaches once grown by one: its own, and the neighbour
+/// across a face it sits on.
+fn reach(v: i32) -> (usize, usize) {
+    let low = (v - 1).div_euclid(REGION) + 1;
+    let high = (v + 1).div_euclid(REGION) + 1;
+    (low as usize, high as usize)
 }
 
 #[cfg(test)]
@@ -93,6 +151,18 @@ mod tests {
         assert_eq!(&bytes[2..6], &[0, 0, 0, 1]);
         assert_eq!(&bytes[6..18], &[0; 12]);
         assert_eq!(bytes.len(), 2 + 4 + 12 + 8);
+    }
+
+    #[test]
+    fn the_caching_encoder_matches_a_fresh_one_after_edits() {
+        let mut grid = VoxelGrid::new();
+        grid.set([3, 3, 3], Cell::full(Material::Rock));
+        grid.set([40, 3, 3], Cell::full(Material::Rock));
+        let mut encoder = Encoder::default();
+        assert_eq!(encoder.encode(&grid), encode(&grid));
+        grid.set([0, 7, 0], Cell::full(Material::Sand));
+        grid.set([40, 3, 3], Cell::AIR);
+        assert_eq!(encoder.encode(&grid), encode(&grid));
     }
 
     #[test]
