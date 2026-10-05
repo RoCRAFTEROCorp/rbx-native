@@ -411,7 +411,7 @@ fn property_shell(
     value: impl IntoElement,
     error: Option<&str>,
 ) -> impl IntoElement {
-    let name = SharedString::from(row.name.clone());
+    let name = SharedString::from(row.label().to_owned());
     row_frame()
         .text_size(tokens::text_md())
         .line_height(tokens::line_md())
@@ -433,7 +433,7 @@ fn property_shell(
                         .flex_1()
                         .min_w(px(0.))
                         .truncate()
-                        .pl(name_indent(0))
+                        .pl(name_indent(row.depth()))
                         .pr(tokens::label_gap())
                         .text_color(if read_only {
                             tokens::text_disabled()
@@ -444,7 +444,7 @@ fn property_shell(
                         // truncate at the default dock width whatever the
                         // control's width; hovering reads them whole.
                         .tooltip(move |window, cx| super::tooltip::text(name.clone(), window, cx))
-                        .child(SharedString::from(row.name.clone())),
+                        .child(SharedString::from(row.label().to_owned())),
                 )
                 .child(value),
         )
