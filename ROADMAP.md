@@ -2049,6 +2049,21 @@ against `Roblox/creator-docs` rather than assumed:
   stays out of reach, the same as any other physics (see
   [Explicitly impossible](#explicitly-impossible-without-robloxs-engine)).
 
+#### CSG
+- [ ] 📋 **`MeshData`/CSGMDL version 4.** `scene::union::baked` reads
+  versions 2 and 5, the only ones in any file available here. A version 4
+  also exists: community research
+  ([devforum 3554504](https://devforum.roblox.com/t/research-on-csg/3554504),
+  which calls it "CSGv3" after its `CSGMDL\x04` header) reports that
+  Studio builds from 2022 on wrote it. The same research describes it as
+  version 2's mesh layout followed by values it could not identify.
+  Version 5, which recent places hold, came after it. No version 4 blob
+  is to hand to check the layout or its scrambling against, so a union
+  baked in it with no tree keeps its box; its error names the version.
+  Needs a real version 4 blob, checked the way the others are, against
+  what the union's own tree carves. No other version (1, 3, 6+) has been
+  seen or reported.
+
 #### Terrain
 - [ ] 📋 Voxel terrain storage (`Terrain.SmoothGrid`) — no work started.
   Roblox documents the general chunk/RLE storage approach in a 2017
@@ -2700,7 +2715,8 @@ and no amount of reverse engineering changes that:
   exactly as Roblox's own boolean does) — undocumented and
   version-unstable; not worth chasing when a real from-scratch boolean
   already exists. Roblox's baked `MeshData` itself is read where a union
-  has no tree (versions 2 and 5, see "What's been implemented").
+  has no tree (versions 2 and 5, see "What's been implemented"; version 4
+  is its own planned item under CSG).
 - **Physics simulation and anti-cheat** — proprietary physics engine, no
   real server authority possible from rbx-native. That covers Roblox's new
   Server Authority model too: client prediction, rollback and resimulation
