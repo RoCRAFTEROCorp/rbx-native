@@ -62,6 +62,9 @@
 //! a small synthetic batch at startup — the same aid, for a window that
 //! otherwise only opens once a live `argon serve` session pushes five or
 //! more real changes at once (see `shell::argon_sync`).
+//! `RBX_STUDIO_TERRAIN=<tool>[,apply]` opens the Terrain Editor on that tool
+//! (`draw`, `sealevel`, `generate`, …) and with `apply` presses its main
+//! button — the same aid, for the Terrain Editor (see `shell::terrain`).
 
 mod accent;
 mod align;
@@ -100,6 +103,7 @@ mod settle;
 mod shell;
 mod style_editor;
 mod sun;
+mod terrain;
 mod theme;
 mod tokens;
 mod transform;

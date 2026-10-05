@@ -6022,6 +6022,7 @@ dependencies = [
  "rbx_lua",
  "rbx_mesh",
  "rbx_reflection",
+ "rbx_terrain",
  "rbx_viewer",
  "rbx_xml",
  "resvg 0.46.0",

@@ -44,6 +44,7 @@ rbx_mesh = { path = "../rbx_mesh" }
 # Enum ordinals only mean something to a reader once named (`256 (Plastic)`);
 # the viewer already pulls the embedded dump in, so this costs no new build.
 rbx_reflection = { path = "../rbx_reflection", features = ["embedded-dump"] }
+rbx_terrain = { path = "../rbx_terrain" }
 rbx_viewer = { path = "../rbx_viewer" }
 # Same reasoning as `rbx_binary` above: `save` sniffs and writes XML place
 # files with this crate's already-tested `is_xml`/`serialize`.

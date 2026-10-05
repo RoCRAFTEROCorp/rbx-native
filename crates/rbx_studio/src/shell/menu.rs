@@ -52,6 +52,7 @@ pub(crate) enum MenuId {
     ScriptAnalysisOverflow,
     WatchOverflow,
     CallStackOverflow,
+    TerrainOverflow,
     /// The version picker on the n-th Wally search result.
     WallyVersion(usize),
     InsertPart,
@@ -79,6 +80,7 @@ impl MenuId {
             MenuId::ScriptAnalysisOverflow => "menu-script-analysis",
             MenuId::WatchOverflow => "menu-watch",
             MenuId::CallStackOverflow => "menu-call-stack",
+            MenuId::TerrainOverflow => "menu-terrain",
             MenuId::WallyVersion(_) => "menu-wally-version",
             MenuId::InsertPart => "menu-insert-part",
             MenuId::InsertScript => "menu-insert-script",

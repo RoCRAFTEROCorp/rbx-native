@@ -17,6 +17,8 @@ use gpui_kit::*;
 
 mod slider;
 
+pub(in crate::shell) use slider::slider as rail_slider;
+
 use crate::explorer::ClassIcon;
 use std::rc::Rc;
 

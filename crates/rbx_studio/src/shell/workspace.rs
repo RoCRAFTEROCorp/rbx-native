@@ -139,6 +139,7 @@ impl Shell {
             Panel::ScriptAnalysis => self.script_analysis_dock(cx),
             Panel::Watch => self.watch_dock(window, cx),
             Panel::CallStack => self.call_stack_dock(cx),
+            Panel::TerrainEditor => self.terrain_dock(window, cx),
         }
     }
 

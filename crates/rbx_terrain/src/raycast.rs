@@ -64,6 +64,10 @@ pub fn raycast(
         start + (edge - p[a]) * VOXEL_STUDS / dir[a]
     });
     let mut t = start;
+    // A ray that starts inside terrain or water (a camera under the sea)
+    // looks out of it, not at it: hits only count once it has crossed an
+    // empty voxel.
+    let mut outside = start > 0.0;
     while t <= stop {
         let cell = grid.get(voxel);
         let fill = if cell.material == Material::Water {
@@ -77,7 +81,9 @@ pub fn raycast(
         } else {
             cell.solid_fraction() + cell.water_fraction()
         };
-        if fill >= 0.5 {
+        if fill < 0.5 {
+            outside = true;
+        } else if outside {
             let position = std::array::from_fn(|a| origin[a] + dir[a] * t);
             return Some(Hit {
                 distance: t,
@@ -173,6 +179,22 @@ mod tests {
         assert!(raycast(&grid, [0.0, 10.0, 0.0], [0.0, 1.0, 0.0], 1000.0, false).is_none());
         assert!(raycast(&grid, [0.0, 50.0, 0.0], [0.0, -1.0, 0.0], 10.0, false).is_none());
         assert!(raycast(&VoxelGrid::new(), [0.0; 3], [0.0, -1.0, 0.0], 10.0, false).is_none());
+    }
+
+    #[test]
+    fn a_ray_starting_inside_looks_out_to_the_next_surface() {
+        let mut grid = floor();
+        for y in 0..4 {
+            grid.set([0, y, 0], Cell::full(Material::Water));
+        }
+        // From inside the water column, looking down: through the water,
+        // out of it is never reached, so the floor below is not hit either
+        // until air was crossed — here it never is.
+        assert!(raycast(&grid, [2.0, 10.0, 2.0], [0.0, -1.0, 0.0], 1000.0, false).is_none());
+        // From inside, looking sideways out into air and onto a wall.
+        grid.set([3, 2, 0], Cell::full(Material::Rock));
+        let hit = raycast(&grid, [2.0, 10.0, 2.0], [1.0, 0.0, 0.0], 1000.0, false).unwrap();
+        assert_eq!(hit.voxel, [3, 2, 0]);
     }
 
     #[test]

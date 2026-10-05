@@ -53,6 +53,10 @@ pub(crate) enum Tool {
     /// the pivot alone, the geometry staying where it is. One part or one
     /// model at a time — a selection of several has no one pivot to edit.
     Pivot,
+    /// The Terrain Editor's tool under the cursor (`crate::terrain`): a
+    /// brush or the selection region. Like Sun, no handles of its own and
+    /// never touches the selection.
+    Terrain,
 }
 
 impl Tool {
@@ -75,6 +79,7 @@ impl Tool {
             Tool::Transform => "Transform",
             Tool::Sun => "Sun",
             Tool::Pivot => "Edit Pivot",
+            Tool::Terrain => "Terrain Editor",
         }
     }
 
@@ -90,7 +95,7 @@ impl Tool {
             Tool::Scale => Some("3"),
             Tool::Rotate => Some("4"),
             Tool::Transform => Some("5"),
-            Tool::Sun | Tool::Pivot => None,
+            Tool::Sun | Tool::Pivot | Tool::Terrain => None,
         }
     }
 
@@ -98,7 +103,7 @@ impl Tool {
     /// and Sun, which have none of their own.
     pub(crate) fn kind(self) -> Option<Kind> {
         match self {
-            Tool::Select | Tool::Sun => None,
+            Tool::Select | Tool::Sun | Tool::Terrain => None,
             Tool::Move => Some(Kind::Move),
             Tool::Scale => Some(Kind::Scale),
             Tool::Rotate => Some(Kind::Rotate),

@@ -79,6 +79,8 @@ impl Shell {
         let transform = self.transform;
         self.viewport
             .update(cx, |viewport, _| viewport.set_transform(transform));
+        // Takes the brush or region off screen when another tool takes over.
+        self.redraw_terrain_overlay(cx);
         if matches!(action, Action::SetIncrement(..) | Action::TogglePivotSnap) {
             self.save_settings();
         }
