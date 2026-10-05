@@ -66,6 +66,9 @@ const RANGES: &[(&str, f32, f32, f32)] = &[
     ("WaterTransparency", 0., 1., 0.01),
     ("WaterReflectance", 0., 1., 0.01),
     ("WaterWaveSize", 0., 1., 0.01),
+    // Terrain's grass, in studs; creator-docs `parts/terrain.md` gives the
+    // span, and below a tenth the blades are gone.
+    ("GrassLength", 0.1, 1., 0.01),
     // Angles, in the units the panel shows.
     ("Rotation", 0., 360., 1.),
     ("Angle", 0., 180., 1.),
@@ -80,6 +83,8 @@ const RANGES: &[(&str, f32, f32, f32)] = &[
     ("ExposureCompensation", -5., 5., 0.1),
     ("Glare", 0., 10., 0.1),
     ("Haze", 0., 10., 0.1),
+    // Documented as "100 (turbulent) to 0 (still)" (`parts/terrain.md`).
+    ("WaterWaveSpeed", 0., 100., 1.),
 ];
 
 #[cfg(test)]
@@ -106,6 +111,16 @@ mod tests {
                 step: 0.1
             })
         );
+
+        assert_eq!(
+            slider_range("WaterWaveSpeed"),
+            Some(SliderSpan {
+                min: 0.,
+                max: 100.,
+                step: 1.
+            })
+        );
+        assert_eq!(slider_range("GrassLength").map(|span| span.min), Some(0.1));
 
         assert_eq!(slider_range("FogEnd"), None);
         assert_eq!(slider_range("Name"), None);
