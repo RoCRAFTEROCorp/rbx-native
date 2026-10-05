@@ -76,6 +76,7 @@ mod display;
 mod dragger;
 mod explorer;
 mod folder_colors;
+mod freeze;
 mod history;
 mod home;
 mod key_store;

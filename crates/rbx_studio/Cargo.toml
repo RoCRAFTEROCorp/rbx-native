@@ -38,6 +38,9 @@ rbx_dom = { path = "../rbx_dom" }
 # The command bar's own Luau VM: already built for `rbx_parser_cli`, so this
 # adds no new dependency version to the tree.
 rbx_lua = { path = "../rbx_lua" }
+# Freeze Rotation reads the mesh it bakes and the one Roblox imports back;
+# already in the tree through `rbx_viewer`.
+rbx_mesh = { path = "../rbx_mesh" }
 # Enum ordinals only mean something to a reader once named (`256 (Plastic)`);
 # the viewer already pulls the embedded dump in, so this costs no new build.
 rbx_reflection = { path = "../rbx_reflection", features = ["embedded-dump"] }
