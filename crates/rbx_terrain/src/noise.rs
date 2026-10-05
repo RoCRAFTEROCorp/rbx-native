@@ -93,7 +93,12 @@ pub(crate) fn noise3(seed: u32, p: [f32; 3]) -> f32 {
 pub(crate) fn fbm2(seed: u32, x: f32, y: f32, octaves: u32) -> f32 {
     let (mut sum, mut amplitude, mut frequency, mut total) = (0.0, 1.0, 1.0, 0.0);
     for octave in 0..octaves {
-        sum += amplitude * noise2(seed.wrapping_add(octave * 7919), x * frequency, y * frequency);
+        sum += amplitude
+            * noise2(
+                seed.wrapping_add(octave * 7919),
+                x * frequency,
+                y * frequency,
+            );
         total += amplitude;
         amplitude *= 0.5;
         frequency *= 2.0;
@@ -105,7 +110,13 @@ pub(crate) fn fbm2(seed: u32, x: f32, y: f32, octaves: u32) -> f32 {
 pub(crate) fn ridged2(seed: u32, x: f32, y: f32, octaves: u32) -> f32 {
     let (mut sum, mut amplitude, mut frequency, mut total) = (0.0, 1.0, 1.0, 0.0);
     for octave in 0..octaves {
-        let n = 1.0 - noise2(seed.wrapping_add(octave * 104_729), x * frequency, y * frequency).abs();
+        let n = 1.0
+            - noise2(
+                seed.wrapping_add(octave * 104_729),
+                x * frequency,
+                y * frequency,
+            )
+            .abs();
         sum += amplitude * n * n;
         total += amplitude;
         amplitude *= 0.5;

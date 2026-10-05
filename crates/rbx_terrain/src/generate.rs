@@ -88,7 +88,13 @@ impl Biome {
         let deep = depth >= 3;
         match self {
             Biome::Water | Biome::Dunes => {
-                if deep && self == Biome::Water { Material::Rock } else if deep { Material::Sandstone } else { Material::Sand }
+                if deep && self == Biome::Water {
+                    Material::Rock
+                } else if deep {
+                    Material::Sandstone
+                } else {
+                    Material::Sand
+                }
             }
             Biome::Marsh => match (deep, speckle) {
                 (true, _) => Material::Ground,
@@ -110,7 +116,11 @@ impl Biome {
             }
             Biome::Mountains => {
                 if deep || steep > 1.0 {
-                    if speckle < 0.3 { Material::Slate } else { Material::Rock }
+                    if speckle < 0.3 {
+                        Material::Slate
+                    } else {
+                        Material::Rock
+                    }
                 } else if height > 0.8 {
                     Material::Snow
                 } else if height > 0.6 {
@@ -130,7 +140,11 @@ impl Biome {
             }
             Biome::Canyons => {
                 if steep > 0.8 || deep {
-                    if (voxel[1] / 2) % 2 == 0 { Material::Sandstone } else { Material::Limestone }
+                    if (voxel[1] / 2) % 2 == 0 {
+                        Material::Sandstone
+                    } else {
+                        Material::Limestone
+                    }
                 } else {
                     Material::Sand
                 }
@@ -223,14 +237,20 @@ pub fn generate(grid: &mut VoxelGrid, region: &StudBox, settings: &GenerateSetti
             (z as f32 + 0.5) * VOXEL_STUDS / scale,
         ];
         let weights = biome_weights(settings, p);
-        let height = weights.iter().map(|(b, w)| b.height(settings.seed, p) * w).sum();
+        let height = weights
+            .iter()
+            .map(|(b, w)| b.height(settings.seed, p) * w)
+            .sum();
         let main = weights
             .iter()
             .max_by(|a, b| a.1.total_cmp(&b.1))
             .map_or(settings.biomes[0], |w| w.0);
         (height, main)
     };
-    let water = settings.biomes.iter().any(|b| matches!(b, Biome::Water | Biome::Marsh));
+    let water = settings
+        .biomes
+        .iter()
+        .any(|b| matches!(b, Biome::Water | Biome::Marsh));
     let sea = region.min[1] + SEA_LEVEL * size[1];
     for z in min[2]..max[2] {
         for x in min[0]..max[0] {

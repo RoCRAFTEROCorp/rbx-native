@@ -73,7 +73,7 @@ pub struct VoxelGrid {
 /// are bookkeeping, not content.
 impl PartialEq for VoxelGrid {
     fn eq(&self, other: &Self) -> bool {
-        self.chunks == other.chunks
+        self.chunks().eq(other.chunks())
     }
 }
 
@@ -85,11 +85,31 @@ impl VoxelGrid {
     }
 
     pub fn is_empty(&self) -> bool {
-        self.chunks.is_empty()
+        self.chunks
+            .values()
+            .all(|cells| cells.iter().all(|c| c.is_air()))
     }
 
+    /// Stored chunks, including any emptied since the last [`VoxelGrid::prune`].
     pub fn chunk_count(&self) -> usize {
         self.chunks.len()
+    }
+
+    /// The voxel box the stored chunks span, `(min, max)` with `max`
+    /// exclusive: a cheap, loose stand-in for [`VoxelGrid::bounds`].
+    pub fn chunk_bounds(&self) -> Option<([i32; 3], [i32; 3])> {
+        let mut keys = self.chunks.keys();
+        let first = keys.next()?.origin();
+        let mut min = first;
+        let mut max = first.map(|v| v + CHUNK);
+        for key in keys {
+            let origin = key.origin();
+            for a in 0..3 {
+                min[a] = min[a].min(origin[a]);
+                max[a] = max[a].max(origin[a] + CHUNK);
+            }
+        }
+        Some((min, max))
     }
 
     pub fn get(&self, voxel: [i32; 3]) -> Cell {
@@ -98,6 +118,9 @@ impl VoxelGrid {
             .map_or(Cell::AIR, |chunk| chunk[index_in_chunk(voxel)])
     }
 
+    /// Emptying a chunk this way leaves it stored (checking every write for
+    /// a newly empty chunk would cost a 32³ scan each); [`VoxelGrid::prune`]
+    /// drops such chunks, and nothing that reads the grid tells them apart.
     pub fn set(&mut self, voxel: [i32; 3], cell: Cell) {
         let key = ChunkKey::containing(voxel);
         let index = index_in_chunk(voxel);
@@ -107,9 +130,6 @@ impl VoxelGrid {
                     return;
                 }
                 chunk[index] = cell;
-                if cell.is_air() && chunk.iter().all(|c| c.is_air()) {
-                    self.chunks.remove(&key);
-                }
             }
             None if cell.is_air() => return,
             None => {
@@ -118,7 +138,53 @@ impl VoxelGrid {
                 self.chunks.insert(key, chunk);
             }
         }
-        self.dirty.insert(key);
+        self.mark_dirty(key, voxel);
+    }
+
+    /// Marks `key`, and the neighbours whose surface meshes read `voxel`: a
+    /// chunk's mesh depends on its own voxels and on the one-voxel layer
+    /// around it, so a voxel on a chunk face (edge, corner) also dirties the
+    /// chunk(s) across it.
+    fn mark_dirty(&mut self, key: ChunkKey, voxel: [i32; 3]) {
+        let reach = |v: i32| -> (i32, i32) {
+            match v.rem_euclid(CHUNK) {
+                0 => (-1, 0),
+                l if l == CHUNK - 1 => (0, 1),
+                _ => (0, 0),
+            }
+        };
+        let (rx, ry, rz) = (reach(voxel[0]), reach(voxel[1]), reach(voxel[2]));
+        for dx in rx.0..=rx.1 {
+            for dy in ry.0..=ry.1 {
+                for dz in rz.0..=rz.1 {
+                    self.dirty.insert(ChunkKey {
+                        x: key.x + dx,
+                        y: key.y + dy,
+                        z: key.z + dz,
+                    });
+                }
+            }
+        }
+    }
+
+    fn mark_with_neighbours(&mut self, key: ChunkKey) {
+        for dx in -1..=1 {
+            for dy in -1..=1 {
+                for dz in -1..=1 {
+                    self.dirty.insert(ChunkKey {
+                        x: key.x + dx,
+                        y: key.y + dy,
+                        z: key.z + dz,
+                    });
+                }
+            }
+        }
+    }
+
+    /// Drops stored chunks that edits have emptied.
+    pub fn prune(&mut self) {
+        self.chunks
+            .retain(|_, cells| cells.iter().any(|c| !c.is_air()));
     }
 
     /// Stores a whole chunk read from a file. All-Air chunks are dropped, the
@@ -130,7 +196,7 @@ impl VoxelGrid {
         } else {
             self.chunks.insert(key, cells);
         }
-        self.dirty.insert(key);
+        self.mark_with_neighbours(key);
     }
 
     pub(crate) fn chunk(&self, key: ChunkKey) -> Option<&[Cell]> {
@@ -141,8 +207,12 @@ impl VoxelGrid {
         self.chunks.keys().copied()
     }
 
+    /// Stored chunks that hold any terrain.
     pub(crate) fn chunks(&self) -> impl Iterator<Item = (ChunkKey, &[Cell])> {
-        self.chunks.iter().map(|(k, c)| (*k, &c[..]))
+        self.chunks
+            .iter()
+            .filter(|(_, c)| c.iter().any(|cell| !cell.is_air()))
+            .map(|(k, c)| (*k, &c[..]))
     }
 
     /// Every non-Air voxel with its coordinate.
@@ -183,7 +253,9 @@ impl VoxelGrid {
 
     pub fn clear(&mut self) {
         let keys: Vec<ChunkKey> = self.chunks.keys().copied().collect();
-        self.dirty.extend(keys);
+        for key in keys {
+            self.mark_with_neighbours(key);
+        }
         self.chunks.clear();
     }
 
@@ -220,18 +292,38 @@ mod tests {
     }
 
     #[test]
-    fn emptying_a_chunk_drops_it_but_marks_it_dirty() {
+    fn emptying_a_chunk_empties_the_grid_and_marks_it_dirty() {
         let mut grid = VoxelGrid::new();
         grid.set([-5, 3, 40], Cell::full(Material::Rock));
         assert_eq!(grid.chunk_count(), 1);
         assert_eq!(grid.get([-5, 3, 40]), Cell::full(Material::Rock));
         assert_eq!(grid.bounds(), Some(([-5, 3, 40], [-4, 4, 41])));
+        assert_eq!(grid.chunk_bounds(), Some(([-32, 0, 32], [0, 32, 64])));
         grid.take_dirty();
         grid.set([-5, 3, 40], Cell::AIR);
         assert!(grid.is_empty());
+        assert_eq!(grid, VoxelGrid::new());
         assert_eq!(
             grid.take_dirty().into_iter().collect::<Vec<_>>(),
             vec![ChunkKey { x: -1, y: 0, z: 1 }]
+        );
+        grid.prune();
+        assert_eq!(grid.chunk_count(), 0);
+    }
+
+    #[test]
+    fn a_voxel_on_a_chunk_face_dirties_the_chunk_across_it() {
+        let mut grid = VoxelGrid::new();
+        grid.set([0, 5, 31], Cell::full(Material::Rock));
+        let dirty: Vec<ChunkKey> = grid.take_dirty().into_iter().collect();
+        assert_eq!(
+            dirty,
+            vec![
+                ChunkKey { x: -1, y: 0, z: 0 },
+                ChunkKey { x: -1, y: 0, z: 1 },
+                ChunkKey { x: 0, y: 0, z: 0 },
+                ChunkKey { x: 0, y: 0, z: 1 },
+            ]
         );
     }
 

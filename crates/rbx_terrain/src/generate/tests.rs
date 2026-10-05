@@ -22,7 +22,14 @@ fn same_seed_same_terrain_and_a_new_seed_changes_it() {
     generate(&mut b, &region(), &settings);
     assert_eq!(a, b);
     let mut c = VoxelGrid::new();
-    generate(&mut c, &region(), &GenerateSettings { seed: 12, ..settings });
+    generate(
+        &mut c,
+        &region(),
+        &GenerateSettings {
+            seed: 12,
+            ..settings
+        },
+    );
     assert_ne!(a, c);
 }
 
@@ -34,7 +41,11 @@ fn terrain_stays_inside_the_region() {
     let (min, max) = region().voxels();
     for (v, cell) in grid.voxels() {
         if v == [100, 100, 100] {
-            assert_eq!(cell, Cell::full(Material::Brick), "outside terrain survives");
+            assert_eq!(
+                cell,
+                Cell::full(Material::Brick),
+                "outside terrain survives"
+            );
             continue;
         }
         assert!((0..3).all(|a| v[a] >= min[a] && v[a] < max[a]), "{v:?}");
@@ -45,7 +56,10 @@ fn terrain_stays_inside_the_region() {
 fn biomes_pick_their_materials() {
     let only = |biome: Biome| {
         let mut grid = VoxelGrid::new();
-        let settings = GenerateSettings { biomes: vec![biome], ..Default::default() };
+        let settings = GenerateSettings {
+            biomes: vec![biome],
+            ..Default::default()
+        };
         generate(&mut grid, &region(), &settings);
         summary(&grid)
     };
@@ -65,17 +79,34 @@ fn biomes_pick_their_materials() {
 
 #[test]
 fn caves_remove_rock_only_when_asked() {
-    let base = GenerateSettings { biomes: vec![Biome::Mountains], ..Default::default() };
+    let base = GenerateSettings {
+        biomes: vec![Biome::Mountains],
+        ..Default::default()
+    };
     let mut solid = VoxelGrid::new();
     generate(&mut solid, &region(), &base);
     let mut caves = VoxelGrid::new();
-    generate(&mut caves, &region(), &GenerateSettings { caves: true, ..base });
+    generate(
+        &mut caves,
+        &region(),
+        &GenerateSettings {
+            caves: true,
+            ..base
+        },
+    );
     assert!(caves.voxels().count() < solid.voxels().count());
 }
 
 #[test]
 fn no_biomes_does_nothing() {
     let mut grid = VoxelGrid::new();
-    generate(&mut grid, &region(), &GenerateSettings { biomes: vec![], ..Default::default() });
+    generate(
+        &mut grid,
+        &region(),
+        &GenerateSettings {
+            biomes: vec![],
+            ..Default::default()
+        },
+    );
     assert!(grid.is_empty());
 }

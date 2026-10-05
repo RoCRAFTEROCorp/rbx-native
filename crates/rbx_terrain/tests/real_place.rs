@@ -42,3 +42,28 @@ fn real_terrain_re_encodes_byte_for_byte() {
         colors
     );
 }
+
+#[test]
+#[ignore = "needs RBX_TERRAIN_FIXTURE, a place with terrain"]
+fn real_terrain_meshes_closed() {
+    let path = std::env::var("RBX_TERRAIN_FIXTURE").expect("RBX_TERRAIN_FIXTURE");
+    let dom = rbx_binary::deserialize(&std::fs::read(path).unwrap()).unwrap();
+    let grid = rbx_terrain::smooth_grid::decode(&terrain_blob(&dom, "SmoothGrid")).unwrap();
+    let started = std::time::Instant::now();
+    let keys = rbx_terrain::mesh::meshable_chunks(&grid);
+    let meshes: Vec<_> = keys
+        .iter()
+        .map(|k| rbx_terrain::mesh::mesh_chunk(&grid, *k))
+        .collect();
+    let triangles: usize = meshes
+        .iter()
+        .flat_map(|m| m.solids.iter())
+        .map(|(_, s)| s.indices.len() / 3)
+        .sum();
+    eprintln!(
+        "{} chunks, {triangles} triangles in {:?}",
+        keys.len(),
+        started.elapsed()
+    );
+    assert!(triangles > 1000);
+}

@@ -165,7 +165,10 @@ mod tests {
         let region = StudBox::from_center_size([8.0, 0.0, 2.0], [16.0, 128.0, 4.0]);
         import(&mut grid, &region, &ramp(4), None, Material::Grass);
         let column = |x: i32| -> f32 {
-            (-16..16).map(|y| grid.get([x, y, 0]).fraction()).sum::<f32>() * VOXEL_STUDS
+            (-16..16)
+                .map(|y| grid.get([x, y, 0]).fraction())
+                .sum::<f32>()
+                * VOXEL_STUDS
         };
         assert!(column(0) < 1.0, "black column is empty: {}", column(0));
         assert!((column(3) - 128.0).abs() < 1.0);
@@ -177,7 +180,11 @@ mod tests {
     fn colormap_sets_materials_and_air_skips() {
         let mut grid = VoxelGrid::new();
         let region = StudBox::from_center_size([4.0, 8.0, 2.0], [8.0, 16.0, 4.0]);
-        let flat = Heightmap { width: 1, height: 1, values: vec![0.5] };
+        let flat = Heightmap {
+            width: 1,
+            height: 1,
+            values: vec![0.5],
+        };
         let colors = Colormap {
             width: 2,
             height: 1,
@@ -196,7 +203,10 @@ mod tests {
         let heights: Vec<f32> = (0..16)
             .map(|x| (0..16).map(|y| grid.get([x, y, 0]).fraction()).sum())
             .collect();
-        assert!(heights.windows(2).all(|w| w[1] >= w[0] - 1e-3), "{heights:?}");
+        assert!(
+            heights.windows(2).all(|w| w[1] >= w[0] - 1e-3),
+            "{heights:?}"
+        );
         assert!(heights[0] < heights[15]);
     }
 }

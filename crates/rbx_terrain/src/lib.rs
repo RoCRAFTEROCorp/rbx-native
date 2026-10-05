@@ -12,6 +12,7 @@ mod grid;
 pub mod import;
 mod material;
 mod material_colors;
+pub mod mesh;
 mod noise;
 pub mod physics_grid;
 mod raycast;

@@ -30,7 +30,7 @@ pub fn raycast(
     let dir = direction.map(|d| d / length);
     // Start where the ray enters the grid's bounds, so a camera far away
     // does not walk thousands of empty voxels.
-    let (min, max) = grid.bounds()?;
+    let (min, max) = grid.chunk_bounds()?;
     let (enter, exit) = slab(
         origin,
         dir,
