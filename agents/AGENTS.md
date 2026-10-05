@@ -133,9 +133,13 @@ Roblox:
   documentation — that's a deliberate, considered choice, not an oversight;
   don't casually add a second such derivation without the same care (reading
   the actual primary source, documenting what's verified vs. approximated).
-- Roblox's proprietary CSG mesh format (`MeshData`/CSGMDL) is intentionally
-  not decoded — see `ROADMAP.md` for the reasoning. Don't attempt to add a
-  decoder for it as a drive-by fix.
+- Roblox's proprietary CSG mesh format (`MeshData`/CSGMDL) is decoded
+  (versions 2 and 5) in `rbx_viewer`'s `scene::union::baked`, and only for
+  a union with no operation tree, at the maintainer's request. Changes to it
+  need the same care as the shader derivation above: work from real blobs,
+  check them against what the union's own tree carves (the ignored
+  real-place test does this), and say in the module doc what is verified
+  and what is not.
 - If you're not sure whether something you're about to add is safe to ship,
   ask rather than guess.
 

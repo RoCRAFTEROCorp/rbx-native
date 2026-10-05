@@ -4,13 +4,14 @@
 //! own `ChildData2` (`ChildData` in older files) where it carries them, as
 //! every union Studio writes today does, or else from the
 //! `PartOperationAsset` its legacy `AssetId` names. Roblox's own baked
-//! `MeshData`/`MeshData2` is never read.
+//! `MeshData`/`MeshData2` is read only where neither holds a tree (`baked`).
 //!
 //! Two-phase like `filemesh`: [`plan`] walks the DOM for every operation, and
 //! [`resolve`] joins that plan against downloaded asset bytes once they exist
 //! (an inline tree is its own bytes). No network access happens here — see
 //! `crate::assets` for downloading.
 
+mod baked;
 mod csg;
 mod legacy;
 mod patch;
@@ -138,7 +139,7 @@ pub(crate) fn plan(dom: &WeakDom, database: &ReflectionDatabase, materials: &mut
         if entry.inline && !plan.inline.contains_key(&entry.asset) {
             if let Some(raw) = dom
                 .get(referent)
-                .and_then(|i| tree::child_data(i.properties()))
+                .and_then(|i| inline_document(i.properties()))
             {
                 plan.inline.insert(entry.asset.clone(), raw.to_vec());
             }
@@ -158,6 +159,22 @@ fn inline_key(raw: &[u8]) -> AssetRef {
     let mut hasher = std::hash::DefaultHasher::new();
     raw.hash(&mut hasher);
     AssetRef::Thumb(format!("csg-inline/{:016x}-{}", hasher.finish(), raw.len()))
+}
+
+/// The bytes a union carries for itself: its operation tree, or — only
+/// when it has neither a tree nor an `AssetId` to find one behind — the
+/// mesh Studio baked for it.
+fn inline_document(properties: &std::collections::BTreeMap<String, Variant>) -> Option<&[u8]> {
+    tree::child_data(properties).or_else(|| {
+        let linked = properties
+            .get("AssetId")
+            .and_then(asset_uri)
+            .is_some_and(|uri| !uri.is_empty());
+        if linked {
+            return None;
+        }
+        baked::mesh_data(properties)
+    })
 }
 
 /// Whether `referent` is a union with no geometry anywhere: no inline tree,
@@ -232,12 +249,15 @@ fn frame(
     }
     let properties = instance.properties();
 
-    let (asset, inline) = match tree::child_data(properties) {
-        Some(raw) => (inline_key(raw), true),
-        None => match AssetRef::parse(asset_uri(properties.get("AssetId")?)?).ok()? {
-            AssetRef::Empty => return None,
-            asset => (asset, false),
-        },
+    let linked = properties
+        .get("AssetId")
+        .and_then(asset_uri)
+        .and_then(|uri| AssetRef::parse(uri).ok())
+        .filter(|asset| *asset != AssetRef::Empty);
+    let (asset, inline) = match (inline_document(properties), linked) {
+        (Some(raw), _) => (inline_key(raw), true),
+        (None, Some(asset)) => (asset, false),
+        (None, None) => return None,
     };
     let Some(Variant::CFrame(cframe)) = properties.get("CFrame") else {
         return None;
@@ -347,6 +367,9 @@ impl Merged {
 pub(super) struct Evaluated {
     tree: tree::Node,
     mesh: Option<Arc<rbx_mesh::Mesh>>,
+    /// The colour a mesh decoded from `MeshData` was mostly baked in; `None`
+    /// for one carved from its tree, whose leaves say instead.
+    baked_color: Option<[u8; 3]>,
 }
 
 /// Every asset's [`Evaluated`] so far — `None` where its bytes did not
@@ -405,7 +428,7 @@ pub(crate) fn resolve(
         let Some(Some(evaluated)) = evaluated.get(&entry.asset) else {
             continue;
         };
-        let Evaluated { tree, mesh } = evaluated.as_ref();
+        let Evaluated { tree, mesh, .. } = evaluated.as_ref();
         resolution.hidden.insert(entry.referent);
 
         if mesh.is_none() {
@@ -445,7 +468,15 @@ fn evaluate(
     bake: Option<Vec3>,
 ) -> Option<Option<Evaluated>> {
     let Some(parsed) = legacy::parse_as_baked(bytes, database, assets, bake) else {
-        return Some(None);
+        // No tree to carve: Studio's own bake is all there is.
+        return Some(baked::of_bytes(bytes).map(|baked| Evaluated {
+            tree: tree::Node::Operation {
+                negate: false,
+                children: Vec::new(),
+            },
+            mesh: Some(Arc::new(baked.mesh)),
+            baked_color: baked.color,
+        }));
     };
     if !parsed.missing.is_empty() {
         return None;
@@ -454,7 +485,11 @@ fn evaluate(
     let mesh = csg::evaluate(&tree, bake)
         .ok()
         .map(|solid| Arc::new(solid.to_mesh()));
-    Some(Some(Evaluated { tree, mesh }))
+    Some(Some(Evaluated {
+        tree,
+        mesh,
+        baked_color: None,
+    }))
 }
 
 /// The nested union assets that the trees in `assets`, and the inline trees

@@ -397,9 +397,27 @@ Roblox's own engine.
   against the scene instead (`Hide Selection Box Behind Parts`, off by
   default and persisted the same way `Orthographic` is).
 - [x] Legacy union/negate parts reconstruct the real constituent
-  geometry via a from-scratch CSG boolean. The one piece not covered is
-  `MeshData`/CSGMDL, which has its own bullet below and is deliberately
-  not attempted.
+  geometry via a from-scratch CSG boolean. Where no tree survives, the
+  union's own baked `MeshData` is drawn instead (next bullet).
+- [x] **Export and draw unions baked only as `MeshData`.** A union whose
+  only geometry is a baked `MeshData`/CSGMDL blob — no `ChildData` inline
+  or behind its `AssetId` (asset 305197512, 7 instances in marked.rbxl) —
+  now draws and exports as that mesh instead of its box
+  (`scene::union::baked`). Both versions found in real files are read:
+  version 2 (2015-era assets such as this one), a fully XOR-scrambled
+  vertex and index array, and version 5, what Studio writes now. Version
+  5 scrambles only its header and holds counted per-vertex arrays, a
+  delta-coded index stream and a LOD table. Nothing in Roblox's docs
+  describes either, so the module doc says what was read off real blobs
+  and what is left unread. All 71 baked meshes in the test places decode
+  to closed meshes spanning their `InitialSize` (57 version 2, 14
+  version 5). Each of the 63 whose union also carries its tree holds the
+  same volume as the boolean carved from that tree: all 14 version 5
+  exactly, version 2 within 1.3%. It is read only where no tree exists,
+  so every union with one still carves through the boolean above. A union
+  carrying `MeshData` inline with no tree and no `AssetId` is drawn the
+  same way. Every union in the test places now resolves: in marked.rbxl,
+  467 carve, the 7 decode and 13 are empty.
 - [x] **Give each of a failed-CSG union's recovered fallback pieces its
   own identity.** Every piece now carries a `scene::PartId` of its own —
   the union's referent plus its position in the operation tree's additive
@@ -1947,13 +1965,6 @@ Roblox's own engine.
   above existing first regardless of which direction it takes.
 
 ### Renderer
-- [ ] 📋 **Export and draw unions baked only as `MeshData`.** A union
-  whose only geometry is a baked `MeshData`/CSGMDL blob — no `ChildData`
-  inline or behind its `AssetId` (asset 305197512, 7 instances in
-  marked.rbxl) — still draws and exports as its box. CSGMDL is not
-  decoded (see CSG below), and Roblox's 3D thumbnail endpoint
-  (`thumbnails.roblox.com/v1/assets-thumbnail-3d`) needs an API key with
-  `thumbnail:read`.
 #### Properties panel — remaining type editors
 - [ ] 📋 **"Freeze"/"Apply" a `MeshPart`'s rotation** — zero out
   `Orientation` while leaving the object's *visual* placement unchanged,
@@ -2039,10 +2050,19 @@ against `Roblox/creator-docs` rather than assumed:
   [Explicitly impossible](#explicitly-impossible-without-robloxs-engine)).
 
 #### CSG
-- [ ] 📋 `MeshData`/CSGMDL (Roblox's own baked union result format) — see
-  [Explicitly impossible](#explicitly-impossible-without-robloxs-engine),
-  deliberately not attempted; the from-scratch boolean above is the
-  intended long-term answer, not a stopgap.
+- [ ] 📋 **`MeshData`/CSGMDL version 4.** `scene::union::baked` reads
+  versions 2 and 5, the only ones in any file available here. A version 4
+  also exists: community research
+  ([devforum 3554504](https://devforum.roblox.com/t/research-on-csg/3554504),
+  which calls it "CSGv3" after its `CSGMDL\x04` header) reports that
+  Studio builds from 2022 on wrote it. The same research describes it as
+  version 2's mesh layout followed by values it could not identify.
+  Version 5, which recent places hold, came after it. No version 4 blob
+  is to hand to check the layout or its scrambling against, so a union
+  baked in it with no tree keeps its box; its error names the version.
+  Needs a real version 4 blob, checked the way the others are, against
+  what the union's own tree carves. No other version (1, 3, 6+) has been
+  seen or reported.
 
 #### Terrain
 - [ ] 📋 Voxel terrain storage (`Terrain.SmoothGrid`) — no work started.
@@ -2691,10 +2711,12 @@ and no amount of reverse engineering changes that:
   Roblox's own UI engine (`GuiBase2d`/`LayerCollector`); reproducing it
   means reimplementing that whole subsystem, which is out of scope. A
   headless, DataModel-only plugin subset is reachable instead (see above).
-- **Bit-exact CSG results** (`MeshData`/CSGMDL, `PhysicalConfigData`) — an
-  undocumented, version-unstable format the community's own reference
-  researchers haven't fully decoded either; not worth chasing when a real
-  from-scratch boolean already exists as the actual answer.
+- **Bit-exact CSG results** (`PhysicalConfigData`, and carving a tree
+  exactly as Roblox's own boolean does) — undocumented and
+  version-unstable; not worth chasing when a real from-scratch boolean
+  already exists. Roblox's baked `MeshData` itself is read where a union
+  has no tree (versions 2 and 5, see "What's been implemented"; version 4
+  is its own planned item under CSG).
 - **Physics simulation and anti-cheat** — proprietary physics engine, no
   real server authority possible from rbx-native. That covers Roblox's new
   Server Authority model too: client prediction, rollback and resimulation

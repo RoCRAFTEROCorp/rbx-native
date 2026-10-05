@@ -76,6 +76,22 @@ fn survey(path: &str, database: &ReflectionDatabase, cache: &AssetCache) {
             }
         };
         let Some(parsed) = parsed else {
+            let kind = if inline { "inline" } else { "asset" };
+            if let Some(baked) = super::baked::of_bytes(&raw) {
+                *tally
+                    .entry(format!("baked mesh decoded ({kind})"))
+                    .or_default() += 1;
+                off.push(format!(
+                    "baked {} {:?}: {} triangles, {:?}..{:?} vs InitialSize {:?}",
+                    instance.name(),
+                    asset,
+                    baked.mesh.triangle_count(),
+                    baked.mesh.bounds.min,
+                    baked.mesh.bounds.max,
+                    initial.map(|v| v.to_array())
+                ));
+                continue;
+            }
             *tally.entry("tree did not parse".into()).or_default() += 1;
             println!(
                 "  unparsed: {} {:?} {} bytes, starts {:?}",

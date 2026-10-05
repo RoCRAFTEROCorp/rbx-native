@@ -4,8 +4,9 @@
 //! `UnionOperation`/`NegateOperation` found while walking it stores ITS OWN
 //! children the same way, one freshly-deserialized document per level, down
 //! to the original `BasePart`s a builder combined before Studio baked the CSG
-//! result. `MeshData` (the baked triangle mesh) is never read: it is opaque
-//! and superseded by the geometry `super::csg` rebuilds from the tree here.
+//! result. `MeshData` (the baked triangle mesh) is not read here: the
+//! geometry `super::csg` rebuilds from the tree supersedes it, and
+//! `super::baked` reads it only for a union whose tree is gone.
 //!
 //! Empirically (see the `#[ignore]`d download test), a node's own `CFrame`
 //! property is not useful on its own when its parent is a `NegateOperation`:

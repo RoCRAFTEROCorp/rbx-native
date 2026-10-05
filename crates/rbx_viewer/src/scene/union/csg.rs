@@ -258,7 +258,7 @@ impl Solid {
 /// triplanar "biggest normal axis" rule. Picking anything else risks
 /// projecting a near edge-on facet along its own thin axis, stretching the
 /// texture into a sliver.
-fn dominant_axes(normal: [f32; 3]) -> (usize, usize) {
+pub(super) fn dominant_axes(normal: [f32; 3]) -> (usize, usize) {
     let dominant = (0..3)
         .max_by(|&a, &b| normal[a].abs().total_cmp(&normal[b].abs()))
         .expect("normal has 3 components");
