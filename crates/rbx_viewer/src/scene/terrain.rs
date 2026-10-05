@@ -14,7 +14,7 @@ use rbx_reflection::ReflectionDatabase;
 use rbx_terrain::{ChunkKey, Material, MaterialColors, VoxelGrid, VOXEL_STUDS};
 
 use super::material::{Catalog, Kind, Slot};
-use super::props::{float_or, linear_color_or, Properties};
+use super::props::{bool_or, float_or, linear_color_or, vector3_or, Properties};
 use super::Bounds;
 
 pub(crate) const TERRAIN_CLASS: &str = "Terrain";
@@ -30,6 +30,16 @@ pub(crate) struct Water {
     pub(crate) wave_speed: f32,
 }
 
+/// `Terrain.Decoration`'s animated grass, and the wind it sways in.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct Grass {
+    pub(crate) enabled: bool,
+    /// `GrassLength`, 0.1 to 1.
+    pub(crate) length: f32,
+    /// `Workspace.GlobalWind`, in studs per second.
+    pub(crate) wind: Vec3,
+}
+
 pub(crate) struct Terrain {
     pub(crate) referent: Ref,
     /// The `SmoothGrid` bytes `grid` was decoded from, so a write that left
@@ -38,6 +48,7 @@ pub(crate) struct Terrain {
     pub(crate) grid: VoxelGrid,
     pub(crate) colors: MaterialColors,
     pub(crate) water: Water,
+    pub(crate) grass: Grass,
     /// The texture-array slot each solid material present draws with.
     slots: HashMap<Material, Slot>,
     /// Why the voxels could not be read, when they could not.
@@ -87,6 +98,7 @@ impl Terrain {
             grid,
             colors: read_colors(properties),
             water: read_water(properties),
+            grass: read_grass(properties, read_wind(dom)),
             slots: HashMap::new(),
             error,
         };
@@ -99,6 +111,7 @@ impl Terrain {
     pub(crate) fn resync(&mut self, properties: &Properties) -> BTreeSet<ChunkKey> {
         self.colors = read_colors(properties);
         self.water = read_water(properties);
+        self.grass = read_grass(properties, self.grass.wind);
         let bytes = blob(properties, "SmoothGrid").unwrap_or_default();
         if bytes == self.source.as_slice() {
             return BTreeSet::new();
@@ -193,6 +206,27 @@ fn read_colors(properties: &Properties) -> MaterialColors {
         .unwrap_or_default()
 }
 
+fn read_grass(properties: &Properties, wind: Vec3) -> Grass {
+    Grass {
+        // What a fresh place stores; a file without them predates grass.
+        enabled: bool_or(properties, "Decoration", true),
+        length: float_or(properties, "GrassLength", 0.7).clamp(0.1, 1.0),
+        wind,
+    }
+}
+
+/// `GlobalWind` lives on `Workspace`, which an edit leaves alone (see
+/// `changes::Role::of`): re-reading the terrain walks its voxels, too much
+/// for every workspace write, so a wind edit lands with the next terrain
+/// edit or reload.
+pub(crate) fn read_wind(dom: &WeakDom) -> Vec3 {
+    find(dom)
+        .and_then(|terrain| dom.get(dom.parent(terrain)?))
+        .map_or(Vec3::ZERO, |workspace| {
+            vector3_or(workspace.properties(), "GlobalWind", Vec3::ZERO)
+        })
+}
+
 fn read_water(properties: &Properties) -> Water {
     Water {
         // Roblox's defaults, as a fresh place stores them.
@@ -222,6 +256,7 @@ impl super::Scene {
             (Some(referent), Some(terrain)) if terrain.referent == referent => {
                 let properties = dom.get(referent).map(|i| i.properties());
                 let changed = properties.map(|p| terrain.resync(p)).unwrap_or_default();
+                terrain.grass.wind = read_wind(dom);
                 terrain.claim_slots(&mut self.materials, database);
                 changed
             }

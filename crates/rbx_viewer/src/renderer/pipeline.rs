@@ -46,6 +46,12 @@ pub(super) const TERRAIN_SHADER: &str = concat!(
     include_str!("material.wgsl"),
     include_str!("terrain.wgsl")
 );
+pub(super) const GRASS_SHADER: &str = concat!(
+    include_str!("lights.wgsl"),
+    include_str!("lighting.wgsl"),
+    include_str!("atmosphere.wgsl"),
+    include_str!("grass.wgsl")
+);
 pub(super) const DECAL_SHADER: &str = concat!(
     include_str!("lights.wgsl"),
     include_str!("lighting.wgsl"),

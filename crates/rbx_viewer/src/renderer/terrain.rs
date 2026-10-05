@@ -8,8 +8,9 @@
 //! studs, which makes the material packs' projection continuous from one
 //! chunk to the next. Water draws through the untextured file-mesh pipeline,
 //! with one instance carrying the place's water look, in the translucent
-//! pass.
+//! pass. Grass grows on top of the solid surface, see [`grass`].
 
+mod grass;
 mod pipeline;
 
 use std::collections::{BTreeSet, HashMap};
@@ -23,6 +24,7 @@ use super::instance::InstanceRaw;
 use super::mesh::Vertex;
 use super::pipeline::{Bindings, Target};
 use super::shadow::casters::MeshGeometry;
+use crate::quality::QualityProfile;
 use crate::scene::terrain::Terrain;
 use crate::scene::{Catalog, Slot};
 use pipeline::{MaterialRaw, TerrainVertex, MATERIALS};
@@ -51,6 +53,8 @@ struct ChunkGpu {
 pub(super) struct TerrainGpu {
     chunks: HashMap<ChunkKey, ChunkGpu>,
     pipeline: wgpu::RenderPipeline,
+    table_layout: wgpu::BindGroupLayout,
+    pub(super) grass: grass::Grass,
     /// Every material's tint and slot, one `MaterialRaw` per slot.
     table: wgpu::Buffer,
     table_group: wgpu::BindGroup,
@@ -76,8 +80,7 @@ impl TerrainGpu {
             &wgpu::BindGroupLayout,
             &wgpu::BindGroupLayout,
         ),
-        terrain: Option<&Terrain>,
-        catalog: &Catalog,
+        (terrain, catalog, quality): (Option<&Terrain>, &Catalog, &QualityProfile),
     ) -> Self {
         let table_layout = pipeline::table_layout(device);
         let table = device.create_buffer(&wgpu::BufferDescriptor {
@@ -93,6 +96,7 @@ impl TerrainGpu {
                 target,
                 (frame_layout, material_layout, &table_layout),
             ),
+            grass: grass::Grass::new(device, target, frame_layout),
             table_group: device.create_bind_group(&wgpu::BindGroupDescriptor {
                 label: Some("rbxview terrain materials"),
                 layout: &table_layout,
@@ -115,7 +119,9 @@ impl TerrainGpu {
                 wgpu::BufferUsages::VERTEX,
             ),
             has_water: false,
+            table_layout,
         };
+        gpu.grass.set_quality(quality);
         gpu.replace(device, queue, terrain, catalog);
         gpu
     }
@@ -129,12 +135,28 @@ impl TerrainGpu {
         catalog: &Catalog,
     ) {
         self.chunks.clear();
+        self.grass.clear();
         self.has_water = false;
         if let Some(terrain) = terrain {
             let keys = meshable_chunks(&terrain.grid);
             self.remesh(device, terrain, &keys);
             self.write_instances(queue, terrain, catalog);
         }
+    }
+
+    /// Rebuilds the pipelines for a new sample count.
+    pub(super) fn set_target(
+        &mut self,
+        device: &wgpu::Device,
+        target: Target,
+        (frame_layout, material_layout): (&wgpu::BindGroupLayout, &wgpu::BindGroupLayout),
+    ) {
+        self.pipeline = pipeline::build(
+            device,
+            target,
+            (frame_layout, material_layout, &self.table_layout),
+        );
+        self.grass.set_target(device, target, frame_layout);
     }
 
     pub(super) fn is_empty(&self) -> bool {
@@ -156,7 +178,8 @@ impl TerrainGpu {
     ) {
         let keys: Vec<ChunkKey> = keys.iter().copied().collect();
         let meshes = mesh_parallel(terrain, &keys);
-        for (key, mesh) in keys.into_iter().zip(meshes) {
+        for (key, (mesh, patches)) in keys.into_iter().zip(meshes) {
+            self.grass.set_patches(key, patches);
             if mesh.is_empty() {
                 self.chunks.remove(&key);
             } else {
@@ -166,10 +189,10 @@ impl TerrainGpu {
         self.has_water = self.chunks.values().any(|chunk| chunk.water.is_some());
     }
 
-    /// Rewrites every material's tint and slot, and the water's look. Cheap:
-    /// 24 small records.
+    /// Rewrites every material's tint and slot, the water's look and the
+    /// grass's. Cheap: a few dozen small records.
     pub(super) fn write_instances(
-        &self,
+        &mut self,
         queue: &wgpu::Queue,
         terrain: &Terrain,
         catalog: &Catalog,
@@ -179,6 +202,7 @@ impl TerrainGpu {
             MaterialRaw::new(terrain.tint(material), terrain.slot(catalog, material))
         });
         queue.write_buffer(&self.table, 0, bytemuck::cast_slice(&table));
+        self.grass.set_look(terrain);
         queue.write_buffer(
             &self.water_instance,
             0,
@@ -265,14 +289,22 @@ fn water_slot(slot: Slot, size: f32, speed: f32) -> Slot {
     }
 }
 
-fn mesh_parallel(terrain: &Terrain, keys: &[ChunkKey]) -> Vec<ChunkMesh> {
+/// A chunk's meshes and the triangles its grass grows on, which need the
+/// voxels above them (for water) and so are picked while the grid is here.
+fn mesh_one(terrain: &Terrain, key: ChunkKey) -> (ChunkMesh, Vec<grass::Patch>) {
+    let mesh = mesh_chunk(&terrain.grid, key);
+    let patches = grass::patches(&mesh, &terrain.grid);
+    (mesh, patches)
+}
+
+fn mesh_parallel(terrain: &Terrain, keys: &[ChunkKey]) -> Vec<(ChunkMesh, Vec<grass::Patch>)> {
     let threads = std::thread::available_parallelism()
         .map_or(1, |n| n.get())
         .min(keys.len().max(1));
     if threads <= 1 || keys.len() < 4 {
         return keys
             .iter()
-            .map(|key| mesh_chunk(&terrain.grid, *key))
+            .map(|key| mesh_one(terrain, *key))
             .collect();
     }
     let per = keys.len().div_ceil(threads);
@@ -282,7 +314,7 @@ fn mesh_parallel(terrain: &Terrain, keys: &[ChunkKey]) -> Vec<ChunkMesh> {
             .map(|part| {
                 scope.spawn(move || {
                     part.iter()
-                        .map(|key| mesh_chunk(&terrain.grid, *key))
+                        .map(|key| mesh_one(terrain, *key))
                         .collect::<Vec<_>>()
                 })
             })
