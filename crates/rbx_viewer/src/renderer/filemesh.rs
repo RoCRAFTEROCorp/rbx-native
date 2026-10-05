@@ -287,7 +287,7 @@ impl FileMeshes {
     }
 
     /// The untextured pipeline, opaque or blended, for geometry outside these
-    /// batches that shares its vertex format (terrain's chunk meshes).
+    /// batches that shares its vertex format (terrain's water).
     pub(super) fn plain_pipeline(&self, blended: bool) -> &wgpu::RenderPipeline {
         let set = if blended {
             &self.blended_pipelines

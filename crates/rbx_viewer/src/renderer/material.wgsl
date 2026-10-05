@@ -550,6 +550,13 @@ fn material_shade(input: MaterialInput) -> vec3<f32> {
 
 /// [`material_shade`] keeping the surface normal it shaded with.
 fn material_shade_with_normal(input: MaterialInput) -> Shaded {
+    let mapped = material_mapped(input);
+    return Shaded(mapped_shade(mapped), mapped.normal);
+}
+
+/// The pack projected and sampled, not yet shaded: what terrain blends
+/// several of before shading once.
+fn material_mapped(input: MaterialInput) -> Mapped {
     let weights = triplanar_weights(input.object_normal);
     let max_weight = max(weights.x, max(weights.y, weights.z));
 
@@ -557,9 +564,7 @@ fn material_shade_with_normal(input: MaterialInput) -> Shaded {
     // single-sample path: same axis, same UV, same cost and output as before
     // triplanar blending existed.
     if max_weight >= TRIPLANAR_FAST_PATH {
-        let axis = dominant_axis(input.object_normal);
-        let mapped = sample_axis(axis, input);
-        return Shaded(mapped_shade(mapped), mapped.normal);
+        return sample_axis(dominant_axis(input.object_normal), input);
     }
 
     // A facet tilted between axes (e.g. a CSG-carved rock): blend whichever of
@@ -604,6 +609,5 @@ fn material_shade_with_normal(input: MaterialInput) -> Shaded {
         mapped.roughness += leg.roughness * weights.z;
     }
     mapped.normal = normalize(mapped.normal);
-
-    return Shaded(mapped_shade(mapped), mapped.normal);
+    return mapped;
 }

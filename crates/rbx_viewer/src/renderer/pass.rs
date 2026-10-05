@@ -87,11 +87,10 @@ impl Renderer {
         // pipelines (untextured, textured), rebinding the frame itself.
         self.filemesh.draw_opaque(&mut pass, bindings);
         if !self.terrain.is_empty() {
-            pass.set_pipeline(self.filemesh.plain_pipeline(false));
-            pass.set_bind_group(0, bindings.frame, &[]);
-            pass.set_bind_group(1, bindings.materials, &[]);
             self.terrain
-                .draw_opaque(&mut pass, |center, radius| cull.visible(center, radius));
+                .draw_opaque(&mut pass, bindings, |center, radius| {
+                    cull.visible(center, radius)
+                });
         }
 
         if decals {

@@ -84,8 +84,8 @@ impl Renderer {
             );
         }
         self.shadows.rebuild(device, scene);
-        self.terrain =
-            super::terrain::TerrainGpu::new(device, queue, scene.terrain(), scene.materials());
+        self.terrain
+            .replace(device, queue, scene.terrain(), scene.materials());
 
         // Every pass with a camera bind group of its own is built (or rebound
         // below) against the buffers and views as they stand from here on.

@@ -339,7 +339,13 @@ impl Renderer {
                 scene.resolved_file_meshes(),
                 quality,
             ),
-            terrain: terrain::TerrainGpu::new(device, queue, scene.terrain(), scene.materials()),
+            terrain: terrain::TerrainGpu::new(
+                device,
+                queue,
+                (target, &layout, &material_layout),
+                scene.terrain(),
+                scene.materials(),
+            ),
             textured: textured::Textured::new(
                 device,
                 queue,
@@ -617,7 +623,7 @@ impl Renderer {
                 }
                 self.terrain.write_instances(queue, terrain, catalog);
             }
-            None => self.terrain = terrain::TerrainGpu::new(device, queue, None, catalog),
+            None => self.terrain.replace(device, queue, None, catalog),
         }
         self.refracting = refracting;
     }
