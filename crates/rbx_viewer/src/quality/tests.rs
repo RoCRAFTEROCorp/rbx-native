@@ -72,6 +72,8 @@ fn every_knob_only_ever_improves_with_the_level() {
         assert!(low.render_distance <= high.render_distance);
         assert!(low.msaa_samples <= high.msaa_samples);
         assert!(!low.decals || high.decals);
+        assert!(low.grass_distance <= high.grass_distance);
+        assert!(low.grass_density <= high.grass_density);
         assert!(!low.water_waves || high.water_waves);
         assert!(!low.water_reflections || high.water_reflections);
     }

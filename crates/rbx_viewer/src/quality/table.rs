@@ -16,6 +16,11 @@ use super::{QualityLevel, QualityProfile};
 ///
 /// Eight rows rather than twenty-one: every knob below changes at one of these
 /// boundaries, and a row per level would only invite them to drift apart.
+///
+/// `grass_distance` and `grass_density` are this renderer's own guess:
+/// Roblox publishes nothing on how its grass scales with the level, so the
+/// two bottom bands (no shadows either, the cheapest tier) draw none and the
+/// reach grows with the rest of the table from there.
 const BANDS: [(u8, QualityProfile); 8] = [
     // 1-2: roughly Compatibility — no shadows, no post effects at all.
     (
@@ -39,6 +44,8 @@ const BANDS: [(u8, QualityProfile); 8] = [
             trails: true,
             gui: true,
             msaa_samples: 1,
+            grass_distance: 0.0,
+            grass_density: 0.0,
             force_field_intersections: false,
             water_waves: false,
             water_reflections: false,
@@ -66,6 +73,8 @@ const BANDS: [(u8, QualityProfile); 8] = [
             trails: true,
             gui: true,
             msaa_samples: 1,
+            grass_distance: 0.0,
+            grass_density: 0.0,
             force_field_intersections: false,
             water_waves: false,
             water_reflections: false,
@@ -93,6 +102,8 @@ const BANDS: [(u8, QualityProfile); 8] = [
             trails: true,
             gui: true,
             msaa_samples: 1,
+            grass_distance: 60.0,
+            grass_density: 0.4,
             force_field_intersections: false,
             water_waves: false,
             water_reflections: false,
@@ -119,6 +130,8 @@ const BANDS: [(u8, QualityProfile); 8] = [
             trails: true,
             gui: true,
             msaa_samples: 1,
+            grass_distance: 80.0,
+            grass_density: 0.55,
             force_field_intersections: false,
             water_waves: true,
             water_reflections: false,
@@ -145,6 +158,8 @@ const BANDS: [(u8, QualityProfile); 8] = [
             trails: true,
             gui: true,
             msaa_samples: 1,
+            grass_distance: 100.0,
+            grass_density: 0.7,
             force_field_intersections: false,
             water_waves: true,
             water_reflections: false,
@@ -171,6 +186,8 @@ const BANDS: [(u8, QualityProfile); 8] = [
             trails: true,
             gui: true,
             msaa_samples: 1,
+            grass_distance: 120.0,
+            grass_density: 0.8,
             force_field_intersections: false,
             water_waves: true,
             water_reflections: false,
@@ -198,6 +215,8 @@ const BANDS: [(u8, QualityProfile); 8] = [
             trails: true,
             gui: true,
             msaa_samples: 1,
+            grass_distance: 160.0,
+            grass_density: 1.0,
             force_field_intersections: false,
             water_waves: true,
             water_reflections: true,
@@ -229,6 +248,8 @@ const BANDS: [(u8, QualityProfile); 8] = [
             trails: true,
             gui: true,
             msaa_samples: 4,
+            grass_distance: 220.0,
+            grass_density: 1.0,
             force_field_intersections: true,
             water_waves: true,
             water_reflections: true,

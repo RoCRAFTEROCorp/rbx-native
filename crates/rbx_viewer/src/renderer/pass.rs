@@ -91,6 +91,11 @@ impl Renderer {
                 .draw_opaque(&mut pass, bindings, |center, radius| {
                     cull.visible(center, radius)
                 });
+            self.terrain
+                .grass
+                .draw(&mut pass, bindings.frame, |center, radius| {
+                    cull.visible(center, radius)
+                });
         }
 
         if decals {

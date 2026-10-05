@@ -343,8 +343,7 @@ impl Renderer {
                 device,
                 queue,
                 (target, &layout, &material_layout),
-                scene.terrain(),
-                scene.materials(),
+                (scene.terrain(), scene.materials(), quality),
             ),
             textured: textured::Textured::new(
                 device,
@@ -595,6 +594,7 @@ impl Renderer {
     pub(crate) fn animating(&self) -> bool {
         self.translucent.has_force_field()
             || (self.terrain.has_water() && self.quality.water_waves)
+            || self.terrain.grass.is_drawn()
             || self.beams.is_live()
             || self.trails.is_live()
             || self.particles.is_live()
@@ -745,6 +745,7 @@ impl Renderer {
         // render pass that reads those buffers.
         self.translucent.prepare(queue, eye, &cull);
         self.filemesh.prepare(queue, eye);
+        self.terrain.grass.prepare(device, queue, eye);
         // A `SelectionSphere`'s outline faces the eye, so its vertices are
         // the camera's to decide — and a buffer written here cannot be
         // written inside the pass that reads it.
