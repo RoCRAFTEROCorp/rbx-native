@@ -55,11 +55,7 @@ fn real_terrain_meshes_closed() {
         .iter()
         .map(|k| rbx_terrain::mesh::mesh_chunk(&grid, *k))
         .collect();
-    let triangles: usize = meshes
-        .iter()
-        .flat_map(|m| m.solids.iter())
-        .map(|(_, s)| s.indices.len() / 3)
-        .sum();
+    let triangles: usize = meshes.iter().map(|m| m.solid.indices.len() / 3).sum();
     eprintln!(
         "{} chunks, {triangles} triangles in {:?}",
         keys.len(),

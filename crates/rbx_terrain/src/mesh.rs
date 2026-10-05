@@ -8,13 +8,18 @@
 //! cell, which rounds corners the way smooth terrain does, and its normal is
 //! the fill gradient, so shading is smooth too.
 //!
-//! A quad takes the material of the solid voxel it bounds; materials are
-//! split into separate meshes because the renderer picks textures per draw.
-//! Water gets its own mesh: the surface of water and solid together, kept
-//! only where water (not solid) meets air.
+//! The solid surface is one mesh whatever it is made of: each vertex carries
+//! weights for the materials around it (see [`Blend`]), so the renderer can
+//! blend across a border rather than step along the voxel grid. Water gets
+//! its own mesh: the surface of water and solid together, kept only where
+//! water (not solid) meets air.
+
+mod blend;
 
 use crate::grid::{index_in_chunk, ChunkKey, CHUNK};
 use crate::{Cell, Material, VoxelGrid, VOXEL_STUDS};
+use blend::Shares;
+pub use blend::{Blend, BLEND};
 
 /// Triangles in world studs, indices into `positions`.
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -32,14 +37,15 @@ impl Surface {
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct ChunkMesh {
-    /// One surface per solid material present, in material slot order.
-    pub solids: Vec<(Material, Surface)>,
+    pub solid: Surface,
+    /// `solid`'s material weights, one per vertex.
+    pub blends: Vec<Blend>,
     pub water: Surface,
 }
 
 impl ChunkMesh {
     pub fn is_empty(&self) -> bool {
-        self.solids.is_empty() && self.water.is_empty()
+        self.solid.is_empty() && self.water.is_empty()
     }
 }
 
@@ -125,7 +131,7 @@ pub fn mesh_chunk(grid: &VoxelGrid, key: ChunkKey) -> ChunkMesh {
         return ChunkMesh::default();
     }
     let origin = key.origin();
-    let mut solids: Vec<(Material, Builder)> = Vec::new();
+    let mut solid = Builder::default();
     let mut solid_net = Net::new(&block, Field::Solid, origin);
     let mut water = Builder::default();
     let mut wet_net = Net::new(&block, Field::Wet, origin);
@@ -140,16 +146,7 @@ pub fn mesh_chunk(grid: &VoxelGrid, key: ChunkKey) -> ChunkMesh {
                     // Solid surface.
                     let (da, db) = (density(a, Field::Solid), density(b, Field::Solid));
                     if (da >= ISO) != (db >= ISO) {
-                        let inside_first = da >= ISO;
-                        let material = if inside_first { a.material } else { b.material };
-                        let slot = match solids.iter().position(|(m, _)| *m == material) {
-                            Some(slot) => slot,
-                            None => {
-                                solids.push((material, Builder::default()));
-                                solids.len() - 1
-                            }
-                        };
-                        solid_net.quad(&mut solids[slot].1, v, axis, inside_first);
+                        solid_net.quad(&mut solid, v, axis, da >= ISO);
                     }
                     // Water surface: the wet field crosses, and the wet side
                     // is mostly water rather than solid.
@@ -164,9 +161,9 @@ pub fn mesh_chunk(grid: &VoxelGrid, key: ChunkKey) -> ChunkMesh {
             }
         }
     }
-    solids.sort_by_key(|(m, _)| *m);
     ChunkMesh {
-        solids: solids.into_iter().map(|(m, b)| (m, b.surface)).collect(),
+        solid: solid.surface,
+        blends: solid.blends,
         water: water.surface,
     }
 }
@@ -196,8 +193,21 @@ pub fn meshable_chunks(grid: &VoxelGrid) -> std::collections::BTreeSet<ChunkKey>
 #[derive(Default)]
 struct Builder {
     surface: Surface,
-    /// Cell → vertex index in this builder, so quads share vertices.
-    vertices: std::collections::HashMap<[i32; 3], u32>,
+    /// Left empty by the water pass.
+    blends: Vec<Blend>,
+    /// (Cell, the quad's blend materials) → vertex index in this builder, so
+    /// quads share vertices wherever they agree on what to blend.
+    vertices: std::collections::HashMap<([i32; 3], [Material; BLEND]), u32>,
+}
+
+/// A cell's surface vertex.
+#[derive(Clone, Copy)]
+struct Dual {
+    position: [f32; 3],
+    /// Outward.
+    normal: [f32; 3],
+    /// Zero in the water pass, which blends nothing.
+    shares: Shares,
 }
 
 /// The dual vertices of one field: one per cell (cube of 8 voxel centres)
@@ -206,7 +216,7 @@ struct Net<'a> {
     block: &'a Block,
     field: Field,
     origin: [i32; 3],
-    cache: std::collections::HashMap<[i32; 3], ([f32; 3], [f32; 3])>,
+    cache: std::collections::HashMap<[i32; 3], Dual>,
 }
 
 impl<'a> Net<'a> {
@@ -219,21 +229,19 @@ impl<'a> Net<'a> {
         }
     }
 
-    /// The cell whose lowest corner is voxel `c`: its surface point in
-    /// studs and its outward normal.
-    fn vertex(&mut self, c: [i32; 3]) -> ([f32; 3], [f32; 3]) {
+    /// The cell whose lowest corner is voxel `c`, in studs.
+    fn vertex(&mut self, c: [i32; 3]) -> Dual {
         if let Some(found) = self.cache.get(&c) {
             return *found;
         }
-        let mut d = [0.0f32; 8];
-        for (i, value) in d.iter_mut().enumerate() {
-            let corner = [
+        let corners: [Cell; 8] = std::array::from_fn(|i| {
+            self.block.get([
                 c[0] + (i & 1) as i32,
                 c[1] + (i >> 1 & 1) as i32,
                 c[2] + (i >> 2 & 1) as i32,
-            ];
-            *value = density(self.block.get(corner), self.field);
-        }
+            ])
+        });
+        let d = corners.map(|cell| density(cell, self.field));
         let mut sum = [0.0f32; 3];
         let mut crossings = 0.0;
         for (i, j) in EDGES {
@@ -269,8 +277,17 @@ impl<'a> Net<'a> {
         } else {
             [0.0, 1.0, 0.0]
         };
-        self.cache.insert(c, (position, normal));
-        (position, normal)
+        let shares = match self.field {
+            Field::Solid => blend::shares(corners.into_iter()),
+            Field::Wet => [0.0; Material::ALL.len()],
+        };
+        let dual = Dual {
+            position,
+            normal,
+            shares,
+        };
+        self.cache.insert(c, dual);
+        dual
     }
 
     /// The quad across the face between voxel `v` and its neighbour along
@@ -282,19 +299,24 @@ impl<'a> Net<'a> {
         cells[2][u] -= 1;
         cells[2][w] -= 1;
         cells[3][w] -= 1;
+        let duals = cells.map(|cell| self.vertex(cell));
+        let materials = match self.field {
+            Field::Solid => blend::pick(duals.each_ref().map(|d| &d.shares)),
+            Field::Wet => [Material::Air; BLEND],
+        };
         let mut ids = [0u32; 4];
-        for (id, cell) in ids.iter_mut().zip(cells) {
-            *id = match builder.vertices.get(&cell) {
-                Some(id) => *id,
-                None => {
-                    let (position, normal) = self.vertex(cell);
-                    let id = builder.surface.positions.len() as u32;
-                    builder.surface.positions.push(position);
-                    builder.surface.normals.push(normal);
-                    builder.vertices.insert(cell, id);
-                    id
-                }
-            };
+        for ((id, cell), dual) in ids.iter_mut().zip(cells).zip(&duals) {
+            *id = *builder
+                .vertices
+                .entry((cell, materials))
+                .or_insert_with(|| {
+                    builder.surface.positions.push(dual.position);
+                    builder.surface.normals.push(dual.normal);
+                    if self.field == Field::Solid {
+                        builder.blends.push(blend::blend(&dual.shares, materials));
+                    }
+                    builder.surface.positions.len() as u32 - 1
+                });
         }
         let [a, b, c, d] = ids;
         // (axis, u, w) is right-handed, so a→b→c turns counter-clockwise

@@ -1,26 +1,31 @@
 //! Smooth terrain on the GPU: each chunk's surfaces (see
-//! `rbx_terrain::mesh`) as vertex/index buffers, drawn through the untextured
-//! file-mesh pipelines with one instance per material.
+//! `rbx_terrain::mesh`) as vertex/index buffers.
 //!
-//! The vertices are already in world studs, so every instance's model matrix
-//! is the identity — which is also what makes the material packs' projection
-//! (in object space, see `material.wgsl`) land in world space, continuous
-//! from one chunk to the next. One instance per material, shared by every
-//! chunk, carries that material's tint and texture layer; water's carries the
-//! place's water look and draws in the translucent pass.
+//! The solid surface draws through its own pipeline (see [`pipeline`]):
+//! every vertex names the materials it blends and their weights, and the
+//! shader looks each one's tint and texture layer up in a 23-entry table, so
+//! a colour edit rewrites the table and no chunk. The vertices are in world
+//! studs, which makes the material packs' projection continuous from one
+//! chunk to the next. Water draws through the untextured file-mesh pipeline,
+//! with one instance carrying the place's water look, in the translucent
+//! pass.
+
+mod pipeline;
 
 use std::collections::{BTreeSet, HashMap};
 
 use glam::Vec3;
-use rbx_terrain::mesh::{mesh_chunk, meshable_chunks, ChunkMesh, Surface};
+use rbx_terrain::mesh::{mesh_chunk, meshable_chunks, ChunkMesh};
 use rbx_terrain::{ChunkKey, Material, CHUNK, VOXEL_STUDS};
 use wgpu::util::DeviceExt;
 
 use super::instance::InstanceRaw;
 use super::mesh::Vertex;
+use super::pipeline::{Bindings, Target};
 use super::shadow::casters::MeshGeometry;
 use crate::scene::terrain::Terrain;
 use crate::scene::{Catalog, Slot};
+use pipeline::{MaterialRaw, TerrainVertex, MATERIALS};
 
 const IDENTITY: [[f32; 4]; 4] = [
     [1.0, 0.0, 0.0, 0.0],
@@ -28,9 +33,6 @@ const IDENTITY: [[f32; 4]; 4] = [
     [0.0, 0.0, 1.0, 0.0],
     [0.0, 0.0, 0.0, 1.0],
 ];
-/// One instance per material slot; water's own slot (1) holds the water.
-const INSTANCES: usize = 23;
-const STRIDE: u64 = std::mem::size_of::<InstanceRaw>() as u64;
 
 struct Geometry {
     vertices: wgpu::Buffer,
@@ -39,16 +41,20 @@ struct Geometry {
 }
 
 struct ChunkGpu {
-    solids: Vec<(Material, Geometry)>,
+    solid: Option<Geometry>,
     water: Option<Geometry>,
-    /// Every solid surface merged, positions only: the shadow pass's.
+    /// The solid surface's positions, with its indices: the shadow pass's.
     caster: Option<MeshGeometry>,
     center: Vec3,
 }
 
 pub(super) struct TerrainGpu {
     chunks: HashMap<ChunkKey, ChunkGpu>,
-    instances: wgpu::Buffer,
+    pipeline: wgpu::RenderPipeline,
+    /// Every material's tint and slot, one `MaterialRaw` per slot.
+    table: wgpu::Buffer,
+    table_group: wgpu::BindGroup,
+    water_instance: wgpu::Buffer,
     /// The identity, as the shadow pass's per-instance record.
     caster_instance: wgpu::Buffer,
     has_water: bool,
@@ -60,33 +66,75 @@ fn chunk_radius() -> f32 {
 }
 
 impl TerrainGpu {
+    /// Builds the pipeline, once per renderer: [`TerrainGpu::replace`] swaps
+    /// the place under it.
     pub(super) fn new(
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        (target, frame_layout, material_layout): (
+            Target,
+            &wgpu::BindGroupLayout,
+            &wgpu::BindGroupLayout,
+        ),
+        terrain: Option<&Terrain>,
+        catalog: &Catalog,
+    ) -> Self {
+        let table_layout = pipeline::table_layout(device);
+        let table = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("rbxview terrain materials"),
+            size: (std::mem::size_of::<MaterialRaw>() * MATERIALS) as u64,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let mut gpu = TerrainGpu {
+            chunks: HashMap::new(),
+            pipeline: pipeline::build(
+                device,
+                target,
+                (frame_layout, material_layout, &table_layout),
+            ),
+            table_group: device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("rbxview terrain materials"),
+                layout: &table_layout,
+                entries: &[wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: table.as_entire_binding(),
+                }],
+            }),
+            table,
+            water_instance: device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("rbxview terrain water"),
+                size: std::mem::size_of::<InstanceRaw>() as u64,
+                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            }),
+            caster_instance: buffer(
+                device,
+                "rbxview terrain caster",
+                &IDENTITY,
+                wgpu::BufferUsages::VERTEX,
+            ),
+            has_water: false,
+        };
+        gpu.replace(device, queue, terrain, catalog);
+        gpu
+    }
+
+    /// Drops every chunk and meshes `terrain` from scratch.
+    pub(super) fn replace(
+        &mut self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         terrain: Option<&Terrain>,
         catalog: &Catalog,
-    ) -> Self {
-        let mut gpu = TerrainGpu {
-            chunks: HashMap::new(),
-            instances: device.create_buffer(&wgpu::BufferDescriptor {
-                label: Some("rbxview terrain instances"),
-                size: STRIDE * INSTANCES as u64,
-                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-                mapped_at_creation: false,
-            }),
-            caster_instance: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("rbxview terrain caster"),
-                contents: bytemuck::cast_slice(&IDENTITY),
-                usage: wgpu::BufferUsages::VERTEX,
-            }),
-            has_water: false,
-        };
+    ) {
+        self.chunks.clear();
+        self.has_water = false;
         if let Some(terrain) = terrain {
             let keys = meshable_chunks(&terrain.grid);
-            gpu.remesh(device, terrain, &keys);
-            gpu.write_instances(queue, terrain, catalog);
+            self.remesh(device, terrain, &keys);
+            self.write_instances(queue, terrain, catalog);
         }
-        gpu
     }
 
     pub(super) fn is_empty(&self) -> bool {
@@ -119,32 +167,40 @@ impl TerrainGpu {
     }
 
     /// Rewrites every material's tint and slot, and the water's look. Cheap:
-    /// 23 records.
+    /// 24 small records.
     pub(super) fn write_instances(
         &self,
         queue: &wgpu::Queue,
         terrain: &Terrain,
         catalog: &Catalog,
     ) {
+        let table: [MaterialRaw; MATERIALS] = std::array::from_fn(|slot| {
+            let material = Material::ALL[slot];
+            MaterialRaw::new(terrain.tint(material), terrain.slot(catalog, material))
+        });
+        queue.write_buffer(&self.table, 0, bytemuck::cast_slice(&table));
         queue.write_buffer(
-            &self.instances,
+            &self.water_instance,
             0,
-            bytemuck::cast_slice(&instances(terrain, catalog)),
+            bytemuck::bytes_of(&water_instance(terrain)),
         );
     }
 
-    /// The opaque surfaces. Expects one of the untextured file-mesh
-    /// pipelines bound, with the frame and material groups.
+    /// The solid surfaces, through the terrain pipeline, which this binds
+    /// along with every group it reads.
     pub(super) fn draw_opaque(
         &self,
         pass: &mut wgpu::RenderPass<'_>,
+        bindings: Bindings<'_>,
         visible: impl Fn(Vec3, f32) -> bool,
     ) {
+        pass.set_pipeline(&self.pipeline);
+        pass.set_bind_group(0, bindings.frame, &[]);
+        pass.set_bind_group(1, bindings.materials, &[]);
+        pass.set_bind_group(2, &self.table_group, &[]);
         let radius = chunk_radius();
         for chunk in self.chunks.values().filter(|c| visible(c.center, radius)) {
-            for (material, geometry) in &chunk.solids {
-                let offset = u64::from(material.slot()) * STRIDE;
-                pass.set_vertex_buffer(1, self.instances.slice(offset..offset + STRIDE));
+            if let Some(geometry) = &chunk.solid {
                 draw(pass, geometry);
             }
         }
@@ -153,8 +209,7 @@ impl TerrainGpu {
     /// The water surfaces, furthest chunk first so overlapping water blends
     /// in order. Expects the blended untextured pipeline bound.
     pub(super) fn draw_water(&self, pass: &mut wgpu::RenderPass<'_>, eye: Vec3) {
-        let offset = u64::from(Material::Water.slot()) * STRIDE;
-        pass.set_vertex_buffer(1, self.instances.slice(offset..offset + STRIDE));
+        pass.set_vertex_buffer(1, self.water_instance.slice(..));
         let mut wet: Vec<&ChunkGpu> = self.chunks.values().filter(|c| c.water.is_some()).collect();
         wet.sort_by(|a, b| {
             (b.center - eye)
@@ -186,27 +241,15 @@ fn draw(pass: &mut wgpu::RenderPass<'_>, geometry: &Geometry) {
     pass.draw_indexed(0..geometry.index_count, 0, 0..1);
 }
 
-fn instances(terrain: &Terrain, catalog: &Catalog) -> [InstanceRaw; INSTANCES] {
-    std::array::from_fn(|slot| {
-        let material = Material::from_slot(slot as u8).unwrap_or_default();
-        if material == Material::Water {
-            let water = terrain.water;
-            return InstanceRaw::new(
-                IDENTITY,
-                water.color,
-                1.0 - water.transparency,
-                water.reflectance,
-                water_slot(terrain.water_slot(), water.wave_size, water.wave_speed),
-            );
-        }
-        InstanceRaw::new(
-            IDENTITY,
-            terrain.tint(material),
-            1.0,
-            0.0,
-            terrain.slot(catalog, material),
-        )
-    })
+fn water_instance(terrain: &Terrain) -> InstanceRaw {
+    let water = terrain.water;
+    InstanceRaw::new(
+        IDENTITY,
+        water.color,
+        1.0 - water.transparency,
+        water.reflectance,
+        water_slot(terrain.water_slot(), water.wave_size, water.wave_speed),
+    )
 }
 
 /// Water has no pack to tile, so its studs-per-tile field carries the waves
@@ -251,57 +294,74 @@ fn mesh_parallel(terrain: &Terrain, keys: &[ChunkKey]) -> Vec<ChunkMesh> {
     })
 }
 
-fn geometry(device: &wgpu::Device, surface: &Surface) -> Geometry {
-    let vertices: Vec<Vertex> = surface
-        .positions
-        .iter()
-        .zip(&surface.normals)
-        .map(|(p, n)| Vertex::new(*p, *n))
-        .collect();
+fn buffer<T: bytemuck::Pod>(
+    device: &wgpu::Device,
+    label: &str,
+    contents: &[T],
+    usage: wgpu::BufferUsages,
+) -> wgpu::Buffer {
+    device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        label: Some(label),
+        contents: bytemuck::cast_slice(contents),
+        usage,
+    })
+}
+
+fn geometry<T: bytemuck::Pod>(device: &wgpu::Device, vertices: &[T], indices: &[u32]) -> Geometry {
     Geometry {
-        vertices: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("rbxview terrain vertices"),
-            contents: bytemuck::cast_slice(&vertices),
-            usage: wgpu::BufferUsages::VERTEX,
-        }),
-        indices: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("rbxview terrain indices"),
-            contents: bytemuck::cast_slice(&surface.indices),
-            usage: wgpu::BufferUsages::INDEX,
-        }),
-        index_count: surface.indices.len() as u32,
+        vertices: buffer(
+            device,
+            "rbxview terrain vertices",
+            vertices,
+            wgpu::BufferUsages::VERTEX,
+        ),
+        indices: buffer(
+            device,
+            "rbxview terrain indices",
+            indices,
+            wgpu::BufferUsages::INDEX,
+        ),
+        index_count: indices.len() as u32,
     }
 }
 
 fn upload(device: &wgpu::Device, key: ChunkKey, mesh: &ChunkMesh) -> ChunkGpu {
-    let mut positions: Vec<[f32; 3]> = Vec::new();
-    let mut indices: Vec<u32> = Vec::new();
-    for (_, surface) in &mesh.solids {
-        let base = positions.len() as u32;
-        positions.extend_from_slice(&surface.positions);
-        indices.extend(surface.indices.iter().map(|i| i + base));
-    }
-    let caster = (!indices.is_empty()).then(|| MeshGeometry {
-        vertices: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("rbxview terrain caster vertices"),
-            contents: bytemuck::cast_slice(&positions),
-            usage: wgpu::BufferUsages::VERTEX,
-        }),
-        indices: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("rbxview terrain caster indices"),
-            contents: bytemuck::cast_slice(&indices),
-            usage: wgpu::BufferUsages::INDEX,
-        }),
-        index_count: indices.len() as u32,
+    let surface = &mesh.solid;
+    let solid = (!surface.is_empty()).then(|| {
+        let vertices: Vec<TerrainVertex> = surface
+            .positions
+            .iter()
+            .zip(&surface.normals)
+            .zip(&mesh.blends)
+            .map(|((p, n), blend)| TerrainVertex::new(*p, *n, blend))
+            .collect();
+        geometry(device, &vertices, &surface.indices)
+    });
+    // The same triangles, positions only; the index buffer is shared.
+    let caster = solid.as_ref().map(|solid| MeshGeometry {
+        vertices: buffer(
+            device,
+            "rbxview terrain caster vertices",
+            &surface.positions,
+            wgpu::BufferUsages::VERTEX,
+        ),
+        indices: solid.indices.clone(),
+        index_count: solid.index_count,
+    });
+    let water = (!mesh.water.is_empty()).then(|| {
+        let vertices: Vec<Vertex> = mesh
+            .water
+            .positions
+            .iter()
+            .zip(&mesh.water.normals)
+            .map(|(p, n)| Vertex::new(*p, *n))
+            .collect();
+        geometry(device, &vertices, &mesh.water.indices)
     });
     let origin = Vec3::from(key.origin().map(|v| v as f32 * VOXEL_STUDS));
     ChunkGpu {
-        solids: mesh
-            .solids
-            .iter()
-            .map(|(material, surface)| (*material, geometry(device, surface)))
-            .collect(),
-        water: (!mesh.water.is_empty()).then(|| geometry(device, &mesh.water)),
+        solid,
+        water,
         caster,
         center: origin + Vec3::splat(CHUNK as f32 * VOXEL_STUDS * 0.5),
     }
