@@ -25,6 +25,33 @@ fn mesh_all(grid: &VoxelGrid) -> Vec<ChunkMesh> {
         .collect()
 }
 
+fn weight_of(blend: &Blend, material: Material) -> f32 {
+    blend
+        .materials
+        .iter()
+        .zip(blend.weights)
+        .filter(|(m, _)| **m == material)
+        .map(|(_, w)| w)
+        .sum()
+}
+
+/// One blend per vertex, each a proper one: weights in 0..=1 summing to 1,
+/// real materials in slot order, Air padding after them with no weight.
+fn assert_blends_valid(mesh: &ChunkMesh) {
+    assert_eq!(mesh.blends.len(), mesh.solid.positions.len());
+    for blend in &mesh.blends {
+        let sum: f32 = blend.weights.iter().sum();
+        assert!((sum - 1.0).abs() < 1e-5, "{blend:?}");
+        assert!(blend.weights.iter().all(|w| (0.0..=1.0).contains(w)));
+        let used = blend.materials.iter().take_while(|m| m.is_solid()).count();
+        assert!(used > 0, "{blend:?}");
+        assert!(blend.materials[..used].windows(2).all(|p| p[0] < p[1]));
+        for (m, w) in blend.materials.iter().zip(blend.weights).skip(used) {
+            assert_eq!((*m, w), (Material::Air, 0.0), "{blend:?}");
+        }
+    }
+}
+
 /// Every triangle's winding agrees with its vertices' normals.
 fn assert_faces_out(surface: &Surface) {
     for tri in surface.indices.chunks(3) {
@@ -46,14 +73,18 @@ fn a_full_slab_has_its_top_on_the_voxel_boundary() {
     let meshes = mesh_all(&grid);
     let mut tops = 0;
     for mesh in &meshes {
-        for (material, surface) in &mesh.solids {
-            assert_eq!(*material, Material::Grass);
-            assert_faces_out(surface);
-            for (p, n) in surface.positions.iter().zip(&surface.normals) {
-                if n[1] > 0.99 {
-                    assert!(p[1].abs() < 1e-4, "top at {p:?}");
-                    tops += 1;
-                }
+        let surface = &mesh.solid;
+        assert_faces_out(surface);
+        assert_blends_valid(mesh);
+        // One material throughout: all of its weight, nothing to blend.
+        for blend in &mesh.blends {
+            assert_eq!(blend.materials[0], Material::Grass);
+            assert_eq!(blend.weights[0], 1.0);
+        }
+        for (p, n) in surface.positions.iter().zip(&surface.normals) {
+            if n[1] > 0.99 {
+                assert!(p[1].abs() < 1e-4, "top at {p:?}");
+                tops += 1;
             }
         }
         assert!(mesh.water.is_empty());
@@ -71,7 +102,7 @@ fn partial_fill_raises_the_surface() {
         }
     }
     let mesh = mesh_chunk(&grid, ChunkKey { x: 0, y: 0, z: 0 });
-    let surface = &mesh.solids[0].1;
+    let surface = &mesh.solid;
     let centre = surface
         .positions
         .iter()
@@ -83,7 +114,7 @@ fn partial_fill_raises_the_surface() {
 }
 
 #[test]
-fn a_ball_is_closed_and_crosses_chunk_seams_without_cracks() {
+fn a_two_material_ball_is_closed_and_seamless_across_chunks() {
     let mut grid = VoxelGrid::new();
     // Centred on a chunk corner so all eight chunks share it.
     draw_add(
@@ -91,28 +122,47 @@ fn a_ball_is_closed_and_crosses_chunk_seams_without_cracks() {
         &Brush::new(Shape::Sphere, [0.0, 0.0, 0.0], 40.0, 40.0),
         Material::Sand,
     );
+    // Its +x half is rock: the border runs through chunk seams, which is
+    // where vertices split by blend list must still line up.
+    let east: Vec<_> = grid.voxels().filter(|(v, _)| v[0] >= 0).collect();
+    for (v, cell) in east {
+        grid.set(v, Cell::new(Material::Rock, cell.occupancy, cell.liquid));
+    }
     let meshes = mesh_all(&grid);
     // Gather every edge by its two world-space endpoints; in a closed
     // surface each appears exactly twice, once per neighbouring triangle.
     let mut edges = std::collections::HashMap::new();
+    // Every copy of a vertex, in any chunk or blend list, must agree on how
+    // much rock it is, or the blend would jump along an edge.
+    let mut rock = std::collections::HashMap::new();
     let key = |p: [f32; 3]| p.map(|v| (v * 1000.0).round() as i64);
     let mut triangles = 0;
+    let mut blended = 0;
     for mesh in &meshes {
-        for (_, surface) in &mesh.solids {
-            assert_faces_out(surface);
-            for tri in surface.indices.chunks(3) {
-                triangles += 1;
-                for (i, j) in [(0, 1), (1, 2), (2, 0)] {
-                    let a = key(surface.positions[tri[i] as usize]);
-                    let b = key(surface.positions[tri[j] as usize]);
-                    *edges
-                        .entry(if a < b { (a, b) } else { (b, a) })
-                        .or_insert(0) += 1;
-                }
+        let surface = &mesh.solid;
+        assert_faces_out(surface);
+        assert_blends_valid(mesh);
+        for (p, blend) in surface.positions.iter().zip(&mesh.blends) {
+            let w = weight_of(blend, Material::Rock);
+            let seen = *rock.entry(key(*p)).or_insert(w);
+            assert!((seen - w).abs() < 1e-5, "{p:?}: {seen} vs {w}");
+            if w > 0.0 && w < 1.0 {
+                blended += 1;
+            }
+        }
+        for tri in surface.indices.chunks(3) {
+            triangles += 1;
+            for (i, j) in [(0, 1), (1, 2), (2, 0)] {
+                let a = key(surface.positions[tri[i] as usize]);
+                let b = key(surface.positions[tri[j] as usize]);
+                *edges
+                    .entry(if a < b { (a, b) } else { (b, a) })
+                    .or_insert(0) += 1;
             }
         }
     }
     assert!(triangles > 200);
+    assert!(blended > 10, "{blended} vertices blend");
     assert!(
         edges.values().all(|&n| n == 2),
         "open edges: {}",
@@ -121,21 +171,62 @@ fn a_ball_is_closed_and_crosses_chunk_seams_without_cracks() {
 }
 
 #[test]
-fn materials_split_into_their_own_surfaces() {
+fn a_border_vertex_blends_both_materials() {
     let mut grid = VoxelGrid::new();
-    for x in 0..4 {
-        grid.set(
-            [x, 0, 0],
-            Cell::full(if x < 2 {
+    for x in -8..8 {
+        for z in -8..8 {
+            let material = if x < 0 {
                 Material::Snow
             } else {
                 Material::Rock
-            }),
-        );
+            };
+            grid.set([x, -1, z], Cell::full(material));
+        }
     }
-    let mesh = mesh_chunk(&grid, ChunkKey { x: 0, y: 0, z: 0 });
-    let materials: Vec<Material> = mesh.solids.iter().map(|(m, _)| *m).collect();
-    assert_eq!(materials, vec![Material::Rock, Material::Snow]);
+    let mut seen = 0;
+    for mesh in mesh_all(&grid) {
+        assert_blends_valid(&mesh);
+        let tops = mesh.solid.positions.iter().zip(&mesh.solid.normals);
+        for ((p, n), blend) in tops.zip(&mesh.blends) {
+            if n[1] < 0.99 || p[2].abs() > 16.0 {
+                continue;
+            }
+            let (snow, rock) = (
+                weight_of(blend, Material::Snow),
+                weight_of(blend, Material::Rock),
+            );
+            // The cell straddling the border sits on it, half of each.
+            if p[0].abs() < 1e-4 {
+                assert!((snow - 0.5).abs() < 1e-5 && (rock - 0.5).abs() < 1e-5);
+                seen += 1;
+            } else if p[0] < -1.0 {
+                assert_eq!(snow, 1.0, "{p:?}");
+            } else {
+                assert_eq!(rock, 1.0, "{p:?}");
+            }
+        }
+    }
+    assert!(seen >= 8, "{seen}");
+}
+
+#[test]
+fn four_materials_meeting_keep_the_heaviest_three() {
+    let mut grid = VoxelGrid::new();
+    let corner = [
+        Material::Grass,
+        Material::Rock,
+        Material::Sand,
+        Material::Snow,
+    ];
+    for x in -4..4 {
+        for z in -4..4 {
+            let quadrant = usize::from(x >= 0) + 2 * usize::from(z >= 0);
+            grid.set([x, 0, z], Cell::full(corner[quadrant]));
+        }
+    }
+    for mesh in mesh_all(&grid) {
+        assert_blends_valid(&mesh);
+    }
 }
 
 #[test]
