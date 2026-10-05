@@ -36,6 +36,7 @@ mod slots;
 mod stars;
 mod sun;
 mod switch;
+mod terrain;
 mod texture;
 mod textured;
 mod trail;
@@ -148,6 +149,8 @@ pub(crate) struct Renderer {
     shaped: Shaped,
     translucent: Translucent,
     filemesh: filemesh::FileMeshes,
+    /// `Workspace.Terrain`'s chunk meshes; empty in a place without terrain.
+    terrain: terrain::TerrainGpu,
     textured: textured::Textured,
     sky: Option<skybox::Skybox>,
     stars: Option<Stars>,
@@ -335,6 +338,12 @@ impl Renderer {
                 &material_layout,
                 scene.resolved_file_meshes(),
                 quality,
+            ),
+            terrain: terrain::TerrainGpu::new(
+                device,
+                queue,
+                (target, &layout, &material_layout),
+                (scene.terrain(), scene.materials(), quality),
             ),
             textured: textured::Textured::new(
                 device,
@@ -584,10 +593,37 @@ impl Renderer {
     /// host that only draws on change keeps drawing while this holds.
     pub(crate) fn animating(&self) -> bool {
         self.translucent.has_force_field()
+            || (self.terrain.has_water() && self.quality.water_waves)
+            || self.terrain.grass.is_drawn()
             || self.beams.is_live()
             || self.trails.is_live()
             || self.particles.is_live()
             || self.textured.has_pending()
+    }
+
+    /// The terrain half of an edit: re-meshes `keys`, rewrites every
+    /// material's tint and the water look, and re-decides whether the frame
+    /// copies the scene for refraction (water, like glass, bends it).
+    pub(crate) fn sync_terrain(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        (terrain, catalog): (
+            Option<&crate::scene::terrain::Terrain>,
+            &crate::scene::Catalog,
+        ),
+        keys: &std::collections::BTreeSet<rbx_terrain::ChunkKey>,
+    ) {
+        match terrain {
+            Some(terrain) => {
+                if !keys.is_empty() {
+                    self.terrain.remesh(device, terrain, keys);
+                    self.shadows.terrain_changed();
+                }
+                self.terrain.write_instances(queue, terrain, catalog);
+            }
+            None => self.terrain.replace(device, queue, None, catalog),
+        }
     }
 
     /// Moves the `ForceField` shimmer to where it is `elapsed` into the
@@ -707,6 +743,7 @@ impl Renderer {
         // render pass that reads those buffers.
         self.translucent.prepare(queue, eye, &cull);
         self.filemesh.prepare(queue, eye);
+        self.terrain.grass.prepare(device, queue, eye);
         // A `SelectionSphere`'s outline faces the eye, so its vertices are
         // the camera's to decide — and a buffer written here cannot be
         // written inside the pass that reads it.
@@ -723,7 +760,8 @@ impl Renderer {
         // After `prepare`, which is what allocates (or resizes) the targets
         // the copy lives beside; a bind group holding the old view has to be
         // rebuilt before anything samples it.
-        if self.post.want_refraction(device, self.refracting) {
+        let refracting = self.refracting || self.terrain.has_water();
+        if self.post.want_refraction(device, refracting) {
             self.rebind_frames(device);
         }
         let Some(targets) = self.post.targets() else {
@@ -736,23 +774,28 @@ impl Renderer {
         // Before the colour pass, never inside it: the same texture cannot be a
         // depth attachment and a bound resource in one pass.
         if lamp != Lamp::None {
-            self.shadows.render(queue, &mut encoder, &self.meshes, &fit);
+            self.shadows
+                .render(queue, &mut encoder, (&self.meshes, &self.terrain), &fit);
         }
         if !selected.is_empty() {
-            self.shadows
-                .render_local(queue, &mut encoder, &self.meshes, &selected);
+            self.shadows.render_local(
+                queue,
+                &mut encoder,
+                (&self.meshes, &self.terrain),
+                &selected,
+            );
         }
         // Redrawn only when the cubes would hold something different — six
         // faces a light is the one shadow pass worth not repeating for a
         // still camera over a still scene.
         self.shadows
-            .render_points(queue, &mut encoder, &self.meshes, &points);
+            .render_points(queue, &mut encoder, (&self.meshes, &self.terrain), &points);
         self.scene_pass(&mut encoder, targets, &cull);
         // Between the two halves, never inside either: the copy's source is
         // a colour attachment of both. A no-op in a place with no glass,
         // which has no copy to take.
         targets.capture_refraction(&mut encoder);
-        self.translucent_pass(&mut encoder, targets);
+        self.translucent_pass(&mut encoder, targets, eye);
         self.overlay_pass(&mut encoder, targets);
 
         // Before particles: sorting the two passes against each other is out

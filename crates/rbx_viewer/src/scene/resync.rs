@@ -406,7 +406,15 @@ impl Scene {
     pub(crate) fn refresh_bounds(&mut self) -> bool {
         if std::mem::take(&mut self.extent_stale) {
             let originals = self.parts.iter().filter(|part| counts_towards_extent(part));
-            if let Some(extent) = bounds::of(originals) {
+            let terrain = self
+                .terrain
+                .as_ref()
+                .and_then(super::terrain::Terrain::extent);
+            if let Some(extent) = [bounds::of(originals), terrain]
+                .into_iter()
+                .flatten()
+                .reduce(super::Bounds::union)
+            {
                 self.bounds = extent;
             }
         }

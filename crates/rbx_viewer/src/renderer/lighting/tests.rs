@@ -42,6 +42,8 @@ fn the_quality_row_flattens_an_unlimited_render_distance_to_zero() {
     let top = unshadowed(&Lighting::default(), Vec3::ZERO);
     assert_eq!(top.quality[0], 0.0);
     assert_eq!(top.quality[1], 1.0);
+    assert_eq!(top.quality[2], 1.0, "water ripples");
+    assert_eq!(top.quality[3], 1.0, "water reflections");
 
     let low = LightingRaw::new(
         &Lighting::default(),
@@ -55,6 +57,8 @@ fn the_quality_row_flattens_an_unlimited_render_distance_to_zero() {
 
     assert_eq!(low.quality[0], 500.0);
     assert_eq!(low.quality[1], 0.0);
+    assert_eq!(low.quality[2], 0.0);
+    assert_eq!(low.quality[3], 0.0);
 }
 
 #[test]

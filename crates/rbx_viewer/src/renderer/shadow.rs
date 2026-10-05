@@ -24,6 +24,7 @@ use super::cull;
 use super::geometry::Meshes;
 use super::mesh::Vertex;
 use super::slots::keyed::Keyed;
+use super::terrain::TerrainGpu;
 use crate::quality::QualityProfile;
 use crate::scene::Scene;
 use casters::{CasterRaw, MeshBatches, ShapeBatches, CASTER_ATTRIBUTES, POSITION_ATTRIBUTE};
@@ -265,6 +266,11 @@ impl Shadows {
 
     /// Drops a box caster whose box no longer draws; a no-op if it never
     /// cast.
+    /// The terrain's casters changed: the cubes no longer hold what it casts.
+    pub(super) fn terrain_changed(&mut self) {
+        self.point_state = None;
+    }
+
     pub(super) fn remove_caster(&mut self, id: crate::scene::PartId) {
         self.point_state = None;
         self.shape_batches.remove(id);
@@ -326,7 +332,7 @@ impl Shadows {
         &mut self,
         queue: &wgpu::Queue,
         encoder: &mut wgpu::CommandEncoder,
-        meshes: &Meshes,
+        (meshes, terrain): (&Meshes, &TerrainGpu),
         selected: &[point::Selected],
     ) {
         debug_assert!(selected.len() <= self.point_cap());
@@ -346,7 +352,12 @@ impl Shadows {
                     bytemuck::cast_slice(&matrix.to_cols_array()),
                 );
                 let mut pass = self.begin(encoder, &self.point_layers[layer]);
-                self.draw_casters(&mut pass, meshes, &self.point_bind_groups[layer], None);
+                self.draw_casters(
+                    &mut pass,
+                    (meshes, terrain),
+                    &self.point_bind_groups[layer],
+                    None,
+                );
             }
         }
         queue.write_buffer(&self.point_faces, 0, bytemuck::cast_slice(&matrices));
@@ -360,7 +371,7 @@ impl Shadows {
         &self,
         queue: &wgpu::Queue,
         encoder: &mut wgpu::CommandEncoder,
-        meshes: &Meshes,
+        (meshes, terrain): (&Meshes, &TerrainGpu),
         fit: &Fit,
     ) {
         queue.write_buffer(
@@ -369,7 +380,7 @@ impl Shadows {
             bytemuck::cast_slice(&fit.view_projection.to_cols_array()),
         );
         let mut pass = self.begin(encoder, &self.view);
-        self.draw_casters(&mut pass, meshes, &self.bind_group, Some(fit));
+        self.draw_casters(&mut pass, (meshes, terrain), &self.bind_group, Some(fit));
     }
 
     /// Redraws every selected local light's own map into its assigned array
@@ -384,7 +395,7 @@ impl Shadows {
         &self,
         queue: &wgpu::Queue,
         encoder: &mut wgpu::CommandEncoder,
-        meshes: &Meshes,
+        (meshes, terrain): (&Meshes, &TerrainGpu),
         selected: &[local::Selected],
     ) {
         debug_assert!(selected.len() <= self.local_cap());
@@ -395,7 +406,12 @@ impl Shadows {
                 bytemuck::cast_slice(&light.view_projection.to_cols_array()),
             );
             let mut pass = self.begin(encoder, &self.local_layers[layer]);
-            self.draw_casters(&mut pass, meshes, &self.local_bind_groups[layer], None);
+            self.draw_casters(
+                &mut pass,
+                (meshes, terrain),
+                &self.local_bind_groups[layer],
+                None,
+            );
         }
     }
 
@@ -435,7 +451,7 @@ impl Shadows {
     fn draw_casters<'p>(
         &'p self,
         pass: &mut wgpu::RenderPass<'p>,
-        meshes: &Meshes,
+        (meshes, terrain): (&Meshes, &TerrainGpu),
         bind_group: &'p wgpu::BindGroup,
         cull: Option<&Fit>,
     ) {
@@ -486,6 +502,9 @@ impl Shadows {
             pass.set_index_buffer(geometry.indices.slice(..), wgpu::IndexFormat::Uint32);
             pass.draw_indexed(0..geometry.index_count, 0, 0..batch.slots.count());
         }
+        // Same pipeline: terrain is triangles in world space with an identity
+        // placement, which is all a file mesh caster is too.
+        terrain.draw_casters(pass);
     }
 }
 

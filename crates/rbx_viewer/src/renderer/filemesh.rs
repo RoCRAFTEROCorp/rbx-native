@@ -286,6 +286,17 @@ impl FileMeshes {
             .sort_by(|&left, &right| depth(right).total_cmp(&depth(left)));
     }
 
+    /// The untextured pipeline, opaque or blended, for geometry outside these
+    /// batches that shares its vertex format (terrain's water).
+    pub(super) fn plain_pipeline(&self, blended: bool) -> &wgpu::RenderPipeline {
+        let set = if blended {
+            &self.blended_pipelines
+        } else {
+            &self.opaque_pipelines
+        };
+        set.get(Skin::Plain)
+    }
+
     /// Draws the opaque meshes. The caller must have the frame bind group ready
     /// at group 0; this switches pipelines itself (unlike `Shaped`, which
     /// piggybacks on the shape pass's already-bound one).

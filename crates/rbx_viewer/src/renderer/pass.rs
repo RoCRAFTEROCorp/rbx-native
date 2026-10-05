@@ -86,6 +86,17 @@ impl Renderer {
         // Real mesh geometry, opaque like everything above: its own
         // pipelines (untextured, textured), rebinding the frame itself.
         self.filemesh.draw_opaque(&mut pass, bindings);
+        if !self.terrain.is_empty() {
+            self.terrain
+                .draw_opaque(&mut pass, bindings, |center, radius| {
+                    cull.visible(center, radius)
+                });
+            self.terrain
+                .grass
+                .draw(&mut pass, bindings.frame, |center, radius| {
+                    cull.visible(center, radius)
+                });
+        }
 
         if decals {
             pass.set_bind_group(0, &self.frame.bind_group, &[]);
@@ -98,7 +109,12 @@ impl Renderer {
     /// same texture be bound for a `ForceField` to measure itself against
     /// (see `renderer::scene_depth`). Nothing drawn here writes depth — every
     /// blended pipeline is built with depth writes off — so it loses nothing.
-    pub(super) fn translucent_pass(&self, encoder: &mut wgpu::CommandEncoder, targets: &Targets) {
+    pub(super) fn translucent_pass(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        targets: &Targets,
+        eye: glam::Vec3,
+    ) {
         let (view, resolve) = targets.color();
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("rbxview scene translucent"),
@@ -136,6 +152,13 @@ impl Renderer {
                 .draw(&mut pass, &self.meshes, (&self.blended, &self.inside));
         }
         self.filemesh.draw_blended(&mut pass, bindings);
+        if self.terrain.has_water() {
+            pass.set_pipeline(self.filemesh.plain_pipeline(true));
+            pass.set_bind_group(0, bindings.frame, &[]);
+            pass.set_bind_group(1, bindings.materials, &[]);
+            pass.set_bind_group(3, targets.scene_depth(), &[]);
+            self.terrain.draw_water(&mut pass, eye);
+        }
     }
 
     /// Everything else that blends over the opaque half, in the order it was

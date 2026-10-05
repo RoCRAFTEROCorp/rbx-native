@@ -159,12 +159,25 @@ pub(crate) struct QualityProfile {
     /// in the table — see `renderer::switch`. Clamped down where the adapter
     /// cannot multisample the HDR format (`renderer::post`).
     pub(crate) msaa_samples: u32,
+    /// How far from the eye `Terrain.Decoration`'s grass still grows, in
+    /// studs; 0 draws none. Blades thin out towards it rather than stop.
+    pub(crate) grass_distance: f32,
+    /// The share of the full blade count drawn near the eye, 0 to 1.
+    pub(crate) grass_density: f32,
     /// Whether a `ForceField` glows where it cuts through other geometry.
     /// Roblox turns that part of the material's transparency "off for
     /// performance on quality level 15 and below" (a staff reply on the
     /// DevForum's "Visual inconsistency in ForceField material" report), so
     /// only the top band has it.
     pub(crate) force_field_intersections: bool,
+    /// Whether terrain water ripples. False draws a calm, flat surface, and
+    /// water alone no longer keeps the frame redrawing (see
+    /// `Renderer::animating`).
+    pub(crate) water_waves: bool,
+    /// Whether terrain water reflects the scene around it (screen-space, see
+    /// `renderer/water.wgsl`) rather than only the sky — which is itself the
+    /// flat sky colour where `env_reflections` is off.
+    pub(crate) water_reflections: bool,
 }
 
 #[cfg(test)]

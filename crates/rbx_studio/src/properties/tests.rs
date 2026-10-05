@@ -1019,6 +1019,7 @@ fn unranked_categories_sort_by_name_after_ranked_ones() {
             category: category.into(),
             edit: None,
             mixed: false,
+            children: Vec::new(),
         })
         .collect();
 

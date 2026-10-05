@@ -556,7 +556,7 @@ fn parse_color3(text: &str) -> Result<Color3Data, String> {
     })
 }
 
-fn parse_color3uint8(text: &str) -> Result<(u8, u8, u8), String> {
+pub(super) fn parse_color3uint8(text: &str) -> Result<(u8, u8, u8), String> {
     let n = parse_numbers(text, 3)?;
     let channel = |value: f32| value.round().clamp(0.0, 255.0) as u8;
     Ok((channel(n[0]), channel(n[1]), channel(n[2])))

@@ -25,6 +25,7 @@ impl Renderer {
             .set_quality(device, &self.material_layout, quality);
         self.textured.set_quality(device, quality);
         self.filemesh.set_quality(device, quality);
+        self.terrain.grass.set_quality(quality);
         if let Some(sky) = &mut self.sky {
             sky.set_quality(device, quality);
         }
@@ -68,6 +69,8 @@ impl Renderer {
             pipeline::inside_pipeline(device, target, &self.frame_layout, &self.material_layout);
         self.textured.set_target(device, target, &self.frame_layout);
         self.filemesh
+            .set_target(device, target, (&self.frame_layout, &self.material_layout));
+        self.terrain
             .set_target(device, target, (&self.frame_layout, &self.material_layout));
         if let Some(sky) = &mut self.sky {
             sky.set_target(device, target, &self.frame_layout);

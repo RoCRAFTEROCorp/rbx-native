@@ -42,8 +42,11 @@ pub(crate) enum Role {
     Gui,
     /// A `MaterialVariant` or `MaterialService` — see [`Rebuild::Materials`].
     Material,
+    /// `Workspace.Terrain`: its voxels, material colours and water look —
+    /// see `scene::terrain`. Never a part (see `scene::EXCLUDED_CLASS`).
+    Terrain,
     /// Nothing the renderer draws from: a `Script`, a `Model`, a `Folder`, a
-    /// value object, `Terrain` (never drawn, see `scene::EXCLUDED_CLASS`).
+    /// value object.
     /// A container is still walked when it moves — its subtree is what
     /// moved — but the container itself has no picture to update.
     Inert,
@@ -53,7 +56,7 @@ impl Role {
     pub(crate) fn of(database: &ReflectionDatabase, class: &str) -> Self {
         let is = |ancestor: &str| database.is_subclass_of(class, ancestor);
         if class == crate::scene::EXCLUDED_CLASS {
-            return Role::Inert;
+            return Role::Terrain;
         }
         if is("BasePart") {
             return Role::Part;
@@ -270,10 +273,10 @@ mod tests {
             "StringValue",
             "Humanoid",
             "Sound",
-            "Terrain",
         ] {
             assert_eq!(Role::of(&database, class), Role::Inert, "{class}");
         }
+        assert_eq!(Role::of(&database, "Terrain"), Role::Terrain);
     }
 
     // The GUI plan walks through plain containers, so one of them leaving a

@@ -22,6 +22,8 @@ use rbx_viewer::gizmo::{self, End, Faces, Gizmo, Handles};
 use rbx_viewer::pick::{self, Ray};
 use rbx_viewer::snap;
 
+use super::terrain::TerrainPhase;
+
 use crate::dragger::surface::SurfaceFrame;
 use crate::dragger::sweep::{self, SoftSnap};
 use crate::dragger::{free, tilt};
@@ -137,6 +139,9 @@ pub(super) enum Drag {
     /// held: each step goes to `Shell` as the cursor's ray (see
     /// `super::sun`), and the selection is never touched.
     Sun,
+    /// The Terrain Editor's gesture: `Shell` gets every step as a ray (see
+    /// `ViewportAction::Terrain`).
+    Terrain,
 }
 
 /// What one step of a drag does to the part.
@@ -206,6 +211,14 @@ impl WorkspaceView {
         cx: &mut gpui_kit::Context<Self>,
     ) {
         let ray = self.cursor_ray(position, scale);
+        // The Terrain Editor's brush follows the cursor instead of a part
+        // outline.
+        if self.transform.tool == Tool::Terrain {
+            if let Some(ray) = ray {
+                self.terrain_hover(ray, position, modifiers, cx);
+            }
+            return;
+        }
         self.note_hover(ray, modifiers);
         cx.emit(ViewportAction::Hover {
             ray,
@@ -294,6 +307,17 @@ impl WorkspaceView {
         if self.transform.tool == Tool::Sun {
             self.begin(Drag::Sun, cx);
             self.sun_step(position, scale, true, cx);
+            return;
+        }
+        // The Terrain Editor brushes or reshapes its region instead.
+        if self.transform.tool == Tool::Terrain && modifiers.alt {
+            let (x, y) = (f32::from(position.x), f32::from(position.y));
+            self.terrain_input(ray, TerrainPhase::Picker { x, y }, modifiers, cx);
+            return;
+        }
+        if self.transform.tool == Tool::Terrain {
+            self.begin(Drag::Terrain, cx);
+            self.terrain_input(ray, TerrainPhase::Press, modifiers, cx);
             return;
         }
 
@@ -413,7 +437,12 @@ impl WorkspaceView {
             // arm's tag, so Transform never isolates at all: every handle of
             // every kind stays drawn through the whole drag, the same choice
             // already made for Rotate below.
-            Tool::Select | Tool::Rotate | Tool::Transform | Tool::Sun | Tool::Pivot => None,
+            Tool::Select
+            | Tool::Rotate
+            | Tool::Transform
+            | Tool::Sun
+            | Tool::Pivot
+            | Tool::Terrain => None,
         };
         if let Some(end) = end {
             let held = self.transform.gizmo().map(|gizmo| Gizmo {
@@ -432,7 +461,7 @@ impl WorkspaceView {
         let anchor = self.targets.anchor()?;
         match self.transform.tool {
             // Edit Pivot's handles are `grab_pivot`'s.
-            Tool::Select | Tool::Sun | Tool::Pivot => None,
+            Tool::Select | Tool::Sun | Tool::Pivot | Tool::Terrain => None,
             Tool::Move => self.grab_axis(&handles, ray),
             Tool::Scale => self.grab_scale(ray, lock_shape, centred),
             Tool::Rotate => self.grab_ring(&handles, anchor, ray),
@@ -557,6 +586,12 @@ impl WorkspaceView {
         // Aims at the scene, not at the selection there may not even be.
         if self.drag == Some(Drag::Sun) {
             self.sun_step(position, scale, false, cx);
+            return;
+        }
+        if self.drag == Some(Drag::Terrain) {
+            if let Some(ray) = self.cursor_ray(position, scale) {
+                self.terrain_input(ray, TerrainPhase::Drag, modifiers, cx);
+            }
             return;
         }
         let (Some(drag), Some(ray)) = (self.drag, self.cursor_ray(position, scale)) else {
@@ -784,6 +819,9 @@ impl WorkspaceView {
             self.drag_pending = self.drag_pending.or(self.guides.dragged_at);
         }
         self.step_drag(window, cx);
+        if self.drag == Some(Drag::Terrain) {
+            self.terrain_release(cx);
+        }
         if let Some(drag) = self.drop_drag() {
             self.snapped = None;
             // Every handle back on, wherever the handles now stand.
@@ -960,7 +998,7 @@ pub(super) fn advance(drag: Drag, ray: Ray, landing: Landing) -> Option<(Drag, C
             ))
         }
         // Moves no part: `Shell` answers each of its steps instead.
-        Drag::Sun => None,
+        Drag::Sun | Drag::Terrain => None,
     }
 }
 

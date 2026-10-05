@@ -2,6 +2,29 @@
 
 ## 2026-10-05
 
+- **Smooth terrain and the Terrain Editor.** `Workspace.Terrain`'s
+  voxels are read and written: `SmoothGrid`'s layout was worked out from
+  a real place, whose terrain re-encodes to its original bytes, and
+  `PhysicsGrid` is rebuilt beside it the way Roblox writes it. Terrain
+  draws in the viewport with the parts' own material packs, blended where
+  materials meet, tinted by `MaterialColors`; water is bright and clear
+  in the shallows, rippling, reflecting the scene and glinting in the sun;
+  and `Decoration` grows swaying grass on Grass, all scaled by the quality
+  level. Home › Terrain Editor carries Studio's whole toolset — Import
+  (heightmap and colormap), Generate (biomes, caves, seed), Clear, Select,
+  Transform, Fill, Sea Level, and the Draw, Sculpt, Smooth, Paint and
+  Flatten brushes with every option and shortcut `terrain-editor.md`
+  lists, Alt-click's material picker included — each stroke one undo
+  step, and the Properties panel edits `MaterialColors` per material.
+  — @chteau
+- **Terrain edits stay quick on big maps.** A brush stroke no longer
+  re-encodes, re-decodes and re-meshes the whole place each step: the
+  editor previews only the chunks the brush reached and writes once on
+  release, `SmoothGrid` and `PhysicsGrid` re-encode only the chunks an edit
+  changed, and the viewport decodes only the chunks whose bytes differ. On
+  a 2048-stud generated map a Draw step went from about 60 ms to under
+  3 ms, and a release from about 300 ms to about 20 ms. — @chteau
+
 - **Freeze Rotation.** Explorer › right-click › Freeze Rotation clears a
   turned instance's `Orientation` to `0, 0, 0` while it keeps looking as it
   did, Blender's Apply › Rotation: a model's pivot loses its turn with no

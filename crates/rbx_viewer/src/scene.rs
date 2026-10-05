@@ -14,6 +14,7 @@ mod patch;
 mod props;
 mod resync;
 mod shape;
+pub(crate) mod terrain;
 mod trail;
 mod union;
 
@@ -243,6 +244,9 @@ pub(crate) struct Scene {
     /// once network results are in, long after the `&ReflectionDatabase`
     /// `Scene::from_dom`'s caller lent us has gone out of scope.
     database: ReflectionDatabase,
+    /// `Workspace.Terrain`, when the place has one (every place made by
+    /// Studio does, empty or not).
+    terrain: Option<terrain::Terrain>,
 }
 
 impl Scene {
@@ -257,7 +261,15 @@ impl Scene {
             .filter_map(|referent| build_part(dom, database, referent, &mut materials))
             .collect();
 
-        let bounds = bounds::of(&parts).ok_or_else(|| "no BasePart to draw".to_string())?;
+        let terrain = terrain::Terrain::plan(dom, database, &mut materials);
+        let bounds = [
+            bounds::of(&parts),
+            terrain.as_ref().and_then(terrain::Terrain::extent),
+        ]
+        .into_iter()
+        .flatten()
+        .reduce(Bounds::union)
+        .ok_or_else(|| "no BasePart or terrain to draw".to_string())?;
         let file_mesh_plan = filemesh::plan(dom, database, &mut materials);
         let union_plan = union::plan(dom, database, &mut materials);
         let standing = parts
@@ -287,6 +299,7 @@ impl Scene {
             union_plan,
             unions_resolved: union::Merged::default(),
             database: database.clone(),
+            terrain,
         };
         // Needs `scene.placements()`, which only exists once `parts` is set —
         // an emitter's spawn volume is its parent's own placement, and a
@@ -319,6 +332,10 @@ impl Scene {
 
     pub(crate) fn materials(&self) -> &Catalog {
         &self.materials
+    }
+
+    pub(crate) fn terrain(&self) -> Option<&terrain::Terrain> {
+        self.terrain.as_ref()
     }
 
     /// Every `ParticleEmitter` this scene found parented to a drawn `BasePart`.
@@ -357,6 +374,9 @@ impl Scene {
     /// for the copy it reads (see `renderer::post::Targets`).
     pub(crate) fn has_glass(&self) -> bool {
         let glass = |slot: &Slot| slot.kind == Kind::Glass;
+        // Terrain water bends what is under it too, but the renderer knows
+        // that from its own water meshes (see `Renderer::draw`), without a
+        // walk of every voxel here on each edit.
         self.parts.iter().any(|part| glass(&part.material))
             || self
                 .resolved_file_meshes

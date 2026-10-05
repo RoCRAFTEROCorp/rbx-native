@@ -6022,6 +6022,7 @@ dependencies = [
  "rbx_lua",
  "rbx_mesh",
  "rbx_reflection",
+ "rbx_terrain",
  "rbx_viewer",
  "rbx_xml",
  "resvg 0.46.0",
@@ -6037,6 +6038,15 @@ dependencies = [
  "windows-sys 0.61.2",
  "x11rb",
  "zip",
+]
+
+[[package]]
+name = "rbx_terrain"
+version = "0.1.0"
+dependencies = [
+ "rbx_binary",
+ "rbx_dom",
+ "thiserror 2.0.20",
 ]
 
 [[package]]
@@ -6058,6 +6068,7 @@ dependencies = [
  "rbx_materials",
  "rbx_mesh",
  "rbx_reflection",
+ "rbx_terrain",
  "rbx_xml",
  "serde_json",
  "swash",

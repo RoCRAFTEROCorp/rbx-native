@@ -40,6 +40,9 @@ pub(crate) enum Kind {
     Neon = 2,
     ForceField = 3,
     Glass = 4,
+    /// Terrain water: no pack, a procedural rippling surface that bends what
+    /// is under it the way glass does.
+    Water = 5,
 }
 
 /// One scene material, as the instance buffer carries it.

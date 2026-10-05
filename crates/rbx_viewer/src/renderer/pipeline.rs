@@ -23,6 +23,7 @@ pub(super) const BOX_SHADER: &str = concat!(
     include_str!("lighting.wgsl"),
     include_str!("atmosphere.wgsl"),
     include_str!("material.wgsl"),
+    include_str!("water.wgsl"),
     include_str!("shader.wgsl")
 );
 pub(super) const FILEMESH_SHADER: &str = concat!(
@@ -30,6 +31,7 @@ pub(super) const FILEMESH_SHADER: &str = concat!(
     include_str!("lighting.wgsl"),
     include_str!("atmosphere.wgsl"),
     include_str!("material.wgsl"),
+    include_str!("water.wgsl"),
     include_str!("filemesh.wgsl")
 );
 pub(super) const APPEARANCE_SHADER: &str = concat!(
@@ -37,7 +39,22 @@ pub(super) const APPEARANCE_SHADER: &str = concat!(
     include_str!("lighting.wgsl"),
     include_str!("atmosphere.wgsl"),
     include_str!("material.wgsl"),
+    include_str!("water.wgsl"),
     include_str!("appearance.wgsl")
+);
+pub(super) const TERRAIN_SHADER: &str = concat!(
+    include_str!("lights.wgsl"),
+    include_str!("lighting.wgsl"),
+    include_str!("atmosphere.wgsl"),
+    include_str!("material.wgsl"),
+    include_str!("water.wgsl"),
+    include_str!("terrain.wgsl")
+);
+pub(super) const GRASS_SHADER: &str = concat!(
+    include_str!("lights.wgsl"),
+    include_str!("lighting.wgsl"),
+    include_str!("atmosphere.wgsl"),
+    include_str!("grass.wgsl")
 );
 pub(super) const DECAL_SHADER: &str = concat!(
     include_str!("lights.wgsl"),
@@ -601,6 +618,12 @@ pub(super) fn inside_pipeline(
 mod tests {
     use super::*;
     use std::time::Duration;
+
+    #[test]
+    fn the_water_shader_knows_the_near_plane() {
+        let declared = format!("const CAMERA_NEAR: f32 = {:?};", crate::camera::NEAR_PLANE);
+        assert!(include_str!("water.wgsl").contains(&declared), "{declared}");
+    }
 
     #[test]
     fn intersection_depth_packs_off_perspective_and_orthographic_apart() {

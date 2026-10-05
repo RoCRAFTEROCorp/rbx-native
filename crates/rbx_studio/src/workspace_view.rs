@@ -28,6 +28,7 @@ mod scroll;
 mod stats;
 mod summon;
 mod sun;
+mod terrain;
 
 use std::cell::Cell;
 use std::rc::Rc;
@@ -52,9 +53,11 @@ use gizmo::Drag;
 use input::{camera_key, chorded, tool_key, Layout};
 pub(crate) use pump::canvas::Request as CanvasRequest;
 use pump::Pump;
+pub(crate) use pump::TerrainChunks;
 pub(crate) use scroll::{scrolled, Scroll};
 pub(crate) use stats::requested as stats_requested;
 pub(crate) use summon::install as install_key_bindings;
+pub(crate) use terrain::{Dial, TerrainInput, TerrainPhase};
 
 // How long a speed change stays on screen, matching the standalone viewer's
 // title bar.
@@ -178,6 +181,11 @@ pub(crate) enum ViewportAction {
     /// Studio's own scroll is not undoable either — so it never goes near
     /// the undo stack, the way a camera pose does not.
     Scrolled(Scroll),
+    /// The Terrain Editor's input: a brush or region gesture's press, steps
+    /// and release, the cursor's hover, or a `B`-wheel dial (see
+    /// `workspace_view::terrain`). `Shell` answers with
+    /// [`WorkspaceView::show_terrain`].
+    Terrain(TerrainInput),
 }
 
 impl EventEmitter<ViewportAction> for WorkspaceView {}
@@ -320,6 +328,12 @@ pub(crate) struct WorkspaceView {
     /// copy of it.
     meshes: Meshes,
     drag: Option<Drag>,
+    /// Whether `B` is held — the Terrain Editor's brush dial key.
+    terrain_b: bool,
+    /// Where the cursor last stood across the view, for `B`-drag's dial.
+    terrain_dial_x: Option<f32>,
+    /// The modifiers of the last terrain input, which a release reports again.
+    terrain_modifiers: Modifiers,
     /// A body grab the last press found on the selection, held back until
     /// `Shell` has resolved the same click against the real geometry (see
     /// `ViewportAction::Pick`'s `held`).
@@ -474,6 +488,9 @@ impl WorkspaceView {
             view: None,
             meshes: Meshes::default(),
             drag: None,
+            terrain_b: false,
+            terrain_dial_x: None,
+            terrain_modifiers: Modifiers::default(),
             pending_grab: None,
             measure: None,
             held: Targets::default(),
@@ -727,6 +744,9 @@ impl WorkspaceView {
     }
 
     fn key(&mut self, keystroke: &Keystroke, pressed: bool, cx: &mut Context<Self>) {
+        if self.terrain_key(&keystroke.key, pressed, cx) {
+            return;
+        }
         let layout = Layout::of(cx.keyboard_layout().name());
         // Only on the press: a tool switch is an edge, not a state the way the
         // camera's own movement keys are.
@@ -1042,8 +1062,11 @@ impl Render for WorkspaceView {
             }))
             // Not straight to the camera: a `ScrollingFrame` under the
             // cursor takes the notch first (see `scroll`).
-            .on_scroll_wheel(cx.listener(|view, event: &ScrollWheelEvent, window, _| {
+            .on_scroll_wheel(cx.listener(|view, event: &ScrollWheelEvent, window, cx| {
                 view.note_input();
+                if view.terrain_wheel(event.delta, event.modifiers, cx) {
+                    return;
+                }
                 let scale = window.scale_factor();
                 view.wheel(event.position, event.delta, event.modifiers.shift, scale);
             }))

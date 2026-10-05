@@ -5,7 +5,7 @@ use rbx_dom::{BrickColor, Instance, Ref, Variant, WeakDom};
 use rbx_reflection::ReflectionDatabase;
 
 use super::{commit, edit_text, parse, pivot, NAME_PROPERTY};
-use crate::properties::{value_edit_kind, EditKind};
+use crate::properties::{material_colors, value_edit_kind, EditKind};
 
 const BRICK_COLOR: &str = "BrickColor";
 const COLOR: &str = "Color";
@@ -79,6 +79,9 @@ pub(crate) fn commit_all(
         .unwrap_or_default();
     if name == pivot::ORIGIN {
         return pivot::pivot_all(dom, db, selection, text);
+    }
+    if let Some(material) = material_colors::material_of_row(name) {
+        return material_colors::commit_all(dom, selection, material, text);
     }
     let (name, text) = through_color(db, &class, name, text)?;
     let text = text.as_str();

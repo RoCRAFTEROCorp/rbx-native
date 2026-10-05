@@ -46,6 +46,9 @@ const MAX_STEPS: u32 = 3;
 /// `Workspace.CurrentCamera.CFrame` needs to track a flying camera.
 const POSE_SYNC_INTERVAL: Duration = Duration::from_millis(200);
 
+/// Whole terrain chunks, `None` for one emptied.
+pub(crate) type TerrainChunks = Vec<(rbx_terrain::ChunkKey, Option<Box<[rbx_terrain::Cell]>>)>;
+
 enum Command {
     Input(CameraInput),
     /// A wheel event at `at`, in the frame's pixels: scrolls the
@@ -87,6 +90,9 @@ enum Command {
     /// One layer of the world-space line segments drawn over the scene —
     /// see `Headless::set_lines`. An empty list clears that layer.
     Lines(usize, Vec<Segment>),
+    /// A terrain edit in progress, as the chunks it changed — see
+    /// `Headless::preview_terrain`.
+    TerrainPreview(TerrainChunks),
     /// An edit to the DOM, as the `Change` log it produced, patched into the
     /// scene instance by instance — see `Headless::apply_changes`. What
     /// travels with the log is a snapshot of the instances it names (see
@@ -258,6 +264,10 @@ impl Pump {
 
     /// Draws one layer of line segments over the scene — see
     /// `Headless::set_lines`.
+    pub(super) fn terrain_preview(&self, chunks: TerrainChunks) {
+        let _ = self.commands.send(Command::TerrainPreview(chunks));
+    }
+
     pub(super) fn lines(&self, layer: usize, segments: Vec<Segment>) {
         let _ = self.commands.send(Command::Lines(layer, segments));
     }
@@ -683,6 +693,15 @@ fn coalesce(commands: Vec<Command>) -> Vec<Command> {
                     .retain(|queued| !matches!(queued, Command::Lines(held, _) if *held == layer));
                 folded.push(Command::Lines(layer, segments));
             }
+            // Back to back, two previews are one: each carries whole chunks,
+            // and the later copy of a chunk is the one that stands.
+            Command::TerrainPreview(chunks) => match folded.last_mut() {
+                Some(Command::TerrainPreview(held)) => {
+                    held.retain(|(key, _)| !chunks.iter().any(|(new, _)| new == key));
+                    held.extend(chunks);
+                }
+                _ => folded.push(Command::TerrainPreview(chunks)),
+            },
             command => folded.push(command),
         }
     }
@@ -711,6 +730,7 @@ fn apply(command: Command, rendering: &mut Rendering<'_>) -> bool {
         Command::Hover(selected) => rendering.viewer.set_hover(selected),
         Command::Preview(boxes) => rendering.viewer.set_preview(boxes),
         Command::Lines(layer, segments) => rendering.viewer.set_lines(layer, segments),
+        Command::TerrainPreview(chunks) => rendering.viewer.preview_terrain(chunks),
         Command::Gizmo(gizmo) => rendering.viewer.set_gizmo(gizmo),
         Command::GuiScreen(screen) => rendering.viewer.set_gui_screen(screen),
         Command::Changes(snapshots, changes) => {

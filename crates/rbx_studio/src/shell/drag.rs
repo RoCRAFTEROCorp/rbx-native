@@ -65,6 +65,7 @@ impl Shell {
             } => self.resize_parts(parts, *pivot, *first, cx),
             ViewportAction::Rotated { parts, first } => self.rotate_parts(parts, *first, cx),
             ViewportAction::Sun { ray, first } => self.sun_step(*ray, *first, cx),
+            ViewportAction::Terrain(input) => self.terrain_step(*input, cx),
             ViewportAction::Pivot { to, first } => self.pivot_step(*to, *first, cx),
             // The one toolbar action that moves the caret instead of changing
             // state, which is why this path carries a `Window` at all.

@@ -24,7 +24,7 @@ use crate::tokens;
 
 /// The rail, its filled part, and the grip — sized to the row it shares
 /// with the property's own number field.
-pub(super) fn slider(state: &Entity<SliderState>, cx: &App) -> impl IntoElement {
+pub(in crate::shell) fn slider(state: &Entity<SliderState>, cx: &App) -> impl IntoElement {
     // A single value keeps the range's end and leaves its start at zero,
     // so the fill always runs from the left edge.
     let filled = state.read(cx).percentage().end;

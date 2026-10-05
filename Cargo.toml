@@ -21,6 +21,9 @@ rustybuzz = { opt-level = 3 }
 # is worth in a view that redraws continuously.
 rbx_studio = { opt-level = 3 }
 rbx_viewer = { opt-level = 3 }
+# The terrain mesher and codecs run on every brush step: unoptimised, one
+# chunk's re-mesh alone takes tens of milliseconds.
+rbx_terrain = { opt-level = 3 }
 taffy = { opt-level = 3 }
 ttf-parser = { opt-level = 3 }
 # The GUI's own text stack, for the same reason again: the UI editor's canvas

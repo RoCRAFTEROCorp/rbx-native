@@ -40,6 +40,13 @@ impl Bounds {
         })
     }
 
+    pub(crate) fn union(self, other: Bounds) -> Bounds {
+        Bounds {
+            min: self.min.min(other.min),
+            max: self.max.max(other.max),
+        }
+    }
+
     /// Radius of the sphere enclosing the box, i.e. half its diagonal.
     pub(crate) fn radius(&self) -> f32 {
         (self.max - self.min).length() * 0.5

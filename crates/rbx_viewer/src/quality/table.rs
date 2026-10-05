@@ -3,6 +3,12 @@
 //! This table is an approximation based on community observation, not official
 //! documentation: Roblox publishes no per-level breakdown. The bands are
 //! deliberately coarse and in one place to keep parameter changes coordinated.
+//!
+//! Terrain water follows the same rule. Roblox only says some water
+//! properties need the highest Editor Quality Level to preview while editing
+//! (`parts/terrain.md` in its creator docs); where the ripples (level 7 up)
+//! and the scene reflections (level 10 up) start is this renderer's own
+//! choice, putting both well clear of the lowest bands.
 
 use super::{QualityLevel, QualityProfile};
 
@@ -10,6 +16,11 @@ use super::{QualityLevel, QualityProfile};
 ///
 /// Eight rows rather than twenty-one: every knob below changes at one of these
 /// boundaries, and a row per level would only invite them to drift apart.
+///
+/// `grass_distance` and `grass_density` are this renderer's own guess:
+/// Roblox publishes nothing on how its grass scales with the level, so the
+/// two bottom bands (no shadows either, the cheapest tier) draw none and the
+/// reach grows with the rest of the table from there.
 const BANDS: [(u8, QualityProfile); 8] = [
     // 1-2: roughly Compatibility — no shadows, no post effects at all.
     (
@@ -33,7 +44,11 @@ const BANDS: [(u8, QualityProfile); 8] = [
             trails: true,
             gui: true,
             msaa_samples: 1,
+            grass_distance: 0.0,
+            grass_density: 0.0,
             force_field_intersections: false,
+            water_waves: false,
+            water_reflections: false,
         },
     ),
     // 3-4: the grade comes back, and a handful of local lights with it.
@@ -58,7 +73,11 @@ const BANDS: [(u8, QualityProfile); 8] = [
             trails: true,
             gui: true,
             msaa_samples: 1,
+            grass_distance: 0.0,
+            grass_density: 0.0,
             force_field_intersections: false,
+            water_waves: false,
+            water_reflections: false,
         },
     ),
     // 5-6: shadows and Neon's glow appear — the level users notice.
@@ -83,7 +102,11 @@ const BANDS: [(u8, QualityProfile); 8] = [
             trails: true,
             gui: true,
             msaa_samples: 1,
+            grass_distance: 60.0,
+            grass_density: 0.4,
             force_field_intersections: false,
+            water_waves: false,
+            water_reflections: false,
         },
     ),
     (
@@ -107,7 +130,11 @@ const BANDS: [(u8, QualityProfile); 8] = [
             trails: true,
             gui: true,
             msaa_samples: 1,
+            grass_distance: 80.0,
+            grass_density: 0.55,
             force_field_intersections: false,
+            water_waves: true,
+            water_reflections: false,
         },
     ),
     (
@@ -131,7 +158,11 @@ const BANDS: [(u8, QualityProfile); 8] = [
             trails: true,
             gui: true,
             msaa_samples: 1,
+            grass_distance: 100.0,
+            grass_density: 0.7,
             force_field_intersections: false,
+            water_waves: true,
+            water_reflections: false,
         },
     ),
     (
@@ -155,7 +186,11 @@ const BANDS: [(u8, QualityProfile); 8] = [
             trails: true,
             gui: true,
             msaa_samples: 1,
+            grass_distance: 120.0,
+            grass_density: 0.8,
             force_field_intersections: false,
+            water_waves: true,
+            water_reflections: false,
         },
     ),
     // 10-15: nothing is capped any more; only the distances still grow.
@@ -180,7 +215,11 @@ const BANDS: [(u8, QualityProfile); 8] = [
             trails: true,
             gui: true,
             msaa_samples: 1,
+            grass_distance: 160.0,
+            grass_density: 1.0,
             force_field_intersections: false,
+            water_waves: true,
+            water_reflections: true,
         },
     ),
     // 16-21: the levels a desktop client actually runs at, and where
@@ -209,7 +248,11 @@ const BANDS: [(u8, QualityProfile); 8] = [
             trails: true,
             gui: true,
             msaa_samples: 4,
+            grass_distance: 220.0,
+            grass_density: 1.0,
             force_field_intersections: true,
+            water_waves: true,
+            water_reflections: true,
         },
     ),
 ];

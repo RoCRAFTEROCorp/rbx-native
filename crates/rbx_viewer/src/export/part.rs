@@ -160,7 +160,8 @@ impl Look<'_> {
         }
         let finish = match self.kind {
             Kind::Neon => Finish::Neon,
-            Kind::Glass => Finish::Glass,
+            // Only terrain water is drawn as water, and it reaches no part.
+            Kind::Glass | Kind::Water => Finish::Glass,
             Kind::ForceField => Finish::ForceField,
             Kind::Plastic | Kind::Textured => Finish::Plain,
         };

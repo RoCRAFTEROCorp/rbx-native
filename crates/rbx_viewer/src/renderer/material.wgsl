@@ -14,9 +14,10 @@
 @group(1) @binding(4) var material_sampler: sampler;
 
 // The scene as it stood after the opaque pass — what a `Glass` surface bends
-// out of shape behind itself. One unread texel where the place holds no
-// glass at all (see `renderer::post::Post::refraction`), which is why
-// nothing but the glass branch ever samples it.
+// out of shape behind itself, and what terrain water shows its bed and
+// reflections from (`water.wgsl`). One unread texel where the place holds
+// neither (see `renderer::post::Post::refraction`), which is why nothing but
+// those two branches ever samples it.
 @group(0) @binding(11) var refraction_source: texture_2d<f32>;
 
 // `scene::material::Kind`'s discriminants, which the instance buffer carries.
@@ -25,6 +26,7 @@ const KIND_TEXTURED: u32 = 1u;
 const KIND_NEON: u32 = 2u;
 const KIND_FORCE_FIELD: u32 = 3u;
 const KIND_GLASS: u32 = 4u;
+const KIND_WATER: u32 = 5u;
 
 // Neon is unlit and over-bright. Roblox writes the part's own colour into the
 // frame and a far brighter value into the glow it blooms from — two outputs one
@@ -401,6 +403,12 @@ fn material_output(input: MaterialInput, in_alpha: f32, frag: vec4<f32>) -> vec4
         surface.edge = max(input.edge, force_field_intersection(frag));
     }
     let shaded = material_shade_with_normal(surface);
+    if input.kind == KIND_WATER {
+        // Replaces, rather than skips, the pack sample above: the samples
+        // have to run in uniform control flow, and water's layer 0 is the
+        // neutral fill anyway. See `water.wgsl`.
+        return water_output(input, in_alpha, frag);
+    }
     var alpha = in_alpha;
     if input.kind == KIND_FORCE_FIELD {
         let to_eye = normalize(lighting.camera.xyz - input.world_position);
@@ -447,6 +455,13 @@ fn material_shade(input: MaterialInput) -> vec3<f32> {
 
 /// [`material_shade`] keeping the surface normal it shaded with.
 fn material_shade_with_normal(input: MaterialInput) -> Shaded {
+    let mapped = material_mapped(input);
+    return Shaded(mapped_shade(mapped), mapped.normal);
+}
+
+/// The pack projected and sampled, not yet shaded: what terrain blends
+/// several of before shading once.
+fn material_mapped(input: MaterialInput) -> Mapped {
     let weights = triplanar_weights(input.object_normal);
     let max_weight = max(weights.x, max(weights.y, weights.z));
 
@@ -454,9 +469,7 @@ fn material_shade_with_normal(input: MaterialInput) -> Shaded {
     // single-sample path: same axis, same UV, same cost and output as before
     // triplanar blending existed.
     if max_weight >= TRIPLANAR_FAST_PATH {
-        let axis = dominant_axis(input.object_normal);
-        let mapped = sample_axis(axis, input);
-        return Shaded(mapped_shade(mapped), mapped.normal);
+        return sample_axis(dominant_axis(input.object_normal), input);
     }
 
     // A facet tilted between axes (e.g. a CSG-carved rock): blend whichever of
@@ -501,6 +514,5 @@ fn material_shade_with_normal(input: MaterialInput) -> Shaded {
         mapped.roughness += leg.roughness * weights.z;
     }
     mapped.normal = normalize(mapped.normal);
-
-    return Shaded(mapped_shade(mapped), mapped.normal);
+    return mapped;
 }

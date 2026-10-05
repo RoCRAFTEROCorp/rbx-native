@@ -218,8 +218,29 @@ impl Patcher<'_> {
                 Ok(())
             }
             Role::Material => Err(Rebuild::Materials),
+            Role::Terrain => self.sync_terrain(),
+            // `Workspace.GlobalWind` sways the terrain's grass. Re-reading
+            // the terrain with its voxels unchanged costs one byte compare.
+            Role::Inert if instance.class() == "Workspace" => self.sync_terrain(),
             Role::Inert => Ok(()),
         }
+    }
+
+    /// Re-reads the terrain and re-meshes the chunks whose voxels changed.
+    fn sync_terrain(&mut self) -> Result<(), Rebuild> {
+        let keys =
+            self.loaded
+                .scene_mut()
+                .resync_terrain(self.dom, self.database, self.known_layers)?;
+        let scene = self.loaded.scene();
+        let (terrain, catalog) = (scene.terrain(), scene.materials());
+        self.offscreen.with_renderer(|renderer, device, queue| {
+            renderer.sync_terrain(device, queue, (terrain, catalog), &keys)
+        });
+        if !keys.is_empty() {
+            self.pending.parts = true;
+        }
+        Ok(())
     }
 
     /// An instance the DOM no longer has: taken out of the pass its
@@ -269,6 +290,7 @@ impl Patcher<'_> {
                 Ok(())
             }
             Role::Material => Err(Rebuild::Materials),
+            Role::Terrain => self.sync_terrain(),
             Role::Inert => Ok(()),
         }
     }

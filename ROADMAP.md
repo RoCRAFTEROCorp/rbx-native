@@ -36,6 +36,19 @@ Roblox's own engine.
   size. A load normalises the several names a property can be saved
   under to one, never to a spelling Studio cannot read back (a package
   link keeps `PackageIdSerialize`).
+- [x] **Voxel terrain storage** (`rbx_terrain`): `Terrain.SmoothGrid`
+  read and written — version 1, 32-voxel chunks in X/Y/Z order, each
+  named by its offset from the last as three big-endian integers with
+  their bytes interleaved, then run records (material in six bits, an
+  optional occupancy byte, an optional count, and a count of zero carrying
+  one more byte, the voxel's share of water). Worked out from a real
+  place's 66 KB blob, which decodes cleanly and re-encodes to its original
+  bytes, and checked against zeux's 2017 storage post and two independent
+  readers. `PhysicsGrid` is rebuilt from the voxels whenever they change —
+  every 8³-voxel region a voxel touches grown by one, which reproduces the
+  same place's stored regions exactly — and `MaterialColors`' 69 bytes are
+  read and written. A version other than 1, or bytes that do not parse,
+  are refused and left untouched rather than guessed at.
 
 ### Scripting (`rbx_lua`)
 - [x] Sandboxed Luau VM (`mlua`) with a from-scratch DataModel
@@ -540,6 +553,20 @@ Roblox's own engine.
   so the model never jumps. A model of one part scales as a model, and a
   resized part's `PivotOffset` stretches with its `Size`, as Studio's
   fix-up does.
+
+- [x] **Smooth terrain in the viewport.** `Workspace.Terrain` is meshed
+  per chunk (Surface Nets over voxel fill, gradient normals, in parallel)
+  and drawn with the same texture packs and `MaterialService` overrides
+  parts use, tinted by `MaterialColors` and blended where materials meet
+  instead of stepping along the voxel grid. Water is its own surface: a
+  bright `WaterColor` body that clears to the bed in the shallows,
+  irregular ripples from `WaterWaveSize`/`WaterWaveSpeed`, screen-space
+  reflections of the scene weighted by `WaterReflectance`, and sun glints.
+  `Terrain.Decoration` grows swaying grass on the Grass material, its
+  length from `GrassLength`, bent by `Workspace.GlobalWind`. The quality
+  level decides ripples (7+), reflections (10+) and how far and dense the
+  grass reaches. Terrain casts shadows, frames the camera, and an edit
+  re-meshes only the chunks it changed.
 
 ### Editor (`rbx_studio`, binary `rbxstudio`)
 - [x] Explorer: this project's own flat, from-scratch class icon kit
@@ -1874,6 +1901,26 @@ Roblox's own engine.
   part's own axes, so on a frozen block they may run another way; a baked
   mesh keeps positions, normals, UVs and LOD 0 only (no vertex colours).
 
+- [x] **The Terrain Editor** (Home › Terrain Editor), tool for tool
+  as `studio/terrain-editor.md` lists them. Create: Import (a heightmap,
+  16-bit where the file has it, stretched over the region, plus an
+  optional colormap read by the documented colour key), Generate (the
+  nine biomes, blending, caves, biome size, seed) and Clear. Edit: Select
+  (drag a region across the terrain, scale it by its balls with Shift and
+  Ctrl as documented, type its position and size; Ctrl+C/X/V/D and Delete
+  on the region), Transform (move, turn, stretch, Merge Empty, Live
+  Edit), Fill and Replace, Sea Level's Create and Evaporate, and the Draw,
+  Sculpt, Smooth, Paint and Flatten brushes with every option the page
+  lists — sphere/box/cylinder, size 1–64, height, strength 0.1–1, pivot,
+  snapping, plane lock, Ignore Water, Ignore Parts, Auto Material, Erode
+  and Grow to Flat, fixed flatten plane, Paint's Replace — and its
+  shortcuts (Ctrl subtracts, Shift smooths, B with the wheel sizes the
+  brush, Ctrl+B its height, Shift+B its strength). Every terrain material
+  can be laid on voxels, picked from swatches in the place's own colours.
+  Each stroke or operation is one undo step. The Properties panel shows
+  `MaterialColors` as one editable colour per material and keeps the raw
+  voxel blobs out of view.
+
 ### Platform
 - [x] Linux (X11) — the daily-driven target.
 - [x] Windows — asset cache and settings now fall back to
@@ -2057,26 +2104,6 @@ against `Roblox/creator-docs` rather than assumed:
   Needs a real version 4 blob, checked the way the others are, against
   what the union's own tree carves. No other version (1, 3, 6+) has been
   seen or reported.
-
-#### Terrain
-- [ ] 📋 Voxel terrain storage (`Terrain.SmoothGrid`) — no work started.
-  Roblox documents the general chunk/RLE storage approach in a 2017
-  engineering post but not an exact, current binary spec; this is the
-  highest-risk reverse-engineering item on the whole roadmap if it's ever
-  picked up, and everything below depends on it existing first.
-- [ ] 📋 **The Terrain Editor's own tools**, once voxel storage exists —
-  checked against `Roblox/creator-docs`' `studio/terrain-editor.md` for
-  the real toolset rather than assumed:
-  - **Create tab**: **Import** (heightmap + optional colormap applied to a
-    region), **Generate** (procedural terrain within a region), **Clear**.
-  - **Edit tab**: **Select**, **Transform**, **Fill**, **Sea Level**,
-    **Draw**, **Sculpt**, **Smooth**, **Paint**, **Flatten** — `Paint`
-    specifically is the material-per-voxel tool (see materials below),
-    the rest shape the terrain geometry itself.
-  - Real Roblox terrain materials (Grass, Rock, Sand, Water, Mud, …, all
-    already implemented as `rbx_materials` texture packs for ordinary
-    parts per "What's been implemented") need to be paintable onto voxels
-    specifically, not just available for `BasePart.Material`.
 
 ### Editor
 - [ ] 📋 **The accessibility work the reference guidance calls Stage 2 and

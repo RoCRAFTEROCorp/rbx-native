@@ -63,6 +63,7 @@ mod style_panel;
 mod sun;
 mod templates_live;
 mod templates_window;
+mod terrain;
 mod theme_live;
 mod toolbar;
 pub(crate) mod tooltip;
@@ -376,6 +377,11 @@ pub(crate) struct Shell {
     /// The Sun tool's body and gesture, and the drag under way — see
     /// `crate::sun`. Whether the tool is active at all is `transform.tool`.
     sun: crate::sun::SunTool,
+    /// The Terrain Editor's tool, settings and gesture in progress.
+    terrain: terrain::TerrainEditor,
+    /// Its panel's sliders and fields, built the first time it draws.
+    terrain_fields: Option<terrain::TerrainFields>,
+    terrain_scroll: ScrollHandle,
     /// Which of the ribbon's own category tabs is showing — see
     /// `shell::ribbon`. Session-only: real Studio's own ribbon always opens
     /// back on Home too, and there's nothing here worth writing to
@@ -702,6 +708,9 @@ impl Shell {
             align: AlignOptions::default(),
             align_open: false,
             sun: crate::sun::SunTool::default(),
+            terrain: terrain::TerrainEditor::default(),
+            terrain_fields: None,
+            terrain_scroll: ScrollHandle::new(),
             ribbon_tab: ribbon::Tab::default(),
             document: Document::default(),
             open_menu: None,
@@ -759,6 +768,9 @@ impl Shell {
         // taken afterwards prove the rebuild *kept* it (see
         // `rbx_viewer::view::View`) instead of only proving it was set last.
         shell.apply_debug_tool(cx);
+        // `RBX_STUDIO_TERRAIN` (see `shell::terrain`), the same aid for the
+        // Terrain Editor.
+        shell.apply_debug_terrain(cx);
 
         // `--select` / `RBX_STUDIO_SELECT`: `main::load` already resolved a
         // single target into the initial `Place.selected` before the window
