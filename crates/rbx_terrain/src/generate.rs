@@ -102,9 +102,7 @@ impl Biome {
                 _ => Material::Mud,
             },
             Biome::Plains | Biome::Hills => {
-                if deep {
-                    Material::Rock
-                } else if steep > 1.2 {
+                if deep || steep > 1.2 {
                     Material::Rock
                 } else if depth > 0 {
                     Material::Ground

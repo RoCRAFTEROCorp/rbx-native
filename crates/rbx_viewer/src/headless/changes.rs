@@ -218,8 +218,27 @@ impl Patcher<'_> {
                 Ok(())
             }
             Role::Material => Err(Rebuild::Materials),
+            Role::Terrain => self.sync_terrain(),
             Role::Inert => Ok(()),
         }
+    }
+
+    /// Re-reads the terrain and re-meshes the chunks whose voxels changed.
+    fn sync_terrain(&mut self) -> Result<(), Rebuild> {
+        let keys =
+            self.loaded
+                .scene_mut()
+                .resync_terrain(self.dom, self.database, self.known_layers)?;
+        let scene = self.loaded.scene();
+        let (terrain, catalog, refracting) =
+            (scene.terrain(), scene.materials(), scene.has_glass());
+        self.offscreen.with_renderer(|renderer, device, queue| {
+            renderer.sync_terrain(device, queue, (terrain, catalog), &keys, refracting)
+        });
+        if !keys.is_empty() {
+            self.pending.parts = true;
+        }
+        Ok(())
     }
 
     /// An instance the DOM no longer has: taken out of the pass its
@@ -269,6 +288,7 @@ impl Patcher<'_> {
                 Ok(())
             }
             Role::Material => Err(Rebuild::Materials),
+            Role::Terrain => self.sync_terrain(),
             Role::Inert => Ok(()),
         }
     }

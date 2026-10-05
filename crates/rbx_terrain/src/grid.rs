@@ -259,6 +259,42 @@ impl VoxelGrid {
         self.chunks.clear();
     }
 
+    /// The chunks whose surface meshes differ between `self` and `other`:
+    /// what a renderer holding meshes of one has to rebuild to show the
+    /// other, without the edit history `take_dirty` keeps.
+    pub fn changed_meshes(&self, other: &VoxelGrid) -> BTreeSet<ChunkKey> {
+        let keys: BTreeSet<ChunkKey> = self
+            .chunks
+            .keys()
+            .chain(other.chunks.keys())
+            .copied()
+            .collect();
+        let mut marks = VoxelGrid::new();
+        for key in keys {
+            let (a, b) = (self.chunks.get(&key), other.chunks.get(&key));
+            if a == b {
+                continue;
+            }
+            let origin = key.origin();
+            for index in 0..CHUNK_CELLS {
+                let before = a.map_or(Cell::AIR, |cells| cells[index]);
+                let after = b.map_or(Cell::AIR, |cells| cells[index]);
+                if before != after {
+                    let local = local_of_index(index);
+                    marks.mark_dirty(
+                        key,
+                        [
+                            origin[0] + local[0],
+                            origin[1] + local[1],
+                            origin[2] + local[2],
+                        ],
+                    );
+                }
+            }
+        }
+        marks.dirty
+    }
+
     /// The chunks changed since the last call. A chunk emptied by an edit is
     /// included even though it is no longer stored.
     pub fn take_dirty(&mut self) -> BTreeSet<ChunkKey> {
@@ -325,6 +361,19 @@ mod tests {
                 ChunkKey { x: 0, y: 0, z: 1 },
             ]
         );
+    }
+
+    #[test]
+    fn changed_meshes_matches_what_the_edits_dirtied() {
+        let mut before = VoxelGrid::new();
+        before.set([3, 3, 3], Cell::full(Material::Rock));
+        before.set([40, 3, 3], Cell::full(Material::Rock));
+        let mut after = before.clone();
+        after.take_dirty();
+        after.set([0, 3, 3], Cell::full(Material::Sand));
+        after.set([40, 3, 3], Cell::AIR);
+        assert_eq!(before.changed_meshes(&after), after.take_dirty());
+        assert!(before.changed_meshes(&before).is_empty());
     }
 
     #[test]

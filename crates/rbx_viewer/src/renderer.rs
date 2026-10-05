@@ -36,6 +36,7 @@ mod slots;
 mod stars;
 mod sun;
 mod switch;
+mod terrain;
 mod texture;
 mod textured;
 mod trail;
@@ -148,6 +149,8 @@ pub(crate) struct Renderer {
     shaped: Shaped,
     translucent: Translucent,
     filemesh: filemesh::FileMeshes,
+    /// `Workspace.Terrain`'s chunk meshes; empty in a place without terrain.
+    terrain: terrain::TerrainGpu,
     textured: textured::Textured,
     sky: Option<skybox::Skybox>,
     stars: Option<Stars>,
@@ -336,6 +339,7 @@ impl Renderer {
                 scene.resolved_file_meshes(),
                 quality,
             ),
+            terrain: terrain::TerrainGpu::new(device, queue, scene.terrain(), scene.materials()),
             textured: textured::Textured::new(
                 device,
                 queue,
@@ -584,10 +588,38 @@ impl Renderer {
     /// host that only draws on change keeps drawing while this holds.
     pub(crate) fn animating(&self) -> bool {
         self.translucent.has_force_field()
+            || self.terrain.has_water()
             || self.beams.is_live()
             || self.trails.is_live()
             || self.particles.is_live()
             || self.textured.has_pending()
+    }
+
+    /// The terrain half of an edit: re-meshes `keys`, rewrites every
+    /// material's tint and the water look, and re-decides whether the frame
+    /// copies the scene for refraction (water, like glass, bends it).
+    pub(crate) fn sync_terrain(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        (terrain, catalog): (
+            Option<&crate::scene::terrain::Terrain>,
+            &crate::scene::Catalog,
+        ),
+        keys: &std::collections::BTreeSet<rbx_terrain::ChunkKey>,
+        refracting: bool,
+    ) {
+        match terrain {
+            Some(terrain) => {
+                if !keys.is_empty() {
+                    self.terrain.remesh(device, terrain, keys);
+                    self.shadows.terrain_changed();
+                }
+                self.terrain.write_instances(queue, terrain, catalog);
+            }
+            None => self.terrain = terrain::TerrainGpu::new(device, queue, None, catalog),
+        }
+        self.refracting = refracting;
     }
 
     /// Moves the `ForceField` shimmer to where it is `elapsed` into the
@@ -736,23 +768,28 @@ impl Renderer {
         // Before the colour pass, never inside it: the same texture cannot be a
         // depth attachment and a bound resource in one pass.
         if lamp != Lamp::None {
-            self.shadows.render(queue, &mut encoder, &self.meshes, &fit);
+            self.shadows
+                .render(queue, &mut encoder, (&self.meshes, &self.terrain), &fit);
         }
         if !selected.is_empty() {
-            self.shadows
-                .render_local(queue, &mut encoder, &self.meshes, &selected);
+            self.shadows.render_local(
+                queue,
+                &mut encoder,
+                (&self.meshes, &self.terrain),
+                &selected,
+            );
         }
         // Redrawn only when the cubes would hold something different — six
         // faces a light is the one shadow pass worth not repeating for a
         // still camera over a still scene.
         self.shadows
-            .render_points(queue, &mut encoder, &self.meshes, &points);
+            .render_points(queue, &mut encoder, (&self.meshes, &self.terrain), &points);
         self.scene_pass(&mut encoder, targets, &cull);
         // Between the two halves, never inside either: the copy's source is
         // a colour attachment of both. A no-op in a place with no glass,
         // which has no copy to take.
         targets.capture_refraction(&mut encoder);
-        self.translucent_pass(&mut encoder, targets);
+        self.translucent_pass(&mut encoder, targets, eye);
         self.overlay_pass(&mut encoder, targets);
 
         // Before particles: sorting the two passes against each other is out

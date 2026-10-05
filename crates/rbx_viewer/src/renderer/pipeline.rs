@@ -603,6 +603,15 @@ mod tests {
     use std::time::Duration;
 
     #[test]
+    fn the_water_shader_knows_the_near_plane() {
+        let declared = format!("const CAMERA_NEAR: f32 = {:?};", crate::camera::NEAR_PLANE);
+        assert!(
+            include_str!("material.wgsl").contains(&declared),
+            "{declared}"
+        );
+    }
+
+    #[test]
     fn intersection_depth_packs_off_perspective_and_orthographic_apart() {
         use crate::camera::DepthRange;
         let range = DepthRange {

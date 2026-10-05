@@ -6067,6 +6067,7 @@ dependencies = [
  "rbx_materials",
  "rbx_mesh",
  "rbx_reflection",
+ "rbx_terrain",
  "rbx_xml",
  "serde_json",
  "swash",

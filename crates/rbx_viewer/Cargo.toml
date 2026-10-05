@@ -28,6 +28,7 @@ rbx_reflection = { path = "../rbx_reflection", features = ["embedded-dump"] }
 rbx_assets = { path = "../rbx_assets" }
 rbx_materials = { path = "../rbx_materials" }
 rbx_mesh = { path = "../rbx_mesh" }
+rbx_terrain = { path = "../rbx_terrain" }
 wgpu = "30.0"
 winit = "0.30"
 glam = "0.33"

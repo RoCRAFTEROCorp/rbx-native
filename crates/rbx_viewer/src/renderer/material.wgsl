@@ -25,6 +25,7 @@ const KIND_TEXTURED: u32 = 1u;
 const KIND_NEON: u32 = 2u;
 const KIND_FORCE_FIELD: u32 = 3u;
 const KIND_GLASS: u32 = 4u;
+const KIND_WATER: u32 = 5u;
 
 // Neon is unlit and over-bright. Roblox writes the part's own colour into the
 // frame and a far brighter value into the glow it blooms from — two outputs one
@@ -400,7 +401,13 @@ fn material_output(input: MaterialInput, in_alpha: f32, frag: vec4<f32>) -> vec4
     if input.kind == KIND_FORCE_FIELD {
         surface.edge = max(input.edge, force_field_intersection(frag));
     }
-    let shaded = material_shade_with_normal(surface);
+    var shaded = material_shade_with_normal(surface);
+    if input.kind == KIND_WATER {
+        // Replaces, rather than skips, the pack sample above: the samples
+        // have to run in uniform control flow, and water's layer 0 is the
+        // neutral fill anyway.
+        shaded = water_shade(input);
+    }
     var alpha = in_alpha;
     if input.kind == KIND_FORCE_FIELD {
         let to_eye = normalize(lighting.camera.xyz - input.world_position);
@@ -411,7 +418,8 @@ fn material_output(input: MaterialInput, in_alpha: f32, frag: vec4<f32>) -> vec4
     // `ViewportFrame`'s own, a place with no glass in it at all): there is
     // nothing to bend, so the pane blends the ordinary way instead.
     let source = vec2<i32>(textureDimensions(refraction_source));
-    if input.kind != KIND_GLASS || alpha >= 1.0 || source.x <= 1 {
+    let bends = input.kind == KIND_GLASS || input.kind == KIND_WATER;
+    if !bends || alpha >= 1.0 || source.x <= 1 {
         return vec4<f32>(shaded.color, alpha);
     }
 
@@ -425,10 +433,105 @@ fn material_output(input: MaterialInput, in_alpha: f32, frag: vec4<f32>) -> vec4
     let texel = clamp(vec2<i32>(uv * vec2<f32>(source)), vec2<i32>(0), source - vec2<i32>(1));
     let behind = textureLoad(refraction_source, texel, 0).rgb;
 
+    if input.kind == KIND_WATER {
+        // Light through water fades with the depth of water it crosses:
+        // the shallows show the bed, deep water is all `WaterColor`. A
+        // clearer place (`WaterTransparency` up) lets light go further.
+        let clarity = max(1.0 - alpha, 0.02) * WATER_CLEAR_STUDS;
+        let through = exp(-water_depth(frag) / clarity);
+        return vec4<f32>(behind * through + shaded.color * (1.0 - through), 1.0);
+    }
+
     // Exactly the blend the pipeline would have done — `dst * (1 - alpha) +
     // src * alpha` — with the bent copy standing in for `dst`, which is what
     // makes this refraction rather than a second layer of haze.
     return vec4<f32>(behind * (1.0 - alpha) + shaded.color * alpha, 1.0);
+}
+
+/// How many studs of water lie between a water fragment and the opaque
+/// scene behind it, from the two depth values: infinite reversed-Z puts
+/// depth at `CAMERA_NEAR / distance`, an orthographic frame (a negative
+/// `uniforms.viewport.w`, see `pipeline::intersection_depth`) spreads depth
+/// linearly over its span. Nothing behind at all reads as bottomless.
+fn water_depth(frag: vec4<f32>) -> f32 {
+    let scene = scene_depth(vec2<i32>(frag.xy));
+    if scene <= 0.0 {
+        return 1.0e4;
+    }
+    let mode = uniforms.viewport.w;
+    if mode < 0.0 {
+        return max((frag.z - scene) * -mode, 0.0);
+    }
+    return max(CAMERA_NEAR / scene - CAMERA_NEAR / frag.z, 0.0);
+}
+
+// Terrain water. Roblox documents what its properties do (`WaterWaveSize`
+// "from 1 (large) to 0 (none)", `WaterWaveSpeed` "from 100 (turbulent) to 0
+// (still)", `WaterReflectance`, `WaterTransparency`) but not the shader, so
+// the waves here are this renderer's own: a few crossing sine ripples
+// tilting the surface normal, no displaced geometry.
+const WATER_ROUGHNESS: f32 = 0.05;
+// Wavelengths in studs and relative heights of the crossing ripples.
+const WATER_WAVES: array<vec4<f32>, 4> = array<vec4<f32>, 4>(
+    // direction xz, wavelength, height
+    vec4<f32>(0.80, 0.60, 23.0, 0.7),
+    vec4<f32>(-0.45, 0.89, 15.33, 0.6),
+    vec4<f32>(0.20, -0.98, 11.5, 0.5),
+    vec4<f32>(-0.95, -0.31, 7.67, 0.4),
+);
+// Studs of water that dim light to 1/e at `WaterTransparency` 1; the
+// place's transparency scales it (0.3, the default, gives 12 studs).
+const WATER_CLEAR_STUDS: f32 = 40.0;
+// `camera::NEAR_PLANE`, which a unit test holds this to.
+const CAMERA_NEAR: f32 = 0.05;
+// How far the strongest waves (size 1) tilt the normal.
+const WATER_TILT: f32 = 0.5;
+
+/// The surface normal of rippling water at `input`, whose studs-per-tile
+/// field carries the waves: whole ripple cycles per shimmer period in its
+/// integer part, height (0 to 1) in its fraction (see `renderer::terrain`).
+/// Only upward-facing water ripples; a wall of water keeps its own normal.
+fn water_normal(input: MaterialInput) -> vec3<f32> {
+    let packed = input.studs_per_tile;
+    let cycles = floor(packed);
+    let height = fract(packed) / 0.999;
+    let normal = normalize(input.world_normal);
+    let up = max(normal.y, 0.0);
+    if height <= 0.0 || up <= 0.0 {
+        return normal;
+    }
+    let time = 6.2831855 * uniforms.viewport.z * cycles;
+    var slope = vec2<f32>(0.0);
+    for (var i = 0; i < 4; i = i + 1) {
+        let wave = WATER_WAVES[i];
+        let k = 6.2831855 / wave.z;
+        // Shorter waves run proportionally more cycles, so the loop still
+        // closes on a whole number of each.
+        let speed = floor(23.0 / wave.z + 0.5);
+        let phase = dot(wave.xy, input.world_position.xz) * k + time * speed;
+        slope += wave.xy * (wave.w * cos(phase));
+    }
+    let tilt = slope * (height * WATER_TILT * up / 2.2);
+    return normalize(normal + vec3<f32>(-tilt.x, 0.0, -tilt.y));
+}
+
+fn water_shade(input: MaterialInput) -> Shaded {
+    let normal = water_normal(input);
+    var surface: Surface;
+    surface.albedo = input.albedo;
+    surface.normal = normal;
+    surface.world_position = input.world_position;
+    surface.roughness = WATER_ROUGHNESS;
+    surface.shininess = exp2(mix(SHININESS_MAX, SHININESS_MIN, WATER_ROUGHNESS));
+    surface.spec_strength = lighting.calibration.y * (1.0 - WATER_ROUGHNESS);
+    surface.spec_tint = vec3<f32>(1.0);
+    // Fresnel: water mirrors the sky at a glance and shows its depth face-on,
+    // scaled by the place's `WaterReflectance`.
+    let to_eye = normalize(lighting.camera.xyz - input.world_position);
+    let facing = 1.0 - max(dot(normal, to_eye), 0.0);
+    let fresnel = 0.02 + 0.98 * pow(facing, 5.0);
+    surface.reflectance = input.reflectance * fresnel;
+    return Shaded(shade(surface), normal);
 }
 
 /// What a shaded fragment is, where the caller needs the surface as well as
