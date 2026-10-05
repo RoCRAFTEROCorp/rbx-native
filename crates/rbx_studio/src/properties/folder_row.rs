@@ -34,6 +34,7 @@ pub(super) fn row(
         category,
         edit: Some(EditKind::Color { r, g, b }),
         mixed: false,
+        children: Vec::new(),
     })
 }
 

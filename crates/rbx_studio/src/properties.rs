@@ -19,6 +19,7 @@ mod common;
 mod computed;
 pub(crate) mod edit;
 mod folder_row;
+mod material_colors;
 mod ranges;
 mod sheet;
 
@@ -204,6 +205,29 @@ pub(crate) struct PropertyRow {
     /// then empty and `edit` seeded empty where it can be; the two widgets
     /// with no empty form — a checkbox, a colour swatch — read this instead.
     pub(crate) mixed: bool,
+    /// Rows that open beneath this one, which then has no value of its own
+    /// to edit: `Terrain.MaterialColors`' per-material colours (see
+    /// `material_colors`). Empty for every other row.
+    pub(crate) children: Vec<PropertyRow>,
+}
+
+impl PropertyRow {
+    /// Joins a child row's name to its parent's (`MaterialColors.Grass`). The
+    /// panel keys each row's editor by name, so a child's must be unique
+    /// across the panel; no reflected property name holds a dot.
+    pub(crate) const CHILD: char = '.';
+
+    /// What the name column shows: a child row's own part of its name.
+    pub(crate) fn label(&self) -> &str {
+        self.name
+            .split_once(Self::CHILD)
+            .map_or(&self.name, |(_, label)| label)
+    }
+
+    /// How many expanders deep the row sits.
+    pub(crate) fn depth(&self) -> usize {
+        usize::from(self.name.contains(Self::CHILD))
+    }
 }
 
 /// Groups rows by [`PropertyRow::category`] in the order Studio's own
@@ -330,11 +354,17 @@ impl Properties {
     ) -> Vec<PropertyRow> {
         let mut rows = self.rows(dom, selection, folder_color);
         // A `CFrame` row opens into Position and Orientation, which Studio's
-        // filter finds by those names as well as the row's own.
-        rows.retain(|row| {
-            matches(&row.name, filter)
+        // filter finds by those names as well as the row's own. A row with
+        // children stays for any child that matches, narrowed to those.
+        rows.retain_mut(|row| {
+            if matches(&row.name, filter)
                 || matches!(&row.edit, Some(EditKind::Groups { groups, .. })
                     if groups.iter().any(|group| matches(group.caption, filter)))
+            {
+                return true;
+            }
+            row.children.retain(|child| matches(child.label(), filter));
+            !row.children.is_empty()
         });
         rows
     }
@@ -360,6 +390,16 @@ impl Properties {
         read_only: bool,
         value: &Variant,
     ) -> PropertyRow {
+        if material_colors::applies(class, name) {
+            return PropertyRow {
+                name: name.to_owned(),
+                value: String::new(),
+                category: category.to_owned(),
+                edit: None,
+                mixed: false,
+                children: material_colors::children(value, category),
+            };
+        }
         PropertyRow {
             name: name.to_owned(),
             value: self.format(dom, class, name, value),
@@ -370,6 +410,7 @@ impl Properties {
                 self.edit_kind(class, name, value)
             },
             mixed: false,
+            children: Vec::new(),
         }
     }
 

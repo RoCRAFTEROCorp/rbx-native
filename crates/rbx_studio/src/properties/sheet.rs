@@ -37,7 +37,7 @@ use rbx_reflection::{PropertyDescriptor, ReflectionDatabase};
 use super::computed::COMPUTED;
 use super::edit::pivot::ORIGIN;
 use super::edit::NIL_REF;
-use super::{attributes, edit::NAME_PROPERTY, Properties, UNCATEGORIZED};
+use super::{attributes, edit::NAME_PROPERTY, material_colors, Properties, UNCATEGORIZED};
 
 /// Two properties every instance has but no file stores, read off the
 /// instance itself the way `Name` is.
@@ -124,6 +124,10 @@ impl Sheet {
                     // An unset reference is an absent key, not a missing
                     // default: listed as `nil`, so it can be picked.
                     default = Some(Variant::Ref(NIL_REF));
+                } else if default.is_none() && material_colors::applies(class, &property.name) {
+                    // The dump records no default for it, and a Terrain
+                    // without one still draws Studio's palette.
+                    default = Some(material_colors::default_blob());
                 } else if default.is_none() {
                     // Likewise an unset asset id (`Decal.Texture`, defaulted
                     // only as `TextureContent`): its twin's default, or "".
@@ -215,7 +219,10 @@ impl Properties {
         // — still shows, under its canonical name, so an edit can reach it.
         let mut unreflected = HashSet::new();
         for key in instance.properties().keys() {
-            if sheet.claimed.contains(key) || attributes::is_backing_store(key) {
+            if sheet.claimed.contains(key)
+                || attributes::is_backing_store(key)
+                || material_colors::is_voxel_store(key)
+            {
                 continue;
             }
             let name = self.db.canonical_name(class, key);
@@ -233,7 +240,8 @@ impl Properties {
             named.push(Named {
                 name,
                 owner: "",
-                category: UNCATEGORIZED,
+                category: material_colors::unreflected_category(class, name)
+                    .unwrap_or(UNCATEGORIZED),
                 read_only: false,
                 value: Cow::Borrowed(value),
             });

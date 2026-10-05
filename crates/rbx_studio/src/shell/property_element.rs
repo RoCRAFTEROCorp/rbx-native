@@ -3,10 +3,11 @@
 //! rows it picks out — one builder, so the two can never edit a property
 //! differently.
 
-use gpui_kit::component::h_flex;
+use gpui_kit::component::{h_flex, v_flex};
 use gpui_kit::*;
 
 use crate::properties::{EditKind, PropertyRow};
+use crate::tokens;
 
 use super::rows::{
     checkbox, expander, property_expandable, property_row, property_row_control, render_editor,
@@ -26,6 +27,9 @@ impl Shell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        if !row.children.is_empty() {
+            return self.parent_element(row, expand, window, cx);
+        }
         match &row.edit {
             None => property_row(row).into_any_element(),
             Some(EditKind::BrickColor(number)) => {
@@ -183,5 +187,41 @@ impl Shell {
                 property_row_control(row, control, composite, error.as_deref()).into_any_element()
             }
         }
+    }
+
+    /// A row with nothing to edit itself, only rows beneath it (see
+    /// `PropertyRow::children`): an expander and, once it is open, each child
+    /// as the ordinary row its own `EditKind` calls for. Collapsed, the
+    /// children are never built — `MaterialColors` alone has 21 swatches.
+    fn parent_element(
+        &mut self,
+        row: &PropertyRow,
+        expand: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let expanded = expand || self.is_row_expanded(&row.name);
+        let children = expanded.then(|| {
+            let mut children = Vec::with_capacity(row.children.len());
+            for child in &row.children {
+                children.push(self.property_element(child, false, window, cx));
+            }
+            v_flex()
+                .w_full()
+                .pt(tokens::row_gap())
+                .gap(tokens::row_gap())
+                .children(children)
+                .into_any_element()
+        });
+        let toggle = cx.entity();
+        let name = row.name.clone();
+        let expander = self.properties_nav.claim(
+            expander(&row.name, expanded, move |_, _, cx| {
+                let name = name.clone();
+                toggle.update(cx, |shell, cx| shell.toggle_row_expanded(&name, cx));
+            }),
+            cx,
+        );
+        property_expandable(expander, div(), children, None).into_any_element()
     }
 }
