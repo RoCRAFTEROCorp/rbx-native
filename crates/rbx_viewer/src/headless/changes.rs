@@ -233,10 +233,9 @@ impl Patcher<'_> {
                 .scene_mut()
                 .resync_terrain(self.dom, self.database, self.known_layers)?;
         let scene = self.loaded.scene();
-        let (terrain, catalog, refracting) =
-            (scene.terrain(), scene.materials(), scene.has_glass());
+        let (terrain, catalog) = (scene.terrain(), scene.materials());
         self.offscreen.with_renderer(|renderer, device, queue| {
-            renderer.sync_terrain(device, queue, (terrain, catalog), &keys, refracting)
+            renderer.sync_terrain(device, queue, (terrain, catalog), &keys)
         });
         if !keys.is_empty() {
             self.pending.parts = true;

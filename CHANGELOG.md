@@ -17,6 +17,13 @@
   lists, Alt-click's material picker included — each stroke one undo
   step, and the Properties panel edits `MaterialColors` per material.
   — @chteau
+- **Terrain edits stay quick on big maps.** A brush stroke no longer
+  re-encodes, re-decodes and re-meshes the whole place each step: the
+  editor previews only the chunks the brush reached and writes once on
+  release, `SmoothGrid` and `PhysicsGrid` re-encode only the chunks an edit
+  changed, and the viewport decodes only the chunks whose bytes differ. On
+  a 2048-stud generated map a Draw step went from about 60 ms to under
+  3 ms, and a release from about 300 ms to about 20 ms. — @chteau
 
 - **Freeze Rotation.** Explorer › right-click › Freeze Rotation clears a
   turned instance's `Orientation` to `0, 0, 0` while it keeps looking as it

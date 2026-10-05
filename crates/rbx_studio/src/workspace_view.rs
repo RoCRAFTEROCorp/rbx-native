@@ -53,6 +53,7 @@ use gizmo::Drag;
 use input::{camera_key, chorded, tool_key, Layout};
 pub(crate) use pump::canvas::Request as CanvasRequest;
 use pump::Pump;
+pub(crate) use pump::TerrainChunks;
 pub(crate) use scroll::{scrolled, Scroll};
 pub(crate) use stats::requested as stats_requested;
 pub(crate) use summon::install as install_key_bindings;

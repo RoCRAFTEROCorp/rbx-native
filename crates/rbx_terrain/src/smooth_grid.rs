@@ -55,7 +55,14 @@ pub enum SmoothGridError {
     DuplicateChunk(i32, i32, i32),
 }
 
-pub fn decode(bytes: &[u8]) -> Result<VoxelGrid, SmoothGridError> {
+/// Where each chunk's voxels sit in a `SmoothGrid` blob: its key and the
+/// byte range of its run records. Finding them means walking every record
+/// (nothing in the format says where a chunk ends), but walking is a small
+/// fraction of building the cells, and a holder of an older blob's index can
+/// then decode only the chunks whose bytes differ.
+pub type Index = Vec<(ChunkKey, std::ops::Range<usize>)>;
+
+pub fn index(bytes: &[u8]) -> Result<Index, SmoothGridError> {
     let mut reader = Reader { bytes, at: 0 };
     let version = reader.byte().map_err(|_| SmoothGridError::Empty)?;
     if version != VERSION {
@@ -65,7 +72,7 @@ pub fn decode(bytes: &[u8]) -> Result<VoxelGrid, SmoothGridError> {
     if log2 != CHUNK_LOG2 {
         return Err(SmoothGridError::ChunkSize(log2));
     }
-    let mut grid = VoxelGrid::new();
+    let mut index = Index::new();
     let mut seen = std::collections::BTreeSet::new();
     let mut key = [0i32; 3];
     while reader.at < bytes.len() {
@@ -84,18 +91,71 @@ pub fn decode(bytes: &[u8]) -> Result<VoxelGrid, SmoothGridError> {
         if !seen.insert(key) {
             return Err(SmoothGridError::DuplicateChunk(key[0], key[1], key[2]));
         }
-        let cells = read_chunk(&mut reader)?;
-        grid.insert_chunk(
+        let start = reader.at;
+        skip_chunk(&mut reader)?;
+        index.push((
             ChunkKey {
                 x: key[0],
                 y: key[1],
                 z: key[2],
             },
-            cells,
-        );
+            start..reader.at,
+        ));
+    }
+    Ok(index)
+}
+
+pub fn decode(bytes: &[u8]) -> Result<VoxelGrid, SmoothGridError> {
+    let mut grid = VoxelGrid::new();
+    for (key, range) in index(bytes)? {
+        grid.insert_chunk(key, decode_chunk(bytes, range)?);
     }
     grid.take_dirty();
     Ok(grid)
+}
+
+/// One chunk's voxels, from a range [`index`] found.
+pub fn decode_chunk(
+    bytes: &[u8],
+    range: std::ops::Range<usize>,
+) -> Result<Box<[Cell]>, SmoothGridError> {
+    let mut reader = Reader {
+        bytes: bytes.get(range.clone()).ok_or(SmoothGridError::Truncated)?,
+        at: 0,
+    };
+    read_chunk(&mut reader)
+}
+
+/// Walks one chunk's run records without building its cells, checking them
+/// the way [`read_chunk`] would.
+fn skip_chunk(reader: &mut Reader<'_>) -> Result<(), SmoothGridError> {
+    let mut filled = 0usize;
+    while filled < CHUNK_CELLS {
+        let lead = reader.byte()?;
+        let slot = lead & MATERIAL_BITS;
+        if Material::from_slot(slot).is_none() {
+            return Err(SmoothGridError::Material(slot));
+        }
+        if lead & HAS_OCCUPANCY != 0 {
+            reader.byte()?;
+        }
+        let run = if lead & HAS_RUN != 0 {
+            match reader.byte()? {
+                0 => {
+                    reader.byte()?;
+                    1
+                }
+                count => usize::from(count) + 1,
+            }
+        } else {
+            1
+        };
+        if filled + run > CHUNK_CELLS {
+            return Err(SmoothGridError::RunOverflow);
+        }
+        filled += run;
+    }
+    Ok(())
 }
 
 fn read_chunk(reader: &mut Reader<'_>) -> Result<Box<[Cell]>, SmoothGridError> {
@@ -129,19 +189,43 @@ fn read_chunk(reader: &mut Reader<'_>) -> Result<Box<[Cell]>, SmoothGridError> {
 /// identical voxels, occupancy written only when it differs from the
 /// material's default. A real place re-encodes to its original bytes.
 pub fn encode(grid: &VoxelGrid) -> Vec<u8> {
-    let mut out = vec![VERSION, CHUNK_LOG2];
-    let mut previous = [0i32; 3];
-    for (key, cells) in grid.chunks() {
-        let key = [key.x, key.y, key.z];
-        let delta: [u32; 3] =
-            std::array::from_fn(|axis| key[axis].wrapping_sub(previous[axis]) as u32);
-        previous = key;
-        for shift in [24, 16, 8, 0] {
-            out.extend(delta.iter().map(|axis| (axis >> shift) as u8));
+    Encoder::default().encode(grid)
+}
+
+/// [`encode`] that remembers each chunk's run records by revision, so a grid
+/// encoded again after an edit only re-encodes the chunks the edit touched;
+/// the rest is a copy. Keep one per grid being saved repeatedly (an editor's
+/// working terrain).
+#[derive(Debug, Default)]
+pub struct Encoder {
+    bodies: std::collections::HashMap<ChunkKey, (u64, Vec<u8>)>,
+}
+
+impl Encoder {
+    pub fn encode(&mut self, grid: &VoxelGrid) -> Vec<u8> {
+        let mut out = vec![VERSION, CHUNK_LOG2];
+        let mut previous = [0i32; 3];
+        let mut kept = std::collections::HashSet::new();
+        for (key, cells, revision) in grid.revised_chunks() {
+            kept.insert(key);
+            let at = [key.x, key.y, key.z];
+            let delta: [u32; 3] =
+                std::array::from_fn(|axis| at[axis].wrapping_sub(previous[axis]) as u32);
+            previous = at;
+            for shift in [24, 16, 8, 0] {
+                out.extend(delta.iter().map(|axis| (axis >> shift) as u8));
+            }
+            let body = self.bodies.entry(key).or_insert((0, Vec::new()));
+            if body.0 != revision || body.1.is_empty() {
+                body.1.clear();
+                write_chunk(&mut body.1, cells);
+                body.0 = revision;
+            }
+            out.extend_from_slice(&body.1);
         }
-        write_chunk(&mut out, cells);
+        self.bodies.retain(|key, _| kept.contains(key));
+        out
     }
-    out
 }
 
 fn write_chunk(out: &mut Vec<u8>, cells: &[Cell]) {

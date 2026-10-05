@@ -141,3 +141,40 @@ fn varied_grid_round_trips() {
     assert_eq!(back, grid);
     assert_eq!(encode(&back), bytes);
 }
+
+#[test]
+fn the_index_finds_each_chunk_and_its_bytes_decode_alone() {
+    let mut grid = VoxelGrid::new();
+    grid.set([1, 2, 3], Cell::new(Material::Rock, 90, 7));
+    grid.set([40, 2, 3], Cell::full(Material::Sand));
+    let bytes = encode(&grid);
+    let index = index(&bytes).unwrap();
+    assert_eq!(index.len(), 2);
+    let (key, range) = index[1].clone();
+    assert_eq!(key, ChunkKey { x: 1, y: 0, z: 0 });
+    let cells = decode_chunk(&bytes, range).unwrap();
+    assert_eq!(
+        cells[crate::grid::index_in_chunk([40, 2, 3])],
+        Cell::full(Material::Sand)
+    );
+    assert!(super::index(&bytes[..bytes.len() - 1]).is_err());
+}
+
+#[test]
+fn the_encoder_reuses_untouched_chunks_and_matches_a_fresh_encode() {
+    let mut grid = VoxelGrid::new();
+    for x in 0..100 {
+        grid.set([x, 0, 0], Cell::full(Material::Grass));
+    }
+    let mut encoder = Encoder::default();
+    assert_eq!(encoder.encode(&grid), encode(&grid));
+    grid.set([5, 0, 0], Cell::full(Material::Snow));
+    grid.set([99, 0, 0], Cell::AIR);
+    assert_eq!(encoder.encode(&grid), encode(&grid));
+    // Emptying a whole chunk drops it from the output, as a fresh encode does.
+    for x in 96..99 {
+        grid.set([x, 0, 0], Cell::AIR);
+    }
+    assert_eq!(encoder.encode(&grid), encode(&grid));
+    assert_eq!(decode(&encoder.encode(&grid)).unwrap(), grid);
+}

@@ -19,7 +19,7 @@ mod raycast;
 pub mod smooth_grid;
 
 pub use cell::{quantize, Cell, FULL};
-pub use grid::{ChunkKey, VoxelGrid, CHUNK, VOXEL_STUDS};
+pub use grid::{Before, ChunkKey, VoxelGrid, Voxels, CHUNK, VOXEL_STUDS};
 pub use material::Material;
 pub use material_colors::MaterialColors;
 pub use raycast::{raycast, Hit};
