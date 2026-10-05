@@ -162,7 +162,7 @@ fn delivery_failure(body: &[u8]) -> String {
 
 /// The service's own wording, from whichever of the two error shapes it used:
 /// `{"errors":[{"message":...}]}` or a flat `{"code":..., "message":...}`.
-fn complaint(value: &serde_json::Value) -> Option<String> {
+pub(crate) fn complaint(value: &serde_json::Value) -> Option<String> {
     let flat = |value: &serde_json::Value| {
         let text = |key| value.get(key)?.as_str().map(str::to_string);
         match (text("code"), text("message")) {
