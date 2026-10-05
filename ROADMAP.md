@@ -1840,6 +1840,29 @@ Roblox's own engine.
   links its place from the window through the same game picker, and the
   window follows a relink or an upload from the File menu.
 
+- [x] **"Freeze"/"Apply" a `MeshPart`'s rotation** — Explorer ›
+  right-click › **Freeze Rotation** zeroes a `MeshPart`'s `Orientation`
+  while it keeps looking exactly where and how it was, the Blender "Apply
+  Transform" equivalent (devforum
+  [`allow-to-reset-the-orientation-of-a-part-to-000-and-keep-the-object-at-its-current-rotation`](https://devforum.roblox.com/t/allow-to-reset-the-orientation-of-a-part-to-000-and-keep-the-object-at-its-current-rotation/1301322)).
+  Live only on a turned `MeshPart` with a mesh: a primitive `Part` has no
+  vertices to turn. The drawn triangles (turn *and* stretch — a stretched
+  mesh turned cannot be re-stretched along the new axes) are baked into a
+  one-mesh glTF and uploaded through `rbx_cloud` as a real `Model` asset
+  (`Client::create_model_asset`, scopes `asset:read`/`asset:write`); the
+  `MeshId` Roblox's importer gives it is read back, its mesh downloaded and
+  checked to have the bake's proportions, and only then is the part
+  repointed, with `InitialSize` from that mesh, as one undo step. Nothing
+  non-standard is stored in the place. Not a raw `.mesh` upload as first
+  planned: the Assets API's `Mesh` type "only accepts content downloaded
+  from the Asset delivery API" (`creator-docs`,
+  `cloud/guides/usage-assets.md`), so a `Model` import is the one route open
+  to new geometry. `PivotOffset`, child `Attachment`s and the `C0`/`C1` of
+  joints naming the part are re-expressed so nothing hanging off it moves;
+  a skinned mesh (one with `Bone`s) is refused. The bake keeps positions,
+  normals, UVs and LOD 0 only: vertex colours and coarser LODs are dropped,
+  and a `Decal`/`Texture`'s `Face` is not remapped.
+
 ### Platform
 - [x] Linux (X11) — the daily-driven target.
 - [x] Windows — asset cache and settings now fall back to
@@ -1965,34 +1988,6 @@ Roblox's own engine.
   above existing first regardless of which direction it takes.
 
 ### Renderer
-#### Properties panel — remaining type editors
-- [ ] 📋 **"Freeze"/"Apply" a `MeshPart`'s rotation** — zero out
-  `Orientation` while leaving the object's *visual* placement unchanged,
-  the Blender "Apply Transform" equivalent. A real, well-read devforum
-  request
-  ([`allow-to-reset-the-orientation-of-a-part-to-000-and-keep-the-object-at-its-current-rotation`](https://devforum.roblox.com/t/allow-to-reset-the-orientation-of-a-part-to-000-and-keep-the-object-at-its-current-rotation/1301322),
-  6 replies): developers hit this after importing or hand-rotating
-  geometry, then write brittle scripts with per-object rotation
-  exceptions because a part's local axes no longer line up with its
-  visual orientation. Real Studio has no built-in answer either — the
-  thread's own workarounds are all userland (an invisible zero-rotation
-  `PrimaryPart` "hitbox", or juggling `PivotOffset` from the pivot tools
-  above) — so this would be a genuine rbx-native addition, not Studio
-  parity, and it must stay format-honest to remain one: a primitive
-  `Part` (Block/Ball/Cylinder/Wedge) has no vertex data of its own to
-  rotate into — its shape comes from `Class.Enum.PartType`/`Size` alone —
-  so "freezing" one is only meaningful once it's a `MeshPart`. Doing this
-  right for a `MeshPart` means generating a genuinely new mesh (rotated
-  vertices baked in, written in the same real `.mesh` binary format
-  `rbx_mesh` already reads/writes) and uploading it as a real Roblox asset
-  through the existing `rbx_cloud` Open Cloud client, then repointing
-  `MeshPart.MeshId` at it — never inventing an in-place, non-standard way
-  to store rotated geometry, which would make the saved `.rbxm`/`.rbxl`
-  fail to open correctly, or open but render wrong, in real Studio. Worth
-  noting real Studio can't do this at all to an already-uploaded mesh
-  asset it doesn't own the source file for; this project, which controls
-  its own import pipeline end to end, genuinely can.
-
 #### Animation
 Two genuinely different feasibility tiers here, easy to conflate — verified
 against `Roblox/creator-docs` rather than assumed:
