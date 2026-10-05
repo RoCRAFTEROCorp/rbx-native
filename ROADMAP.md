@@ -1974,18 +1974,6 @@ Roblox's own engine.
   locally-hosted code-completion API instead — but that's a distinct,
   lower-priority idea worth its own decision on which backend (if any),
   not a default this project should ship opinionated about.
-- [ ] 📋 **Optional, bundled `Fragment` UI framework.** [`Fragment`](https://github.com/chteau/Fragment)
-  (MIT, single-file Luau `ModuleScript`, React-inspired: local/global
-  state, contexts, reusable components over plain `GuiObject`s) offered as
-  an opt-in starter package when scaffolding a new UI-heavy project —
-  never forced, a project that doesn't want it should look exactly like
-  one built without this editor at all. Lightweight enough (one
-  `ModuleScript`, no external runtime) that "bundle it, default off" is
-  realistic in a way a heavier framework wouldn't be. Natural pairing with
-  the script templates (see "What's been implemented") and, if it lands,
-  the Wally package manager below (Fragment installed as an ordinary
-  Wally dependency rather than a copy-pasted module would be the more
-  maintainable path once Wally exists).
 
 #### Far future: node-based scripting
 - [ ] 📋 A visual, node-graph way to write Luau logic — Unreal Blueprint or
