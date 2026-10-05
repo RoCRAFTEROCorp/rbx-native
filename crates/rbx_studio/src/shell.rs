@@ -20,6 +20,7 @@ mod edit;
 mod explorer_edit;
 mod export;
 mod folder_color;
+mod freeze;
 mod group;
 mod guides;
 mod history;

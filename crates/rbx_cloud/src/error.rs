@@ -18,6 +18,10 @@ pub enum CloudError {
     #[error("HTTP {status} from {url}")]
     Http { status: u16, url: String },
 
+    /// A refusal that came with Roblox's own explanation, quoted as given.
+    #[error("Roblox refused it ({status}): {message}")]
+    Refused { status: u16, message: String },
+
     #[error("network error: {0}")]
     Transport(String),
 

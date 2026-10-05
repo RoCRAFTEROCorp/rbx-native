@@ -199,7 +199,7 @@ impl Meshes {
             .with_pieces(pieces)
     }
 
-    pub(crate) fn get(&self, asset: &AssetRef) -> Option<&Arc<Mesh>> {
+    pub fn get(&self, asset: &AssetRef) -> Option<&Arc<Mesh>> {
         self.meshes.get(asset)
     }
 

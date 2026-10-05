@@ -6020,6 +6020,7 @@ dependencies = [
  "rbx_cloud",
  "rbx_dom",
  "rbx_lua",
+ "rbx_mesh",
  "rbx_reflection",
  "rbx_viewer",
  "rbx_xml",

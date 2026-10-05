@@ -1840,6 +1840,40 @@ Roblox's own engine.
   links its place from the window through the same game picker, and the
   window follows a relink or an upload from the File menu.
 
+- [x] **"Freeze"/"Apply" a `MeshPart`'s rotation** — Explorer ›
+  right-click › **Freeze Rotation** clears an instance's turn to `0, 0, 0`
+  while it keeps looking where and how it was, Blender's Apply › Rotation
+  ("rotation values are cleared to zero … the geometry itself is adjusted
+  so that the object continues to appear unchanged") — the devforum's
+  [`allow-to-reset-the-orientation-of-a-part-to-000-and-keep-the-object-at-its-current-rotation`](https://devforum.roblox.com/t/allow-to-reset-the-orientation-of-a-part-to-000-and-keep-the-object-at-its-current-rotation/1301322),
+  which asks it of parts, meshes and models alike, including ones built
+  in Studio. As in Blender the origin stays put and loses its turn: the
+  pivot keeps its place, unturned, while child `Attachment`s and the
+  `C0`/`C1` of joints naming the part keep their whole world frame. Only
+  what Roblox itself would store is written, so four cases qualify:
+  a **`Model`**, whose turn is its pivot's (`WorldPivot`, or its
+  `PrimaryPart`'s `PivotOffset`) — cleared with no part moving; a
+  **`Block`** turned by quarter turns, re-described unturned by swapping
+  its `Size` axes, with its surfaces and any `Decal`/`Texture`/`SurfaceGui`
+  `Face` moved to the face now pointing their way; a **`Ball`** at any
+  angle (unless something sits on one of its faces); and a **`MeshPart`**,
+  whose drawn triangles (turn *and* stretch — a stretched mesh turned
+  cannot be re-stretched along the new axes, so this is Apply › Rotation
+  & Scale, Roblox having no other scale channel) are baked into a
+  one-mesh glTF and uploaded through `rbx_cloud` as a real `Model` asset
+  (`Client::create_model_asset`, scopes `asset:read`/`asset:write`); the
+  `MeshId` Roblox's importer gives it is read back, its mesh downloaded and
+  checked to have the bake's proportions, and only then is the part
+  repointed, with `InitialSize` from that mesh. Not a raw `.mesh` upload
+  as first planned: the Assets API's `Mesh` type "only accepts content
+  downloaded from the Asset delivery API" (`creator-docs`,
+  `cloud/guides/usage-assets.md`). A block at any other angle, a cylinder
+  or a wedge cannot be described unturned and is greyed; a skinned mesh
+  is refused. Known differences, each named in the Output dock when it
+  applies: a patterned `Material`'s grain and a decal's image follow the
+  part's own axes, so on a frozen block they may run another way; a baked
+  mesh keeps positions, normals, UVs and LOD 0 only (no vertex colours).
+
 ### Platform
 - [x] Linux (X11) — the daily-driven target.
 - [x] Windows — asset cache and settings now fall back to
@@ -1953,34 +1987,6 @@ Roblox's own engine.
   above existing first regardless of which direction it takes.
 
 ### Renderer
-#### Properties panel — remaining type editors
-- [ ] 📋 **"Freeze"/"Apply" a `MeshPart`'s rotation** — zero out
-  `Orientation` while leaving the object's *visual* placement unchanged,
-  the Blender "Apply Transform" equivalent. A real, well-read devforum
-  request
-  ([`allow-to-reset-the-orientation-of-a-part-to-000-and-keep-the-object-at-its-current-rotation`](https://devforum.roblox.com/t/allow-to-reset-the-orientation-of-a-part-to-000-and-keep-the-object-at-its-current-rotation/1301322),
-  6 replies): developers hit this after importing or hand-rotating
-  geometry, then write brittle scripts with per-object rotation
-  exceptions because a part's local axes no longer line up with its
-  visual orientation. Real Studio has no built-in answer either — the
-  thread's own workarounds are all userland (an invisible zero-rotation
-  `PrimaryPart` "hitbox", or juggling `PivotOffset` from the pivot tools
-  above) — so this would be a genuine rbx-native addition, not Studio
-  parity, and it must stay format-honest to remain one: a primitive
-  `Part` (Block/Ball/Cylinder/Wedge) has no vertex data of its own to
-  rotate into — its shape comes from `Class.Enum.PartType`/`Size` alone —
-  so "freezing" one is only meaningful once it's a `MeshPart`. Doing this
-  right for a `MeshPart` means generating a genuinely new mesh (rotated
-  vertices baked in, written in the same real `.mesh` binary format
-  `rbx_mesh` already reads/writes) and uploading it as a real Roblox asset
-  through the existing `rbx_cloud` Open Cloud client, then repointing
-  `MeshPart.MeshId` at it — never inventing an in-place, non-standard way
-  to store rotated geometry, which would make the saved `.rbxm`/`.rbxl`
-  fail to open correctly, or open but render wrong, in real Studio. Worth
-  noting real Studio can't do this at all to an already-uploaded mesh
-  asset it doesn't own the source file for; this project, which controls
-  its own import pipeline end to end, genuinely can.
-
 #### Animation
 Two genuinely different feasibility tiers here, easy to conflate — verified
 against `Roblox/creator-docs` rather than assumed:

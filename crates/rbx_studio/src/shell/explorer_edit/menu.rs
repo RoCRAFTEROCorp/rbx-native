@@ -34,7 +34,7 @@ use rbx_reflection::ReflectionDatabase;
 
 use super::super::export::{self, Export};
 use super::super::roving::Move;
-use super::super::{clipboard, group, keys, menu};
+use super::super::{clipboard, freeze, group, keys, menu};
 use super::rename::renameable;
 use super::{give_focus_back, Shell};
 use crate::change_class;
@@ -57,6 +57,8 @@ pub(super) struct Availability {
     pub(super) change_class: bool,
     /// Export Selection and Export as glTF: some part to write.
     pub(super) export_mesh: bool,
+    /// Some turned `MeshPart` whose rotation can be baked into its mesh.
+    pub(super) freeze: bool,
 }
 
 pub(super) fn availability(
@@ -77,6 +79,7 @@ pub(super) fn availability(
             .iter()
             .any(|&referent| change_class::changeable(dom, database, referent)),
         export_mesh: export::has_geometry(dom, database, selected),
+        freeze: freeze::has_freezable(dom, database, selected),
     }
 }
 
@@ -282,6 +285,13 @@ impl Shell {
                     let targets = shell.selected_all().to_vec();
                     shell.open_change_class_picker(targets, window, cx);
                 },
+            ),
+            row(
+                "freeze-rotation",
+                IconName::Rotate3d,
+                "Freeze Rotation",
+                live.freeze,
+                |shell, _, cx| shell.freeze_selected(cx),
             ),
             row(
                 "group",
