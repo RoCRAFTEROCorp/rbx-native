@@ -318,6 +318,10 @@ impl Shell {
     /// `menu_bar`'s Copy item's entry point, so a menu click runs the exact
     /// same path `Ctrl+C` does.
     pub(crate) fn copy_selected(&mut self, cx: &mut Context<Self>) {
+        if self.terrain_select_keys() {
+            self.terrain_copy(false, cx);
+            return;
+        }
         let selected = copyable(&self.dom, &self.database, self.selected_all());
         if selected.is_empty() {
             return;
@@ -340,6 +344,10 @@ impl Shell {
     /// it back restores the instances *and* leaves them on the clipboard.
     /// `pub(crate)`: also `menu_bar`'s and the ribbon's Cut entry point.
     pub(crate) fn cut_selected(&mut self, cx: &mut Context<Self>) {
+        if self.terrain_select_keys() {
+            self.terrain_copy(true, cx);
+            return;
+        }
         let cut = copyable(&self.dom, &self.database, self.selected_all());
         if cut.is_empty() {
             return;
@@ -361,6 +369,10 @@ impl Shell {
     /// selects the pasted copies. A no-op with nothing on the clipboard.
     /// `pub(crate)`: also `menu_bar`'s Paste item's entry point.
     pub(crate) fn paste_clipboard(&mut self, cx: &mut Context<Self>) {
+        if self.terrain_select_keys() {
+            self.terrain_paste(false, cx);
+            return;
+        }
         if self.clipboard.is_empty() {
             return;
         }
@@ -429,6 +441,10 @@ impl Shell {
     /// duplicated. `pub(crate)`: also `menu_bar`'s Duplicate item's entry
     /// point.
     pub(crate) fn duplicate_selected(&mut self, cx: &mut Context<Self>) {
+        if self.terrain_select_keys() {
+            self.terrain_paste(true, cx);
+            return;
+        }
         let selected = copyable(&self.dom, &self.database, self.selected_all());
         if selected.is_empty() {
             return;

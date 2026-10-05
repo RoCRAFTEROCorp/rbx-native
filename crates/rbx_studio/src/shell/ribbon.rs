@@ -85,6 +85,7 @@ impl Shell {
                 self.clipboard_tiles(cx),
                 self.transform_tools(cx),
                 self.insert_tiles(cx),
+                self.terrain_tiles(cx),
                 self.panel_tiles(cx),
             ],
             Tab::Avatar => vec![placeholders(
@@ -593,6 +594,7 @@ fn tool_icon(tool: Tool) -> IconName {
         Tool::Transform => IconName::SquareDashed,
         Tool::Sun => IconName::Sun,
         Tool::Pivot => IconName::LocateFixed,
+        Tool::Terrain => IconName::Mountain,
     }
 }
 
@@ -607,6 +609,8 @@ pub(super) fn tool_accent(tool: Tool) -> Rgba {
         Tool::Transform => tokens::tool_transform(),
         Tool::Sun => tokens::tool_sun(),
         Tool::Pivot => tokens::tool_pivot(),
+        // Scale's green: the closest of the existing tool hues to terrain.
+        Tool::Terrain => tokens::tool_scale(),
     }
 }
 

@@ -118,13 +118,16 @@ pub(crate) enum Panel {
     Watch,
     /// A paused debug run's call stack. Script Editor only.
     CallStack,
+    /// The Terrain Editor (`studio/terrain-editor.md`). Shut until asked
+    /// for, as Studio's own is: see [`Panel::starts_closed`].
+    TerrainEditor,
 }
 
 impl Panel {
     /// In the order a fresh layout seats them, which is what makes the
     /// Viewport, Argon and Wally docks tabs beside Output rather than
     /// docks of their own.
-    pub(crate) const ALL: [Panel; 9] = [
+    pub(crate) const ALL: [Panel; 10] = [
         Panel::Explorer,
         Panel::Properties,
         Panel::Output,
@@ -134,6 +137,7 @@ impl Panel {
         Panel::ScriptAnalysis,
         Panel::Watch,
         Panel::CallStack,
+        Panel::TerrainEditor,
     ];
 
     /// Where this panel lives in a layout nobody has rearranged — also
@@ -142,7 +146,7 @@ impl Panel {
     pub(crate) fn home(self) -> Edge {
         match self {
             Panel::Explorer => Edge::Right,
-            Panel::Properties => Edge::Left,
+            Panel::Properties | Panel::TerrainEditor => Edge::Left,
             Panel::Output
             | Panel::Viewport
             | Panel::Argon
@@ -166,7 +170,15 @@ impl Panel {
             Panel::ScriptAnalysis => "Script Analysis",
             Panel::Watch => "Watch",
             Panel::CallStack => "Call Stack",
+            Panel::TerrainEditor => "Terrain Editor",
         }
+    }
+
+    /// Whether a fresh layout (or one saved before the panel existed)
+    /// leaves it shut: a tool opened from the ribbon, not a fixture of the
+    /// window.
+    pub(crate) fn starts_closed(self) -> bool {
+        self == Panel::TerrainEditor
     }
 
     /// Whether its strip controls are a toolbar that takes the rest of the
@@ -274,7 +286,11 @@ impl Default for Layout {
             size: Edge::ALL.map(Edge::default_size),
         };
         for panel in Panel::ALL {
-            layout.seat(panel);
+            if panel.starts_closed() {
+                layout.closed.push(panel);
+            } else {
+                layout.seat(panel);
+            }
         }
         layout
     }
@@ -564,7 +580,11 @@ impl Layout {
 
         for panel in Panel::ALL {
             if layout.unclaimed(panel.key()).is_some() {
-                layout.seat(panel);
+                if panel.starts_closed() {
+                    layout.closed.push(panel);
+                } else {
+                    layout.seat(panel);
+                }
             }
         }
 

@@ -148,6 +148,10 @@ impl Shell {
     /// Delete item's entry point, so a menu click runs the exact same path
     /// the Delete key does.
     pub(crate) fn delete_selected(&mut self, cx: &mut Context<Self>) {
+        if self.terrain_select_keys() {
+            self.terrain_delete_region(cx);
+            return;
+        }
         let Some(reference) = self.selected() else {
             return;
         };
