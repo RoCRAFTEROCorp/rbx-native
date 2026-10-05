@@ -43,6 +43,11 @@ const HEADROOM: f32 = LONGEST_BLADE * 1.25;
 /// `pipeline::shimmer_phase`).
 const STILL_FLUTTER: f32 = 5.0;
 
+/// What the Grass tint is scaled by at a blade's root and tip: dark in the
+/// shade of the carpet, a little greener than the tint at the top.
+const ROOT_SHADE: [f32; 3] = [0.3, 0.42, 0.25];
+const TIP_SHADE: [f32; 3] = [0.8, 1.08, 0.58];
+
 /// `GrassLook` in `grass.wgsl`.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Default, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
@@ -118,7 +123,11 @@ fn build(
 }
 
 impl Grass {
-    pub(super) fn new(device: &wgpu::Device, target: Target, frame: &wgpu::BindGroupLayout) -> Self {
+    pub(super) fn new(
+        device: &wgpu::Device,
+        target: Target,
+        frame: &wgpu::BindGroupLayout,
+    ) -> Self {
         let look_layout = look_layout(device);
         let look = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("rbxview grass look"),
@@ -138,7 +147,12 @@ impl Grass {
             }),
             look_layout,
             look,
-            blade: buffer(device, "rbxview grass blade", &BLADE, wgpu::BufferUsages::VERTEX),
+            blade: buffer(
+                device,
+                "rbxview grass blade",
+                &BLADE,
+                wgpu::BufferUsages::VERTEX,
+            ),
             blade_indices: buffer(
                 device,
                 "rbxview grass blade indices",
@@ -183,11 +197,13 @@ impl Grass {
     pub(super) fn set_look(&mut self, terrain: &Terrain) {
         let grass = terrain.grass;
         self.enabled = grass.enabled;
+        // The tint alone reads yellow: on the ground it multiplies the grass
+        // pack's own green, which the blades have no texture to supply.
         let tint = terrain.tint(Material::Grass);
-        let shade = |scale: f32| tint.map(|c| c * scale);
-        let [r, g, b] = shade(0.45);
+        let shade = |scale: [f32; 3]| [0, 1, 2].map(|i| tint[i] * scale[i]);
+        let [r, g, b] = shade(ROOT_SHADE);
         self.raw.root = [r, g, b, grass.length * LONGEST_BLADE];
-        let [r, g, b] = shade(1.15);
+        let [r, g, b] = shade(TIP_SHADE);
         self.raw.tip = [r, g, b, self.raw.tip[3]];
         // Roblox sways grass gently in still air; `GlobalWind` (studs per
         // second) picks the direction and strengthens the lean and the beat.

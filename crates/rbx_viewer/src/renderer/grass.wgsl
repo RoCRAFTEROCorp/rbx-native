@@ -43,7 +43,7 @@ struct GrassOut {
 
 const GRASS_TAU: f32 = 6.2831853;
 // Root width in studs: broad enough to read as a blade from a few studs off.
-const GRASS_WIDTH: f32 = 0.35;
+const GRASS_WIDTH: f32 = 0.22;
 
 // `scatter::density_at`, per blade.
 fn grass_density(studs: f32) -> f32 {

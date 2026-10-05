@@ -14,7 +14,7 @@ use rbx_terrain::{Material, VoxelGrid, CHUNK, VOXEL_STUDS};
 
 /// Blades per square stud of surface at full density. Roblox's grass is a
 /// carpet: at a few per stud the ground under it barely shows near the eye.
-const BLADES_PER_STUD: f32 = 4.0;
+const BLADES_PER_STUD: f32 = 7.0;
 /// Below this upward component a slope grows nothing; full density from
 /// `FLAT` up. Roblox's grass thins out on hillsides and leaves cliffs bare.
 const STEEP: f32 = 0.6;
@@ -78,22 +78,24 @@ pub(in crate::renderer::terrain) fn patches(mesh: &ChunkMesh, grid: &VoxelGrid) 
     let surface = &mesh.solid;
     surface
         .indices
-        .chunks_exact(3)
+        .as_chunks::<3>()
+        .0
+        .iter()
         .filter_map(|triangle| {
-            let [a, b, c] = [0, 1, 2].map(|i| triangle[i] as usize);
+            let [a, b, c] = triangle.map(|i| i as usize);
             let grass = [a, b, c].map(|i| grass_weight(&mesh.blends[i]));
-            let up = [a, b, c].iter().map(|&i| surface.normals[i][1]).sum::<f32>() / 3.0;
+            let up = [a, b, c]
+                .iter()
+                .map(|&i| surface.normals[i][1])
+                .sum::<f32>()
+                / 3.0;
             if grass.iter().all(|&w| w <= BORDER.start) || up <= STEEP {
                 return None;
             }
             let corners = [a, b, c].map(|i| Vec3::from(surface.positions[i]));
             let above = (corners[0] + corners[1] + corners[2]) / 3.0 + Vec3::Y * 2.0;
             let voxel = (above / VOXEL_STUDS).floor().as_ivec3().to_array();
-            (grid.get(voxel).water_fraction() == 0.0).then_some(Patch {
-                corners,
-                grass,
-                up,
-            })
+            (grid.get(voxel).water_fraction() == 0.0).then_some(Patch { corners, grass, up })
         })
         .collect()
 }

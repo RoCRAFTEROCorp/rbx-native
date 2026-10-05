@@ -28,7 +28,10 @@ fn a_grass_field_grows_a_carpet_on_its_top_only() {
     let expected = 128.0 * 128.0 * BLADES_PER_STUD;
     assert!(blades.len() as f32 > expected * 0.85, "{}", blades.len());
     assert!((blades.len() as f32) < expected * 1.05, "{}", blades.len());
-    assert!(blades.iter().all(|b| (b.root[1] - 8.0).abs() < 0.5));
+    // On the top, bar the shallow start of the rounded rim; never the sides.
+    assert!(blades.iter().all(|b| (4.0..=8.01).contains(&b.root[1])));
+    let flat = blades.iter().filter(|b| (b.root[1] - 8.0).abs() < 0.01);
+    assert!(flat.count() as f32 > blades.len() as f32 * 0.9);
     assert_eq!(tiles.len(), TILES * TILES);
 }
 

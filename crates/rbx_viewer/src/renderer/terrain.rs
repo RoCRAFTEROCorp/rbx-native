@@ -302,10 +302,7 @@ fn mesh_parallel(terrain: &Terrain, keys: &[ChunkKey]) -> Vec<(ChunkMesh, Vec<gr
         .map_or(1, |n| n.get())
         .min(keys.len().max(1));
     if threads <= 1 || keys.len() < 4 {
-        return keys
-            .iter()
-            .map(|key| mesh_one(terrain, *key))
-            .collect();
+        return keys.iter().map(|key| mesh_one(terrain, *key)).collect();
     }
     let per = keys.len().div_ceil(threads);
     std::thread::scope(|scope| {
