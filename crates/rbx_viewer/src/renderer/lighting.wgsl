@@ -54,8 +54,9 @@ struct LightingUniform {
     locals: vec4<f32>,
     // x: how far geometry is drawn at full strength, in studs, 0 being no limit.
     // y: 1 where the environment terms sample the probe, 0 where they fall back
-    // to one flat sky colour. Both come from the graphics quality level (see
-    // `crate::quality`), not from the place.
+    // to one flat sky colour. z: 1 where terrain water ripples, w: 1 where it
+    // reflects the scene (`water.wgsl`). All four come from the graphics
+    // quality level (see `crate::quality`), not from the place.
     quality: vec4<f32>,
     // `Clouds.Color`, linear.
     clouds_color: vec4<f32>,

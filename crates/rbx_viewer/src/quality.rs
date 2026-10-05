@@ -165,6 +165,14 @@ pub(crate) struct QualityProfile {
     /// DevForum's "Visual inconsistency in ForceField material" report), so
     /// only the top band has it.
     pub(crate) force_field_intersections: bool,
+    /// Whether terrain water ripples. False draws a calm, flat surface, and
+    /// water alone no longer keeps the frame redrawing (see
+    /// `Renderer::animating`).
+    pub(crate) water_waves: bool,
+    /// Whether terrain water reflects the scene around it (screen-space, see
+    /// `renderer/water.wgsl`) rather than only the sky — which is itself the
+    /// flat sky colour where `env_reflections` is off.
+    pub(crate) water_reflections: bool,
 }
 
 #[cfg(test)]

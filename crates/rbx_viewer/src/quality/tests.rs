@@ -72,6 +72,8 @@ fn every_knob_only_ever_improves_with_the_level() {
         assert!(low.render_distance <= high.render_distance);
         assert!(low.msaa_samples <= high.msaa_samples);
         assert!(!low.decals || high.decals);
+        assert!(!low.water_waves || high.water_waves);
+        assert!(!low.water_reflections || high.water_reflections);
     }
 }
 
@@ -224,4 +226,18 @@ fn force_field_intersections_start_at_level_16() {
             .profile()
             .force_field_intersections
     );
+}
+
+// Calm water below 7, ripples from 7, the scene in its reflections from 10;
+// the top band (Roblox's own "highest Editor Quality Level") has both.
+#[test]
+fn water_ripples_at_seven_and_reflects_the_scene_from_ten() {
+    let profile = |level| QualityLevel::Level(level).profile();
+
+    assert!(!profile(6).water_waves);
+    assert!(profile(7).water_waves);
+    assert!(!profile(9).water_reflections);
+    assert!(profile(10).water_reflections);
+    assert!(profile(QualityLevel::MAX).water_waves);
+    assert!(profile(QualityLevel::MAX).water_reflections);
 }
