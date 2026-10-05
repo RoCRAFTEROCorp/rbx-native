@@ -5,7 +5,7 @@
 //! position and normal (`3 × f32` each) and an RGBA colour; the rest of its
 //! stride (texture coordinates and what looks like a tangent) is not read.
 
-use super::{f32s, Decoded, Error, Reader};
+use super::{f32s, first_lod, Decoded, Error, Reader};
 
 /// The two digests after the magic and version.
 const DIGESTS: usize = 16 + 16;
@@ -42,5 +42,15 @@ pub(super) fn read(reader: &mut Reader) -> Result<Decoded, Error> {
         .iter()
         .map(|b| u32::from_le_bytes(*b))
         .collect();
+    Ok(decoded)
+}
+
+/// Version 4: version 2's layout, then a `u32` count and that many `u32`
+/// offsets into the indices, the last being their end. Each span is a whole
+/// closed mesh, the first the finest; only it is kept.
+pub(super) fn read_v4(reader: &mut Reader) -> Result<Decoded, Error> {
+    let mut decoded = read(reader)?;
+    let lods = reader.u32()? as usize;
+    first_lod(reader, lods, &mut decoded)?;
     Ok(decoded)
 }

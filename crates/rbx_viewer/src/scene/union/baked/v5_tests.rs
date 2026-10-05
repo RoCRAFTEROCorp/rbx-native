@@ -264,7 +264,7 @@ fn every_baked_mesh_in_real_places_decodes_closed_and_fills_its_bake() {
 
 /// Every edge shared by exactly two triangles, once each way, welding
 /// corners by position (a bake splits vertices along hard edges).
-fn assert_closed(mesh: &rbx_mesh::Mesh, path: &str) {
+pub(super) fn assert_closed(mesh: &rbx_mesh::Mesh, path: &str) {
     let key = |i: u32| {
         mesh.vertices[i as usize]
             .position
@@ -286,7 +286,7 @@ fn assert_closed(mesh: &rbx_mesh::Mesh, path: &str) {
 
 /// Signed volume by the divergence theorem: positive for an outward-wound
 /// closed mesh.
-fn volume(mesh: &rbx_mesh::Mesh) -> f32 {
+pub(super) fn volume(mesh: &rbx_mesh::Mesh) -> f32 {
     let at = |i: u32| glam::Vec3::from(mesh.vertices[i as usize].position);
     mesh.indices
         .as_chunks::<3>()

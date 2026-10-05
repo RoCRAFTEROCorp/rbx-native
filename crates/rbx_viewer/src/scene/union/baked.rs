@@ -1,23 +1,25 @@
 //! Roblox's own baked union mesh (`MeshData`/`MeshData2`, the CSGMDL
-//! format), read only for a union whose operation tree is gone: no
-//! `ChildData` inline and none in the `PartOperationAsset` its `AssetId`
-//! names. Anything with a tree is still carved from it (`super::csg`).
+//! format), read for a union whose operation tree is gone (no `ChildData`
+//! inline and none in the `PartOperationAsset` its `AssetId` names), or
+//! whose tree the boolean cannot carve. Anything with a tree is carved from
+//! it first (`super::csg`).
 //!
 //! Nothing here comes from Roblox documentation, which does not describe the
 //! format. It was worked out by reading real blobs: asset 305197512, and the
 //! inline blobs of the places this project is tested against, whose unions
 //! also carry their tree, so what they decode to could be checked against
-//! the bake's own `InitialSize`.
+//! the bake's own `InitialSize`. The one version 4 blob read is asset
+//! 4500696697's, as the `rbx_mesh` crate's test meshes keep it.
 //!
 //! - **Verified:** every blob opens with `CSGMDL` and a `u32` version once
 //!   unscrambled, and the scrambling is an XOR with the 31-byte repeating
-//!   [`KEY`], indexed by the byte's position in the blob. Version 2 scrambles
-//!   the whole blob; version 5 only its 10-byte magic and version, leaving
-//!   the rest plain. A wrong key cannot pass [`plain`] unnoticed.
+//!   [`KEY`], indexed by the byte's position in the blob. Versions 2 and 4
+//!   scramble the whole blob; version 5 only its 10-byte magic and version,
+//!   leaving the rest plain. A wrong key cannot pass [`plain`] unnoticed.
 //! - **Verified:** positions are in the union's own studs at its
 //!   `InitialSize`, triangles are wound counter-clockwise like every other
-//!   mesh here, and every decoded blob is a closed mesh. The two layouts are
-//!   described in [`v2`] and [`v5`].
+//!   mesh here, and every decoded blob is a closed mesh. The layouts are
+//!   described in [`v2`] (which reads version 4 too) and [`v5`].
 //! - **Not used:** the texture coordinates, tangents and per-vertex face ids
 //!   the blobs also carry. Texture coordinates are box-projected the way
 //!   `super::csg` does instead, so a decoded union tiles its material exactly
@@ -71,7 +73,7 @@ fn plain(bytes: &[u8]) -> Result<Vec<u8>, Error> {
     if !document.starts_with(MAGIC) {
         return Err(Error::NotCsg);
     }
-    if document[MAGIC.len()..PREFIX] == [2, 0, 0, 0] {
+    if matches!(document[MAGIC.len()..PREFIX], [2 | 4, 0, 0, 0]) {
         let len = document.len();
         unscramble(&mut document, PREFIX..len);
     }
@@ -121,6 +123,26 @@ fn f32s<const N: usize>(raw: &[u8]) -> [f32; N] {
     })
 }
 
+/// Reads `lods` `u32` offsets into `decoded`'s indices and keeps only the
+/// span between the first two, the finest LOD.
+fn first_lod(reader: &mut Reader, lods: usize, decoded: &mut Decoded) -> Result<(), Error> {
+    let offsets: Vec<usize> = reader
+        .items(lods, 4)?
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|b| u32::from_le_bytes(*b) as usize)
+        .collect();
+    if let [first, second, ..] = offsets[..] {
+        decoded.indices = decoded
+            .indices
+            .get(first..second)
+            .ok_or(Error::Index)?
+            .to_vec();
+    }
+    Ok(())
+}
+
 /// What a layout reads out of a document, before it becomes a mesh.
 struct Decoded {
     positions: Vec<[f32; 3]>,
@@ -146,6 +168,7 @@ pub(super) fn decode(bytes: &[u8]) -> Result<Baked, Error> {
     };
     let decoded = match reader.u32()? {
         2 => v2::read(&mut reader)?,
+        4 => v2::read_v4(&mut reader)?,
         5 => v5::read(&mut reader)?,
         version => return Err(Error::Version(version)),
     };

@@ -410,24 +410,33 @@ Roblox's own engine.
   against the scene instead (`Hide Selection Box Behind Parts`, off by
   default and persisted the same way `Orthographic` is).
 - [x] Legacy union/negate parts reconstruct the real constituent
-  geometry via a from-scratch CSG boolean. Where no tree survives, the
-  union's own baked `MeshData` is drawn instead (next bullet).
+  geometry via a from-scratch CSG boolean. Where no tree survives, or the
+  boolean cannot carve the one there is, the union's own baked `MeshData`
+  is drawn instead (next bullet).
 - [x] **Export and draw unions baked only as `MeshData`.** A union whose
   only geometry is a baked `MeshData`/CSGMDL blob — no `ChildData` inline
   or behind its `AssetId` (asset 305197512, 7 instances in marked.rbxl) —
   now draws and exports as that mesh instead of its box
-  (`scene::union::baked`). Both versions found in real files are read:
-  version 2 (2015-era assets such as this one), a fully XOR-scrambled
-  vertex and index array, and version 5, what Studio writes now. Version
-  5 scrambles only its header and holds counted per-vertex arrays, a
-  delta-coded index stream and a LOD table. Nothing in Roblox's docs
-  describes either, so the module doc says what was read off real blobs
-  and what is left unread. All 71 baked meshes in the test places decode
+  (`scene::union::baked`). All three versions found in real files are
+  read: version 2 (2015-era assets such as this one), a fully
+  XOR-scrambled vertex and index array; version 4, the same with a LOD
+  table after it (asset 4500696697, from the `rbx_mesh` crate's test
+  meshes; only the first LOD is drawn, since every LOD is a whole mesh);
+  and version 5, what Studio writes now. Version 5 scrambles only its
+  header and holds counted per-vertex arrays, a delta-coded index stream
+  and a LOD table. Nothing in Roblox's docs describes any of them, so the
+  module doc says what was read off real blobs and what is left unread. All 71 baked meshes in the test places decode
   to closed meshes spanning their `InitialSize` (57 version 2, 14
   version 5). Each of the 63 whose union also carries its tree holds the
   same volume as the boolean carved from that tree: all 14 version 5
-  exactly, version 2 within 1.3%. It is read only where no tree exists,
-  so every union with one still carves through the boolean above. A union
+  exactly, version 2 within 1.3%. The version 4 blob's first LOD holds
+  its asset's tree to within 0.001% and spans the same box; that tree (a
+  wedge and five 0.05-thin wedge slivers) is measured by hand, since the
+  boolean finds it leaky. It is read where no tree exists, and where the
+  boolean fails on the tree there is (that union now draws its 350-triangle
+  bake instead of six pieces); every union whose tree carves still draws
+  the carve. The bake comes from the asset beside the tree, or from the
+  union's own `MeshData2` when it carries its tree inline. A union
   carrying `MeshData` inline with no tree and no `AssetId` is drawn the
   same way. Every union in the test places now resolves: in marked.rbxl,
   467 carve, the 7 decode and 13 are empty.
@@ -1297,8 +1306,8 @@ Roblox's own engine.
     minimum of the day it was baked is carved at it when that is what
     `InitialSize` says (marked.rbxl 217 → 467 of 487 carved,
     FindTheCode 89 → 189 of 189, GUI_TEST 80 of 80, testrust 0 → 11 of
-    11). A union whose boolean still cannot run exports the pieces the
-    viewport draws instead, and one with no geometry anywhere
+    11). A union whose boolean still cannot run exports what the viewport
+    draws instead (its baked mesh, or its pieces where it has none), and one with no geometry anywhere
     (`TriangleCount` 0) draws and exports as nothing, as in Studio.
   - **Material packs.** A facet tilted off every axis is baked into an
     atlas of the part's own with the viewport's three-way blend (the same
@@ -2090,21 +2099,6 @@ against `Roblox/creator-docs` rather than assumed:
   stays out of reach, the same as any other physics (see
   [Explicitly impossible](#explicitly-impossible-without-robloxs-engine)).
 
-#### CSG
-- [ ] 📋 **`MeshData`/CSGMDL version 4.** `scene::union::baked` reads
-  versions 2 and 5, the only ones in any file available here. A version 4
-  also exists: community research
-  ([devforum 3554504](https://devforum.roblox.com/t/research-on-csg/3554504),
-  which calls it "CSGv3" after its `CSGMDL\x04` header) reports that
-  Studio builds from 2022 on wrote it. The same research describes it as
-  version 2's mesh layout followed by values it could not identify.
-  Version 5, which recent places hold, came after it. No version 4 blob
-  is to hand to check the layout or its scrambling against, so a union
-  baked in it with no tree keeps its box; its error names the version.
-  Needs a real version 4 blob, checked the way the others are, against
-  what the union's own tree carves. No other version (1, 3, 6+) has been
-  seen or reported.
-
 ### Editor
 - [ ] 📋 **The accessibility work the reference guidance calls Stage 2 and
   Stage 3, minus what already shipped.** Stage 1 is met and asserted in
@@ -2556,10 +2550,10 @@ clear they were considered and not missed.
   today with no emissive term at all. Bloom already exists to carry the
   glow once the property does.
 - [ ] 📋 **CSG on meshes** (moved from Late 2025 to Late 2026 in the same
-  post). The from-scratch boolean (see CSG above) works on primitives. A
-  `MeshPart` operand means feeding it `rbx_mesh` geometry instead. The open
-  question is what a saved mesh union looks like in the file, which may be
-  the same CSGMDL wall.
+  post). The from-scratch boolean (`scene::union::csg`) works on primitives. A
+  `MeshPart` operand means feeding it `rbx_mesh` geometry instead. A saved
+  mesh union's baked `MeshData` reads like any other union's; the open
+  question is how its operation tree stores the mesh operand.
 
 #### GUI (renderer and UI Editor)
 - [ ] 📋 **Upgraded UI gradients** (Late 2026): radial and conic
@@ -2736,8 +2730,8 @@ and no amount of reverse engineering changes that:
   exactly as Roblox's own boolean does) — undocumented and
   version-unstable; not worth chasing when a real from-scratch boolean
   already exists. Roblox's baked `MeshData` itself is read where a union
-  has no tree (versions 2 and 5, see "What's been implemented"; version 4
-  is its own planned item under CSG).
+  has no tree or its tree will not carve (versions 2, 4 and 5, see
+  "What's been implemented").
 - **Physics simulation and anti-cheat** — proprietary physics engine, no
   real server authority possible from rbx-native. That covers Roblox's new
   Server Authority model too: client prediction, rollback and resimulation

@@ -4,7 +4,8 @@
 //! own `ChildData2` (`ChildData` in older files) where it carries them, as
 //! every union Studio writes today does, or else from the
 //! `PartOperationAsset` its legacy `AssetId` names. Roblox's own baked
-//! `MeshData`/`MeshData2` is read only where neither holds a tree (`baked`).
+//! `MeshData`/`MeshData2` is read where neither holds a tree, or where the
+//! boolean cannot carve the tree there is (`baked`).
 //!
 //! Two-phase like `filemesh`: [`plan`] walks the DOM for every operation, and
 //! [`resolve`] joins that plan against downloaded asset bytes once they exist
@@ -104,6 +105,10 @@ pub(crate) struct Plan {
     /// The operation documents unions carry inline, by their [`inline_key`]:
     /// resolved like downloaded assets, with nothing to download.
     inline: tree::Assets,
+    /// The `MeshData` a union carrying its tree inline also carries, by the
+    /// same key: what it is drawn as if the boolean fails. A union behind an
+    /// `AssetId` finds its bake in that asset instead.
+    bakes: tree::Assets,
 }
 
 impl Plan {
@@ -142,6 +147,13 @@ pub(crate) fn plan(dom: &WeakDom, database: &ReflectionDatabase, materials: &mut
                 .and_then(|i| inline_document(i.properties()))
             {
                 plan.inline.insert(entry.asset.clone(), raw.to_vec());
+            }
+            if let Some(blob) = dom
+                .get(referent)
+                .filter(|i| tree::child_data(i.properties()).is_some())
+                .and_then(|i| baked::mesh_data(i.properties()))
+            {
+                plan.bakes.insert(entry.asset.clone(), blob.to_vec());
             }
         }
         plan.entries.push(entry);
@@ -403,8 +415,9 @@ impl Evaluations {
 /// `resolve_materials` is what re-reads every slot afterward.
 ///
 /// The boolean can fail (too many polygons, an all-carved result, a tree that
-/// did not parse); the first two fall back to the additive-only parts of the
-/// old resolver and the last keeps the box. Never a hole-ridden mesh.
+/// did not parse); the first two draw the mesh Studio baked for the union
+/// where it has one, and the additive-only parts of the old resolver where
+/// not, and the last keeps the box. Never a hole-ridden mesh.
 ///
 /// `assets` need only hold the bytes of what `evaluations` has not seen: an
 /// asset it knows is resolved from what it carved before, bytes or not.
@@ -460,12 +473,14 @@ pub(crate) fn resolve(
 /// points at. The outer `None` is "not yet": a nested asset has not arrived,
 /// and carving now would remember a box in its place for good. The inner
 /// `None` is "never": the bytes did not parse. A parsed tree whose boolean
-/// failed keeps `mesh: None` for the fallback.
+/// failed draws the mesh Studio baked for it, read out of `fallback`, or
+/// keeps `mesh: None` for the pieces where there is none.
 fn evaluate(
     bytes: &[u8],
     database: &ReflectionDatabase,
     assets: &tree::Assets,
     bake: Option<Vec3>,
+    fallback: Option<&[u8]>,
 ) -> Option<Option<Evaluated>> {
     let Some(parsed) = legacy::parse_as_baked(bytes, database, assets, bake) else {
         // No tree to carve: Studio's own bake is all there is.
@@ -482,13 +497,18 @@ fn evaluate(
         return None;
     }
     let tree = parsed.root;
-    let mesh = csg::evaluate(&tree, bake)
-        .ok()
-        .map(|solid| Arc::new(solid.to_mesh()));
+    if let Ok(solid) = csg::evaluate(&tree, bake) {
+        return Some(Some(Evaluated {
+            tree,
+            mesh: Some(Arc::new(solid.to_mesh())),
+            baked_color: None,
+        }));
+    }
+    let baked = fallback.and_then(baked::of_bytes);
     Some(Some(Evaluated {
         tree,
-        mesh,
-        baked_color: None,
+        baked_color: baked.as_ref().and_then(|baked| baked.color),
+        mesh: baked.map(|baked| Arc::new(baked.mesh)),
     }))
 }
 
@@ -569,7 +589,14 @@ fn evaluate_all(
 
         let work = || {
             while let Some(&(asset, bake)) = unique.get(next.fetch_add(1, Ordering::Relaxed)) {
-                if let Some(evaluated) = evaluate(&assets[asset], database, assets, Some(bake)) {
+                let bytes = &assets[asset];
+                // An inline tree's own bytes hold no bake of the union (only,
+                // maybe, of a union nested in it); an asset's root does.
+                let fallback = match plan.inline.contains_key(asset) {
+                    true => plan.bakes.get(asset).map(Vec::as_slice),
+                    false => Some(bytes.as_slice()),
+                };
+                if let Some(evaluated) = evaluate(bytes, database, assets, Some(bake), fallback) {
                     results
                         .lock()
                         .unwrap_or_else(|e| e.into_inner())

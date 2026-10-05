@@ -7,6 +7,7 @@ use std::collections::HashMap;
 use rbx_dom::{Instance, Ref, Variant, WeakDom};
 
 use super::super::tests::{database, dom_with, operation};
+use super::super::tests_support::{asset_bytes, fallback_leaves, inline_bytes};
 use super::super::{fit, plan, resolve, Catalog, Evaluations};
 use super::*;
 
@@ -174,8 +175,83 @@ fn indices_that_are_not_whole_triangles_are_refused() {
     assert_eq!(decode(&blob).err(), Some(Error::Index));
 }
 
+/// [`two_triangles`] as version 4, each triangle its own LOD, with the
+/// trailing count and offsets the real blob ends on (`3, 0, 1050, 1152`).
+fn two_lods() -> Vec<u8> {
+    let mut plain = two_triangles();
+    plain[MAGIC.len()] = 4;
+    for word in [3u32, 0, 3, 6] {
+        plain.extend(word.to_le_bytes());
+    }
+    plain
+}
+
+#[test]
+fn a_version_four_blob_is_wholly_scrambled_and_keeps_its_first_lod() {
+    let baked = decode(&scrambled(&two_lods())).expect("decodes");
+
+    assert_eq!(baked.mesh.indices, [0, 1, 2]);
+    assert_eq!(baked.color, Some([200, 10, 10]));
+}
+
+#[test]
+fn every_version_four_truncation_is_an_error_never_a_panic() {
+    let plain = two_lods();
+    for len in 0..plain.len() {
+        assert!(decode(&scrambled(&plain[..len])).is_err(), "cut at {len}");
+    }
+}
+
+#[test]
+fn a_version_four_lod_count_too_large_for_the_blob_is_truncation() {
+    let mut plain = two_lods();
+    let at = plain.len() - 16;
+    plain[at..at + 4].copy_from_slice(&u32::MAX.to_le_bytes());
+
+    assert_eq!(decode(&plain).err(), Some(Error::Truncated));
+}
+
+#[test]
+fn a_version_four_lod_past_the_indices_is_refused() {
+    let mut plain = two_lods();
+    // The first LOD's end, 3 → 9, with only 6 indices.
+    let at = plain.len() - 8;
+    plain[at..at + 4].copy_from_slice(&9u32.to_le_bytes());
+
+    assert_eq!(decode(&plain).err(), Some(Error::Index));
+}
+
+/// `RBX_CSGMDL4_FIXTURE=<a raw version 4 MeshData blob>`, such as
+/// `meshes/4500696697_4.meshdata` from the `rbx_mesh` crate's repository.
+#[test]
+#[ignore = "needs RBX_CSGMDL4_FIXTURE (a version 4 MeshData blob)"]
+fn a_real_version_four_blob_decodes_its_first_lod_to_a_closed_mesh() {
+    let path = std::env::var("RBX_CSGMDL4_FIXTURE").expect("RBX_CSGMDL4_FIXTURE");
+    let bytes = std::fs::read(path).expect("fixture must be readable");
+    let mesh = decode(&bytes).expect("a real blob decodes").mesh;
+
+    // 1152 indices, of which the first LOD is 1050.
+    assert_eq!(mesh.triangle_count(), 350);
+    let extent: [f32; 3] = std::array::from_fn(|a| mesh.bounds.max[a] - mesh.bounds.min[a]);
+    for (got, want) in extent.iter().zip([118.0, 28.031, 22.034]) {
+        assert!((got - want).abs() < 1e-2, "{extent:?}");
+    }
+    super::v5_tests::assert_closed(&mesh, "version 4");
+    // The asset's own tree is an 88 × 28 × 22 wedge and five 0.05-thin wedge
+    // slivers off its faces, half their boxes each: 27174.22 in all, and the
+    // tree's corners span the extent above. (Both LODs together hold twice
+    // that.) `csg` cannot carve it to compare: the slivers leave it leaky.
+    let volume = super::v5_tests::volume(&mesh);
+    assert!((volume - 27174.22).abs() < 1.0, "{volume}");
+}
+
 /// A `PartOperationAsset` holding only a baked mesh, as asset 305197512 does.
 fn mesh_only_asset(blob: Vec<u8>) -> Vec<u8> {
+    baked_asset(Vec::new(), blob)
+}
+
+/// A `PartOperationAsset` holding the tree `child_data` and its bake `blob`.
+fn baked_asset(child_data: Vec<u8>, blob: Vec<u8>) -> Vec<u8> {
     let mut dom = WeakDom::new();
     let root = Ref::new(1);
     let mut asset = Instance::new(root, "PartOperationAsset", "Union");
@@ -184,7 +260,7 @@ fn mesh_only_asset(blob: Vec<u8>) -> Vec<u8> {
         "ChildData".into(),
         Variant::Unknown {
             type_id: 0x01,
-            raw: Vec::new(),
+            raw: child_data,
         },
     );
     properties.insert(
@@ -257,6 +333,98 @@ fn a_union_carrying_only_a_baked_mesh_inline_draws_it_with_nothing_to_fetch() {
 }
 
 #[test]
+fn a_union_whose_tree_will_not_carve_draws_its_assets_bake() {
+    let asset_id = "rbxassetid://4500696697";
+    let referent = Ref::new(1);
+    let dom = dom_with(operation(referent, "UnionOperation", Some(asset_id)));
+    let database = database();
+    let mut materials = Catalog::new(&dom, &database);
+    let plan = plan(&dom, &database, &mut materials);
+    let (key, _) = fit(&dom, &database, referent).expect("planned by its AssetId");
+
+    let tree = inline_bytes(&fallback_leaves(2));
+    let assets = HashMap::from([(key.clone(), baked_asset(tree, scrambled(&two_triangles())))]);
+    let resolution = resolve(
+        &plan,
+        assets,
+        &database,
+        &mut materials,
+        &mut Evaluations::default(),
+    );
+
+    assert_eq!(
+        resolution.meshes[&key].indices.len(),
+        6,
+        "the bake, not pieces"
+    );
+    assert!(resolution.parts.is_empty());
+    assert_eq!(resolution.instances.len(), 1);
+}
+
+#[test]
+fn a_union_whose_inline_tree_will_not_carve_draws_its_own_bake() {
+    let referent = Ref::new(1);
+    let mut instance = operation(referent, "UnionOperation", None);
+    let properties = instance.properties_mut();
+    properties.insert(
+        "ChildData2".into(),
+        Variant::Unknown {
+            type_id: 0x1c,
+            raw: inline_bytes(&fallback_leaves(2)),
+        },
+    );
+    properties.insert(
+        "MeshData2".into(),
+        Variant::Unknown {
+            type_id: 0x1c,
+            raw: scrambled(&two_triangles()),
+        },
+    );
+    let dom = dom_with(instance);
+    let database = database();
+    let mut materials = Catalog::new(&dom, &database);
+    let plan = plan(&dom, &database, &mut materials);
+    let resolution = resolve(
+        &plan,
+        HashMap::new(),
+        &database,
+        &mut materials,
+        &mut Evaluations::default(),
+    );
+
+    let (key, _) = fit(&dom, &database, referent).expect("keyed by its inline tree");
+    assert_eq!(
+        resolution.meshes[&key].indices.len(),
+        6,
+        "the bake, not pieces"
+    );
+    assert!(resolution.parts.is_empty());
+}
+
+#[test]
+fn a_union_whose_tree_will_not_carve_and_has_no_bake_draws_its_pieces() {
+    let asset_id = "rbxassetid://4500696697";
+    let referent = Ref::new(1);
+    let dom = dom_with(operation(referent, "UnionOperation", Some(asset_id)));
+    let database = database();
+    let mut materials = Catalog::new(&dom, &database);
+    let plan = plan(&dom, &database, &mut materials);
+    let (key, _) = fit(&dom, &database, referent).expect("planned by its AssetId");
+
+    let assets = HashMap::from([(key.clone(), asset_bytes(&fallback_leaves(2)))]);
+    let resolution = resolve(
+        &plan,
+        assets,
+        &database,
+        &mut materials,
+        &mut Evaluations::default(),
+    );
+
+    assert!(!resolution.meshes.contains_key(&key));
+    assert_eq!(resolution.parts.len(), 2);
+}
+
+#[test]
 fn a_baked_union_without_its_own_colour_takes_the_bakes() {
     let asset_id = "rbxassetid://305197512";
     let referent = Ref::new(1);
@@ -295,18 +463,5 @@ fn a_real_mesh_only_asset_decodes_to_a_closed_mesh_filling_its_bake() {
     for axis in 0..3 {
         assert!((mesh.bounds.max[axis] - mesh.bounds.min[axis] - 1.0).abs() < 1e-3);
     }
-    // Closed: every edge is shared by exactly two triangles, once each way.
-    let mut edges: HashMap<([u32; 3], [u32; 3]), i32> = HashMap::new();
-    let key = |i: u32| {
-        mesh.vertices[i as usize]
-            .position
-            .map(|c| (c * 1e4).round() as i32 as u32)
-    };
-    for triangle in mesh.indices.as_chunks::<3>().0 {
-        for (a, b) in [(0, 1), (1, 2), (2, 0)] {
-            let (a, b) = (key(triangle[a]), key(triangle[b]));
-            *edges.entry((a.min(b), a.max(b))).or_default() += if a < b { 1 } else { -1 };
-        }
-    }
-    assert!(edges.values().all(|&n| n == 0), "every edge is matched");
+    super::v5_tests::assert_closed(mesh, "asset 305197512");
 }

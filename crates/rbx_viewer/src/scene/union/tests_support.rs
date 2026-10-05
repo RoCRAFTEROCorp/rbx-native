@@ -52,7 +52,8 @@ impl Leaf {
 /// `pieces` additive boxes in a row with one negation swallowing every one of
 /// them: the boolean carves the result away to nothing (`csg::Failure::Empty`)
 /// and `union::resolve` falls back to drawing the additive leaves — the case
-/// a union is drawn as its recovered pieces at all.
+/// a union with no baked mesh to fall back on is drawn as its recovered
+/// pieces at all.
 pub(in crate::scene) fn fallback_leaves(pieces: usize) -> Vec<Leaf> {
     let mut leaves: Vec<Leaf> = (0..pieces)
         .map(|index| {
