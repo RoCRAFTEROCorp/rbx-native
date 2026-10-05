@@ -126,9 +126,9 @@ fn bytes_that_are_not_csgmdl_either_way_are_refused() {
 
 #[test]
 fn another_version_is_named_rather_than_misread() {
-    let blob = scrambled(&document(5, STRIDE, &[], &[]));
+    let blob = scrambled(&document(7, STRIDE, &[], &[]));
 
-    assert_eq!(decode(&blob).err(), Some(Error::Version(5)));
+    assert_eq!(decode(&blob).err(), Some(Error::Version(7)));
 }
 
 #[test]
@@ -143,7 +143,8 @@ fn every_truncation_is_an_error_never_a_panic() {
 #[test]
 fn counts_too_large_for_the_blob_are_truncation() {
     let mut plain = two_triangles();
-    plain[HEADER..HEADER + 4].copy_from_slice(&u32::MAX.to_le_bytes());
+    // The vertex count, after the magic, version and two digests.
+    plain[42..46].copy_from_slice(&u32::MAX.to_le_bytes());
 
     assert_eq!(decode(&plain).err(), Some(Error::Truncated));
 }

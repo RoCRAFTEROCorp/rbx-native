@@ -403,15 +403,21 @@ Roblox's own engine.
   only geometry is a baked `MeshData`/CSGMDL blob — no `ChildData` inline
   or behind its `AssetId` (asset 305197512, 7 instances in marked.rbxl) —
   now draws and exports as that mesh instead of its box
-  (`scene::union::baked`). The blob is the document XORed with a 31-byte
-  repeating key; version 2 is vertex and index arrays in the union's own
-  studs at its `InitialSize`. Nothing in Roblox's docs describes it, so
-  the module doc says what was read off real blobs and what is left
-  unread. It is read only where no tree exists, so every union with one
-  still carves through the boolean above. A union carrying `MeshData`
-  inline with no tree and no `AssetId` is drawn the same way. Every union
-  in the test places now resolves: in marked.rbxl, 467 carve, the 7
-  decode and 13 are empty.
+  (`scene::union::baked`). Both versions found in real files are read:
+  version 2 (2015-era assets such as this one), a fully XOR-scrambled
+  vertex and index array, and version 5, what Studio writes now. Version
+  5 scrambles only its header and holds counted per-vertex arrays, a
+  delta-coded index stream and a LOD table. Nothing in Roblox's docs
+  describes either, so the module doc says what was read off real blobs
+  and what is left unread. All 71 baked meshes in the test places decode
+  to closed meshes spanning their `InitialSize` (57 version 2, 14
+  version 5). Each of the 63 whose union also carries its tree holds the
+  same volume as the boolean carved from that tree: all 14 version 5
+  exactly, version 2 within 1.3%. It is read only where no tree exists,
+  so every union with one still carves through the boolean above. A union
+  carrying `MeshData` inline with no tree and no `AssetId` is drawn the
+  same way. Every union in the test places now resolves: in marked.rbxl,
+  467 carve, the 7 decode and 13 are empty.
 - [x] **Give each of a failed-CSG union's recovered fallback pieces its
   own identity.** Every piece now carries a `scene::PartId` of its own —
   the union's referent plus its position in the operation tree's additive
@@ -2043,14 +2049,6 @@ against `Roblox/creator-docs` rather than assumed:
   stays out of reach, the same as any other physics (see
   [Explicitly impossible](#explicitly-impossible-without-robloxs-engine)).
 
-#### CSG
-- [ ] 📋 `MeshData`/CSGMDL version 5 (Roblox's own baked union result
-  format, as Studio writes it now) — compressed past the XOR that version
-  2 uses, so not decoded. Only a union with no operation tree would need
-  it, and every version-5 union seen carries one; version 2 is read (see
-  "Export and draw unions baked only as `MeshData`"). The from-scratch
-  boolean above stays the answer wherever a tree exists.
-
 #### Terrain
 - [ ] 📋 Voxel terrain storage (`Terrain.SmoothGrid`) — no work started.
   Roblox documents the general chunk/RLE storage approach in a 2017
@@ -2702,7 +2700,7 @@ and no amount of reverse engineering changes that:
   exactly as Roblox's own boolean does) — undocumented and
   version-unstable; not worth chasing when a real from-scratch boolean
   already exists. Roblox's baked `MeshData` itself is read where a union
-  has no tree (version 2 only, see "What's been implemented").
+  has no tree (versions 2 and 5, see "What's been implemented").
 - **Physics simulation and anti-cheat** — proprietary physics engine, no
   real server authority possible from rbx-native. That covers Roblox's new
   Server Authority model too: client prediction, rollback and resimulation

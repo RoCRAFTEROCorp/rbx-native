@@ -4,24 +4,27 @@
 //! names. Anything with a tree is still carved from it (`super::csg`).
 //!
 //! Nothing here comes from Roblox documentation, which does not describe the
-//! format. It was worked out by reading real blobs (asset 305197512, and the
-//! inline blobs of the places this project is tested against):
+//! format. It was worked out by reading real blobs: asset 305197512, and the
+//! inline blobs of the places this project is tested against, whose unions
+//! also carry their tree, so what they decode to could be checked against
+//! the bake's own `InitialSize`.
 //!
-//! - **Verified:** a stored blob is the plain document XORed with a 31-byte
-//!   repeating [`KEY`]. Unscrambled it opens with `CSGMDL` and a `u32` version,
-//!   so a wrong key cannot pass [`plain`] unnoticed.
-//! - **Verified, version 2:** after the magic and version come a 16-character
-//!   hex digest and 16 more digest bytes, then `u32` vertex count, `u32`
-//!   vertex stride, the vertices, `u32` index count and the `u32` indices, with
-//!   nothing after. Each vertex opens with position and normal (`3 × f32`
-//!   each) and an RGBA colour; positions are in the union's own studs at its
-//!   `InitialSize`, triangles wound counter-clockwise like every other mesh
-//!   here.
-//! - **Not read:** the rest of a vertex (what looks like texture coordinates
-//!   and a tangent) — texture coordinates are box-projected the way
-//!   `super::csg` does, so a decoded union tiles its material like a carved
-//!   one. Version 5, which the same places also hold, is compressed past the
-//!   XOR and not decoded; every version-5 union seen also carries its tree.
+//! - **Verified:** every blob opens with `CSGMDL` and a `u32` version once
+//!   unscrambled, and the scrambling is an XOR with the 31-byte repeating
+//!   [`KEY`], indexed by the byte's position in the blob. Version 2 scrambles
+//!   the whole blob; version 5 only its 10-byte magic and version, leaving
+//!   the rest plain. A wrong key cannot pass [`plain`] unnoticed.
+//! - **Verified:** positions are in the union's own studs at its
+//!   `InitialSize`, triangles are wound counter-clockwise like every other
+//!   mesh here, and every decoded blob is a closed mesh. The two layouts are
+//!   described in [`v2`] and [`v5`].
+//! - **Not used:** the texture coordinates, tangents and per-vertex face ids
+//!   the blobs also carry. Texture coordinates are box-projected the way
+//!   `super::csg` does instead, so a decoded union tiles its material exactly
+//!   like a carved one.
+
+mod v2;
+mod v5;
 
 use glam::Vec3;
 
@@ -30,10 +33,8 @@ const KEY: [u8; 31] = [
     0x56, 0x2e, 0x6e, 0x58, 0x31, 0x20, 0x30, 0x04, 0x34, 0x69, 0x0c, 0x77, 0x0c, 0x01, 0x5e, 0x00,
     0x1a, 0x60, 0x37, 0x69, 0x1d, 0x52, 0x2b, 0x07, 0x4f, 0x24, 0x59, 0x65, 0x53, 0x04, 0x7a,
 ];
-/// Magic, version and the two digests.
-const HEADER: usize = 6 + 4 + 16 + 16;
-/// Position, normal and colour: all a vertex must hold to be read.
-const MIN_STRIDE: usize = 28;
+/// The magic and the `u32` version.
+const PREFIX: usize = 10;
 
 #[derive(Debug, PartialEq, Eq)]
 pub(super) enum Error {
@@ -43,28 +44,41 @@ pub(super) enum Error {
     Version(u32),
     /// The document ends before what its own counts promise.
     Truncated,
-    /// A vertex too small to hold a position, normal and colour.
+    /// A vertex too small to hold a position, normal and colour (version 2).
     Stride(u32),
-    /// An index past the last vertex, or a count that is not whole triangles.
+    /// An index past the last vertex, a count that is not whole triangles,
+    /// or an index code this module does not know (version 5).
     Index,
+    /// Two of a document's per-vertex arrays disagree on the vertex count.
+    Count,
 }
 
-/// The unscrambled document, `bytes` itself when it is already plain.
+/// The unscrambled document; `bytes` itself when it is already plain.
 fn plain(bytes: &[u8]) -> Result<Vec<u8>, Error> {
+    let mut document = bytes.to_vec();
     if bytes.starts_with(MAGIC) {
-        return Ok(bytes.to_vec());
+        return Ok(document);
     }
-    let out: Vec<u8> = bytes
-        .iter()
-        .zip(KEY.iter().cycle())
-        .map(|(byte, key)| byte ^ key)
-        .collect();
-    match out.starts_with(MAGIC) {
-        true => Ok(out),
-        false => Err(Error::NotCsg),
+    let unscramble = |document: &mut Vec<u8>, range: std::ops::Range<usize>| {
+        for at in range {
+            document[at] ^= KEY[at % KEY.len()];
+        }
+    };
+    if document.len() < PREFIX {
+        return Err(Error::NotCsg);
     }
+    unscramble(&mut document, 0..PREFIX);
+    if !document.starts_with(MAGIC) {
+        return Err(Error::NotCsg);
+    }
+    if document[MAGIC.len()..PREFIX] == [2, 0, 0, 0] {
+        let len = document.len();
+        unscramble(&mut document, PREFIX..len);
+    }
+    Ok(document)
 }
 
+/// A bounds-checked little-endian cursor over a plain document.
 struct Reader<'a> {
     bytes: &'a [u8],
     at: usize,
@@ -78,9 +92,26 @@ impl Reader<'_> {
         Ok(slice)
     }
 
+    fn array<const N: usize>(&mut self) -> Result<[u8; N], Error> {
+        let raw = self.take(N)?;
+        Ok(std::array::from_fn(|i| raw[i]))
+    }
+
+    fn u8(&mut self) -> Result<u8, Error> {
+        Ok(self.array::<1>()?[0])
+    }
+
+    fn u16(&mut self) -> Result<u16, Error> {
+        Ok(u16::from_le_bytes(self.array()?))
+    }
+
     fn u32(&mut self) -> Result<u32, Error> {
-        let raw = self.take(4)?;
-        Ok(u32::from_le_bytes([raw[0], raw[1], raw[2], raw[3]]))
+        Ok(u32::from_le_bytes(self.array()?))
+    }
+
+    /// `count` items of `size` bytes each, as one slice.
+    fn items(&mut self, count: usize, size: usize) -> Result<&[u8], Error> {
+        self.take(count.checked_mul(size).ok_or(Error::Truncated)?)
     }
 }
 
@@ -88,6 +119,14 @@ fn f32s<const N: usize>(raw: &[u8]) -> [f32; N] {
     std::array::from_fn(|i| {
         f32::from_le_bytes([raw[i * 4], raw[i * 4 + 1], raw[i * 4 + 2], raw[i * 4 + 3]])
     })
+}
+
+/// What a layout reads out of a document, before it becomes a mesh.
+struct Decoded {
+    positions: Vec<[f32; 3]>,
+    normals: Vec<[f32; 3]>,
+    colors: Vec<[u8; 4]>,
+    indices: Vec<u32>,
 }
 
 /// A decoded union mesh and the colour most of its surface was baked in —
@@ -105,57 +144,56 @@ pub(super) fn decode(bytes: &[u8]) -> Result<Baked, Error> {
         bytes: &document,
         at: MAGIC.len(),
     };
-    match reader.u32()? {
-        2 => {}
+    let decoded = match reader.u32()? {
+        2 => v2::read(&mut reader)?,
+        5 => v5::read(&mut reader)?,
         version => return Err(Error::Version(version)),
-    }
-    reader.at = HEADER;
-    let count = reader.u32()? as usize;
-    let stride = reader.u32()?;
-    if (stride as usize) < MIN_STRIDE {
-        return Err(Error::Stride(stride));
-    }
-    let raw = reader.take(count.checked_mul(stride as usize).ok_or(Error::Truncated)?)?;
-    let mut vertices = Vec::with_capacity(count);
-    let mut bounds = rbx_mesh::Aabb {
-        min: [f32::INFINITY; 3],
-        max: [f32::NEG_INFINITY; 3],
     };
-    for vertex in raw.chunks_exact(stride as usize) {
-        let position: [f32; 3] = f32s(&vertex[0..12]);
-        let normal: [f32; 3] = f32s(&vertex[12..24]);
-        bounds.min = std::array::from_fn(|axis| bounds.min[axis].min(position[axis]));
-        bounds.max = std::array::from_fn(|axis| bounds.max[axis].max(position[axis]));
-        let (u, v) = super::csg::dominant_axes(normal);
-        vertices.push(rbx_mesh::Vertex {
-            position,
-            normal,
-            uv: [
-                position[u] / rbx_materials::DEFAULT_STUDS_PER_TILE,
-                position[v] / rbx_materials::DEFAULT_STUDS_PER_TILE,
-            ],
-            color: [vertex[24], vertex[25], vertex[26], vertex[27]],
-        });
-    }
+    finish(decoded)
+}
 
-    let index_count = reader.u32()? as usize;
-    let raw = reader.take(index_count.checked_mul(4).ok_or(Error::Truncated)?)?;
-    let indices: Vec<u32> = raw
-        .as_chunks::<4>()
-        .0
-        .iter()
-        .map(|b| u32::from_le_bytes(*b))
-        .collect();
+fn finish(decoded: Decoded) -> Result<Baked, Error> {
+    let Decoded {
+        positions,
+        normals,
+        colors,
+        indices,
+    } = decoded;
+    let count = positions.len();
+    if normals.len() != count || colors.len() != count {
+        return Err(Error::Count);
+    }
     if !indices.len().is_multiple_of(3) || indices.iter().any(|&i| i as usize >= count) {
         return Err(Error::Index);
     }
 
-    let color = dominant_color(&vertices, &indices);
-    // The renderer multiplies vertex colour in; the union's own colour is
-    // the instance's, so the baked tint must not darken it a second time.
-    for vertex in &mut vertices {
-        vertex.color = [255; 4];
-    }
+    let mut bounds = rbx_mesh::Aabb {
+        min: [f32::INFINITY; 3],
+        max: [f32::NEG_INFINITY; 3],
+    };
+    let vertices: Vec<rbx_mesh::Vertex> = positions
+        .into_iter()
+        .zip(normals)
+        .map(|(position, normal)| {
+            bounds.min = std::array::from_fn(|axis| bounds.min[axis].min(position[axis]));
+            bounds.max = std::array::from_fn(|axis| bounds.max[axis].max(position[axis]));
+            let (u, v) = super::csg::dominant_axes(normal);
+            rbx_mesh::Vertex {
+                position,
+                normal,
+                uv: [
+                    position[u] / rbx_materials::DEFAULT_STUDS_PER_TILE,
+                    position[v] / rbx_materials::DEFAULT_STUDS_PER_TILE,
+                ],
+                // The renderer multiplies vertex colour in; the union's own
+                // colour is the instance's, so the baked tint must not darken
+                // it a second time.
+                color: [255; 4],
+            }
+        })
+        .collect();
+
+    let color = dominant_color(&vertices, &colors, &indices);
     Ok(Baked {
         mesh: rbx_mesh::Mesh {
             // A CSGMDL version, not a `.mesh` header one: there is none to echo.
@@ -172,16 +210,19 @@ pub(super) fn decode(bytes: &[u8]) -> Result<Baked, Error> {
 /// The vertex colour covering the most triangle area, read off each
 /// triangle's first corner (a union bakes one colour per source part, so a
 /// triangle never straddles two).
-fn dominant_color(vertices: &[rbx_mesh::Vertex], indices: &[u32]) -> Option<[u8; 3]> {
+fn dominant_color(
+    vertices: &[rbx_mesh::Vertex],
+    colors: &[[u8; 4]],
+    indices: &[u32],
+) -> Option<[u8; 3]> {
     let mut areas: Vec<([u8; 3], f32)> = Vec::new();
     for triangle in indices.as_chunks::<3>().0 {
-        let [a, b, c] = [0, 1, 2].map(|i| &vertices[triangle[i] as usize]);
-        let [pa, pb, pc] = [a, b, c].map(|v| Vec3::from(v.position));
+        let [pa, pb, pc] = triangle.map(|i| Vec3::from(vertices[i as usize].position));
         let area = (pb - pa).cross(pc - pa).length();
-        let color = [a.color[0], a.color[1], a.color[2]];
-        match areas.iter_mut().find(|(known, _)| *known == color) {
+        let [r, g, b, _] = colors[triangle[0] as usize];
+        match areas.iter_mut().find(|(known, _)| *known == [r, g, b]) {
             Some((_, total)) => *total += area,
-            None => areas.push((color, area)),
+            None => areas.push(([r, g, b], area)),
         }
     }
     areas
@@ -218,3 +259,7 @@ pub(super) fn of_bytes(bytes: &[u8]) -> Option<Baked> {
 #[cfg(test)]
 #[path = "baked/tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "baked/v5_tests.rs"]
+mod v5_tests;

@@ -5,9 +5,11 @@
 - **Unions baked only as `MeshData` draw and export as their real shape.**
   A union with no operation tree left anywhere, inline or behind its
   `AssetId`, used to draw and export as its box. Its own baked mesh is now
-  decoded instead, version 2 of Roblox's CSGMDL format. In marked.rbxl that
-  turns 7 blind rods from boxes into cylinders, and every union in the test
-  places now resolves. — @chteau
+  decoded instead, from both CSGMDL versions found in real files: the
+  2015-era version 2 and the version 5 Studio writes now. In marked.rbxl
+  that turns 7 blind rods from boxes into cylinders, and every union in the
+  test places now resolves. Each version 5 bake decodes to exactly the
+  volume its own tree carves to. — @chteau
 
 ## 2026-10-04
 

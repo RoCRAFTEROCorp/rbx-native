@@ -134,11 +134,12 @@ Roblox:
   don't casually add a second such derivation without the same care (reading
   the actual primary source, documenting what's verified vs. approximated).
 - Roblox's proprietary CSG mesh format (`MeshData`/CSGMDL) is decoded
-  only for version 2, in `rbx_viewer`'s `scene::union::baked`, and only for
+  (versions 2 and 5) in `rbx_viewer`'s `scene::union::baked`, and only for
   a union with no operation tree, at the maintainer's request. Changes to it
   need the same care as the shader derivation above: work from real blobs,
-  and say in the module doc what is verified and what is not. Don't
-  extend it to other versions as a drive-by fix.
+  check them against what the union's own tree carves (the ignored
+  real-place test does this), and say in the module doc what is verified
+  and what is not.
 - If you're not sure whether something you're about to add is safe to ship,
   ask rather than guess.
 
