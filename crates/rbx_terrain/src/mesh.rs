@@ -11,8 +11,7 @@
 //! The solid surface is one mesh whatever it is made of: each vertex carries
 //! weights for the materials around it (see [`Blend`]), so the renderer can
 //! blend across a border rather than step along the voxel grid. Water gets
-//! its own mesh: the surface of water and solid together, kept only where
-//! water (not solid) meets air.
+//! its own mesh, kept only where water meets air.
 
 mod blend;
 
@@ -108,14 +107,16 @@ impl Block {
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Field {
     Solid,
-    /// Solid and water together, so water's surface ends at the terrain.
-    Wet,
+    /// Water alone. Its surface is kept only where water meets air: a field
+    /// of water and solid together would follow the shore up the slope, and
+    /// the water vertices beside it would rise out of the sand.
+    Water,
 }
 
 fn density(cell: Cell, field: Field) -> f32 {
     match field {
         Field::Solid => cell.solid_fraction(),
-        Field::Wet => cell.solid_fraction() + cell.water_fraction(),
+        Field::Water => cell.water_fraction(),
     }
 }
 
@@ -134,7 +135,7 @@ pub fn mesh_chunk(grid: &VoxelGrid, key: ChunkKey) -> ChunkMesh {
     let mut solid = Builder::default();
     let mut solid_net = Net::new(&block, Field::Solid, origin);
     let mut water = Builder::default();
-    let mut wet_net = Net::new(&block, Field::Wet, origin);
+    let mut wet_net = Net::new(&block, Field::Water, origin);
     for y in 0..CHUNK {
         for z in 0..CHUNK {
             for x in 0..CHUNK {
@@ -148,12 +149,13 @@ pub fn mesh_chunk(grid: &VoxelGrid, key: ChunkKey) -> ChunkMesh {
                     if (da >= ISO) != (db >= ISO) {
                         solid_net.quad(&mut solid, v, axis, da >= ISO);
                     }
-                    // Water surface: the wet field crosses, and the wet side
-                    // is mostly water rather than solid.
-                    let (wa, wb) = (density(a, Field::Wet), density(b, Field::Wet));
+                    // Water surface: the water field crosses into a voxel
+                    // that is not mostly solid (water against terrain is
+                    // hidden inside it).
+                    let (wa, wb) = (density(a, Field::Water), density(b, Field::Water));
                     if (wa >= ISO) != (wb >= ISO) {
-                        let inside = if wa >= ISO { a } else { b };
-                        if inside.water_fraction() > inside.solid_fraction() {
+                        let outside = if wa >= ISO { b } else { a };
+                        if outside.solid_fraction() < ISO {
                             wet_net.quad(&mut water, v, axis, wa >= ISO);
                         }
                     }
@@ -279,7 +281,7 @@ impl<'a> Net<'a> {
         };
         let shares = match self.field {
             Field::Solid => blend::shares(corners.into_iter()),
-            Field::Wet => [0.0; Material::ALL.len()],
+            Field::Water => [0.0; Material::ALL.len()],
         };
         let dual = Dual {
             position,
@@ -302,7 +304,7 @@ impl<'a> Net<'a> {
         let duals = cells.map(|cell| self.vertex(cell));
         let materials = match self.field {
             Field::Solid => blend::pick(duals.each_ref().map(|d| &d.shares)),
-            Field::Wet => [Material::Air; BLEND],
+            Field::Water => [Material::Air; BLEND],
         };
         let mut ids = [0u32; 4];
         for ((id, cell), dual) in ids.iter_mut().zip(cells).zip(&duals) {

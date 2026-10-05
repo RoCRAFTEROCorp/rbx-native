@@ -23,6 +23,8 @@ pub(crate) enum TerrainPhase {
     Press,
     Drag,
     Release,
+    /// `Delete`/`Backspace` over the view: the Select tool's region delete.
+    Delete,
     /// The wheel with `B` held: notches toward the user are negative.
     Adjust {
         dial: Dial,
@@ -83,11 +85,25 @@ impl WorkspaceView {
         }));
     }
 
-    /// `B`'s state, from every key event over the view.
-    pub(super) fn terrain_key(&mut self, key: &str, pressed: bool) {
+    /// `B`'s state, from every key event over the view, and `Delete`
+    /// while the Terrain Editor has the view. Whether the key was taken.
+    pub(super) fn terrain_key(&mut self, key: &str, pressed: bool, cx: &mut Context<Self>) -> bool {
         if key == "b" {
             self.terrain_b = pressed;
         }
+        let terrain = self.transform.tool == crate::transform::Tool::Terrain;
+        if terrain && pressed && matches!(key, "delete" | "backspace") {
+            cx.emit(ViewportAction::Terrain(TerrainInput {
+                ray: None,
+                phase: TerrainPhase::Delete,
+                ctrl: false,
+                shift: false,
+                pose: self.view,
+                orthographic: self.orthographic,
+            }));
+            return true;
+        }
+        false
     }
 
     /// The wheel while the Terrain Editor is up with `B` held: the brush's

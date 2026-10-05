@@ -35,6 +35,10 @@ pub(super) use fields::TerrainFields;
 struct Stroke {
     terrain: Ref,
     grid: VoxelGrid,
+    /// The terrain as the press found it, which every step aims against:
+    /// aiming at what the stroke itself just added would walk the brush
+    /// up its own new terrain toward the camera.
+    aim: VoxelGrid,
     plane: Option<Plane>,
     start_y: f32,
 }
@@ -253,6 +257,11 @@ impl Shell {
         }
         match input.phase {
             TerrainPhase::Adjust { dial, notches } => self.adjust_dial(dial, notches, cx),
+            TerrainPhase::Delete => {
+                if self.terrain_select_keys() {
+                    self.terrain_delete_region(cx);
+                }
+            }
             _ if tool.is_brush() => self.brush_step(tool, input, cx),
             _ if tool.uses_region() => self.region_step(tool, input, cx),
             _ => {}
@@ -281,7 +290,7 @@ impl Shell {
         };
         let empty = VoxelGrid::new();
         let grid = match &self.terrain.stroke {
-            Some(stroke) => &stroke.grid,
+            Some(stroke) => &stroke.aim,
             None => self.terrain.overlay_grid.as_ref().unwrap_or(&empty),
         };
         let surfaces = Surfaces {
@@ -305,6 +314,7 @@ impl Shell {
                 };
                 self.terrain.stroke = Some(Stroke {
                     terrain,
+                    aim: grid.clone(),
                     grid,
                     plane: None,
                     start_y: 0.0,
@@ -337,7 +347,7 @@ impl Shell {
                     self.store_grid(stroke.terrain, &stroke.grid, true, cx);
                 }
             }
-            TerrainPhase::Adjust { .. } => {}
+            TerrainPhase::Adjust { .. } | TerrainPhase::Delete => {}
         }
     }
 
@@ -399,7 +409,7 @@ impl Shell {
     fn region_step(&mut self, tool: TerrainTool, input: TerrainInput, cx: &mut Context<Self>) {
         let pose = input.pose;
         match input.phase {
-            TerrainPhase::Hover | TerrainPhase::Adjust { .. } => {}
+            TerrainPhase::Hover | TerrainPhase::Adjust { .. } | TerrainPhase::Delete => {}
             TerrainPhase::Press => {
                 let (Some(ray), Some(pose)) = (input.ray, pose) else {
                     return;

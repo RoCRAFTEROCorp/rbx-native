@@ -248,9 +248,15 @@ fn water_meshes_only_where_it_meets_air() {
     let mut top = 0;
     for surface in water {
         assert_faces_out(surface);
+        for tri in surface.indices.chunks(3) {
+            let p = [0, 1, 2].map(|i| surface.positions[tri[i] as usize]);
+            let face = cross(sub(p[1], p[0]), sub(p[2], p[0]));
+            // No face looks down onto the rock below.
+            assert!(face[1] >= -1e-4, "water against rock at {p:?}");
+        }
         for (p, n) in surface.positions.iter().zip(&surface.normals) {
-            // Nothing faces down onto the rock below.
-            assert!(n[1] > -0.5, "water against rock at {p:?}");
+            // Never above the water's own top.
+            assert!(p[1] <= 8.0 + 1e-4, "water rises to {p:?}");
             if n[1] > 0.99 {
                 assert!((p[1] - 8.0).abs() < 1e-4);
                 top += 1;
@@ -258,6 +264,30 @@ fn water_meshes_only_where_it_meets_air() {
         }
     }
     assert!(top > 20);
+}
+
+#[test]
+fn water_never_climbs_the_shore() {
+    // A sand slope rising out of a flat sea: the water's vertices stay at
+    // or below the sea's top, never up on the sand.
+    let mut grid = VoxelGrid::new();
+    for x in 0..16 {
+        for z in 0..4 {
+            let top = x / 2;
+            for y in 0..=top {
+                grid.set([x, y, z], Cell::full(Material::Sand));
+            }
+            for y in (top + 1)..4 {
+                grid.set([x, y, z], Cell::full(Material::Water));
+            }
+        }
+    }
+    let sea_top = 16.0;
+    for mesh in mesh_all(&grid) {
+        for p in &mesh.water.positions {
+            assert!(p[1] <= sea_top + 1e-3, "water at {p:?}");
+        }
+    }
 }
 
 #[test]

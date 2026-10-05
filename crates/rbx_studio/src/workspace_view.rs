@@ -740,7 +740,9 @@ impl WorkspaceView {
     }
 
     fn key(&mut self, keystroke: &Keystroke, pressed: bool, cx: &mut Context<Self>) {
-        self.terrain_key(&keystroke.key, pressed);
+        if self.terrain_key(&keystroke.key, pressed, cx) {
+            return;
+        }
         let layout = Layout::of(cx.keyboard_layout().name());
         // Only on the press: a tool switch is an edge, not a state the way the
         // camera's own movement keys are.
