@@ -6040,6 +6040,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "rbx_terrain"
+version = "0.1.0"
+dependencies = [
+ "rbx_binary",
+ "rbx_dom",
+ "thiserror 2.0.20",
+]
+
+[[package]]
 name = "rbx_viewer"
 version = "0.1.0"
 dependencies = [
