@@ -588,7 +588,7 @@ impl Renderer {
     /// host that only draws on change keeps drawing while this holds.
     pub(crate) fn animating(&self) -> bool {
         self.translucent.has_force_field()
-            || self.terrain.has_water()
+            || (self.terrain.has_water() && self.quality.water_waves)
             || self.beams.is_live()
             || self.trails.is_live()
             || self.particles.is_live()

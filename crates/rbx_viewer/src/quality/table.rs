@@ -3,6 +3,12 @@
 //! This table is an approximation based on community observation, not official
 //! documentation: Roblox publishes no per-level breakdown. The bands are
 //! deliberately coarse and in one place to keep parameter changes coordinated.
+//!
+//! Terrain water follows the same rule. Roblox only says some water
+//! properties need the highest Editor Quality Level to preview while editing
+//! (`parts/terrain.md` in its creator docs); where the ripples (level 7 up)
+//! and the scene reflections (level 10 up) start is this renderer's own
+//! choice, putting both well clear of the lowest bands.
 
 use super::{QualityLevel, QualityProfile};
 
@@ -34,6 +40,8 @@ const BANDS: [(u8, QualityProfile); 8] = [
             gui: true,
             msaa_samples: 1,
             force_field_intersections: false,
+            water_waves: false,
+            water_reflections: false,
         },
     ),
     // 3-4: the grade comes back, and a handful of local lights with it.
@@ -59,6 +67,8 @@ const BANDS: [(u8, QualityProfile); 8] = [
             gui: true,
             msaa_samples: 1,
             force_field_intersections: false,
+            water_waves: false,
+            water_reflections: false,
         },
     ),
     // 5-6: shadows and Neon's glow appear — the level users notice.
@@ -84,6 +94,8 @@ const BANDS: [(u8, QualityProfile); 8] = [
             gui: true,
             msaa_samples: 1,
             force_field_intersections: false,
+            water_waves: false,
+            water_reflections: false,
         },
     ),
     (
@@ -108,6 +120,8 @@ const BANDS: [(u8, QualityProfile); 8] = [
             gui: true,
             msaa_samples: 1,
             force_field_intersections: false,
+            water_waves: true,
+            water_reflections: false,
         },
     ),
     (
@@ -132,6 +146,8 @@ const BANDS: [(u8, QualityProfile); 8] = [
             gui: true,
             msaa_samples: 1,
             force_field_intersections: false,
+            water_waves: true,
+            water_reflections: false,
         },
     ),
     (
@@ -156,6 +172,8 @@ const BANDS: [(u8, QualityProfile); 8] = [
             gui: true,
             msaa_samples: 1,
             force_field_intersections: false,
+            water_waves: true,
+            water_reflections: false,
         },
     ),
     // 10-15: nothing is capped any more; only the distances still grow.
@@ -181,6 +199,8 @@ const BANDS: [(u8, QualityProfile); 8] = [
             gui: true,
             msaa_samples: 1,
             force_field_intersections: false,
+            water_waves: true,
+            water_reflections: true,
         },
     ),
     // 16-21: the levels a desktop client actually runs at, and where
@@ -210,6 +230,8 @@ const BANDS: [(u8, QualityProfile); 8] = [
             gui: true,
             msaa_samples: 4,
             force_field_intersections: true,
+            water_waves: true,
+            water_reflections: true,
         },
     ),
 ];

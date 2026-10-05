@@ -65,11 +65,12 @@ pub(super) struct LightingRaw {
     /// over. The buffer itself is never empty (see [`local`]), so the count is
     /// the only thing that tells an unlit scene apart from a lit one.
     locals: [f32; 4],
-    /// The two quality knobs the shading itself reads. x: render distance in
+    /// The quality knobs the shading itself reads. x: render distance in
     /// studs, 0 meaning unlimited — an infinity would poison every arithmetic it
     /// touched, so it is flattened to the one value no fade can start at.
     /// y: 1 where the environment terms sample the probe, 0 where they fall back
-    /// to one flat sky colour.
+    /// to one flat sky colour. z: 1 where terrain water ripples, w: 1 where it
+    /// reflects the scene (see `water.wgsl`).
     quality: [f32; 4],
     /// `Clouds.Color`, linear like everything else here; w is unused.
     clouds_color: [f32; 4],
@@ -140,8 +141,8 @@ impl LightingRaw {
                     0.0
                 },
                 f32::from(u8::from(quality.env_reflections)),
-                0.0,
-                0.0,
+                f32::from(u8::from(quality.water_waves)),
+                f32::from(u8::from(quality.water_reflections)),
             ],
             clouds_color: vec4(clouds_color, 0.0),
             clouds_extra,
