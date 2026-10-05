@@ -134,10 +134,14 @@ impl Shell {
     /// The picker and the context menu, painted over the whole window from
     /// `Render for Shell`.
     pub(super) fn explorer_popups(&self, cx: &mut Context<Self>) -> Vec<AnyElement> {
-        [self.picker_popup(cx), self.row_menu_popup(cx)]
-            .into_iter()
-            .flatten()
-            .collect()
+        [
+            self.picker_popup(cx),
+            self.row_menu_popup(cx),
+            self.terrain_picker_popup(cx),
+        ]
+        .into_iter()
+        .flatten()
+        .collect()
     }
 
     /// The cancel half of an in-place rename, and Escape's half of "no

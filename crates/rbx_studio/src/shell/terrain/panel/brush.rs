@@ -18,13 +18,18 @@ impl Shell {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let fields = self.fields();
-        let (size, height, strength, plane_y, flatten_y) = (
+        let (size, height, strength, flatten_y) = (
             fields.rail(Rail::Size).clone(),
             fields.rail(Rail::Height).clone(),
             fields.rail(Rail::Strength).clone(),
-            fields.number(Number::PlaneY).clone(),
             fields.number(Number::FlattenY).clone(),
         );
+        let plane_origin: Vec<_> = (0..3)
+            .map(|a| fields.number(Number::PlaneOrigin(a)).clone())
+            .collect();
+        let plane_tilt: Vec<_> = (0..2)
+            .map(|a| fields.number(Number::PlaneTilt(a)).clone())
+            .collect();
         let s = self.terrain.settings.clone();
         let mut rows = Vec::new();
         if matches!(tool, TerrainTool::Draw | TerrainTool::Sculpt) {
@@ -150,7 +155,8 @@ impl Shell {
                 },
             ));
             if s.plane_lock == PlaneLock::Manual {
-                rows.push(number_row("Plane Y", vec![plane_y], cx));
+                rows.push(number_row("Plane position", plane_origin, cx));
+                rows.push(number_row("Plane tilt (X, Z)", plane_tilt, cx));
             }
         }
         rows.push(switch_row(

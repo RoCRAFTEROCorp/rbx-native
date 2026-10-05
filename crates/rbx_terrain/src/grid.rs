@@ -237,6 +237,26 @@ impl VoxelGrid {
         })
     }
 
+    /// Which material slots appear among the voxels of `keys` (every stored
+    /// chunk for `None`): what a renderer needs textures for, without
+    /// walking the whole grid after an edit that touched a few chunks.
+    pub fn materials_in(&self, keys: Option<&BTreeSet<ChunkKey>>) -> [bool; 23] {
+        let mut present = [false; 23];
+        let mut mark = |cells: &[Cell]| {
+            for cell in cells {
+                present[usize::from(cell.material.slot())] = true;
+            }
+        };
+        match keys {
+            None => self.chunks.values().for_each(|cells| mark(cells)),
+            Some(keys) => keys
+                .iter()
+                .filter_map(|key| self.chunks.get(key))
+                .for_each(|cells| mark(cells)),
+        }
+        present
+    }
+
     /// The smallest voxel box holding every non-Air voxel, as `(min, max)`
     /// with `max` exclusive, or `None` for an empty grid.
     pub fn bounds(&self) -> Option<([i32; 3], [i32; 3])> {

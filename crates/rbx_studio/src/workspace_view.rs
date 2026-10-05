@@ -329,6 +329,8 @@ pub(crate) struct WorkspaceView {
     drag: Option<Drag>,
     /// Whether `B` is held — the Terrain Editor's brush dial key.
     terrain_b: bool,
+    /// Where the cursor last stood across the view, for `B`-drag's dial.
+    terrain_dial_x: Option<f32>,
     /// The modifiers of the last terrain input, which a release reports again.
     terrain_modifiers: Modifiers,
     /// A body grab the last press found on the selection, held back until
@@ -486,6 +488,7 @@ impl WorkspaceView {
             meshes: Meshes::default(),
             drag: None,
             terrain_b: false,
+            terrain_dial_x: None,
             terrain_modifiers: Modifiers::default(),
             pending_grab: None,
             measure: None,

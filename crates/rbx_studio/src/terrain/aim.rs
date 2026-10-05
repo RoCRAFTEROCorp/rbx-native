@@ -30,6 +30,22 @@ pub(crate) struct Aim {
     pub(crate) normal: Vec3,
 }
 
+/// Manual plane lock's normal as tilts in degrees: about X, then about Z,
+/// from straight up — the two turns a plane facing up can take.
+pub(crate) fn plane_tilt(normal: [f32; 3]) -> [f32; 2] {
+    let n = Vec3::from(normal).normalize_or(Vec3::Y);
+    // n = Rz(z) · Rx(x) · Y = (-sin z·cos x, cos z·cos x, sin x).
+    let x = n.z.clamp(-1.0, 1.0).asin();
+    let z = (-n.x).atan2(n.y);
+    [x.to_degrees(), z.to_degrees()]
+}
+
+/// The inverse of [`plane_tilt`].
+pub(crate) fn plane_normal(tilt: [f32; 2]) -> [f32; 3] {
+    let (x, z) = (tilt[0].to_radians(), tilt[1].to_radians());
+    [-z.sin() * x.cos(), z.cos() * x.cos(), x.sin()]
+}
+
 /// A plane a stroke is locked to: through `origin`, facing `normal`.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct Plane {
@@ -212,6 +228,18 @@ mod tests {
                 .abs()
                 < 1e-3
         );
+    }
+
+    #[test]
+    fn plane_tilts_round_trip_through_the_normal() {
+        for tilt in [[0.0, 0.0], [30.0, 0.0], [0.0, -45.0], [20.0, 60.0]] {
+            let back = plane_tilt(plane_normal(tilt));
+            assert!(
+                (back[0] - tilt[0]).abs() < 1e-3 && (back[1] - tilt[1]).abs() < 1e-3,
+                "{tilt:?} -> {back:?}"
+            );
+        }
+        assert_eq!(plane_normal([0.0, 0.0]), [0.0, 1.0, 0.0]);
     }
 
     #[test]

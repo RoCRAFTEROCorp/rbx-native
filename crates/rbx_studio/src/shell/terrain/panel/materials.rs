@@ -101,6 +101,48 @@ impl Shell {
             .into_any_element()
     }
 
+    /// The `Alt`-click picker: the active brush's material swatches at the
+    /// cursor, closed by a pick or a click elsewhere.
+    pub(in crate::shell) fn terrain_picker_popup(
+        &self,
+        cx: &mut Context<Self>,
+    ) -> Option<AnyElement> {
+        let at = self.terrain.picker_at?;
+        let choice = match self.terrain.tool {
+            Some(crate::terrain::TerrainTool::Paint) => MaterialChoice::PaintTarget,
+            _ => MaterialChoice::Brush,
+        };
+        let grid = self.material_picker("Material", choice, false, cx);
+        let surface = super::super::super::menu::surface()
+            .id("terrain-material-picker")
+            .w(px(260.))
+            .p(px(10.))
+            .occlude()
+            .on_mouse_down_out(cx.listener(|shell, _: &MouseDownEvent, _, cx| {
+                shell.terrain.picker_at = None;
+                cx.notify();
+            }))
+            .on_mouse_up(
+                MouseButton::Left,
+                cx.listener(|shell, _: &MouseUpEvent, _, cx| {
+                    // A tile's own click has landed by now; one pick is the
+                    // whole of the picker's job.
+                    shell.terrain.picker_at = None;
+                    cx.notify();
+                }),
+            )
+            .child(grid);
+        Some(
+            deferred(
+                anchored()
+                    .position(at)
+                    .snap_to_window_with_margin(px(8.))
+                    .child(surface),
+            )
+            .into_any_element(),
+        )
+    }
+
     /// The place's terrain colours and its water colour, as sRGB bytes.
     fn terrain_colors(&self) -> (MaterialColors, [u8; 3]) {
         let Some(instance) = find_terrain(&self.dom).and_then(|r| self.dom.get(r)) else {

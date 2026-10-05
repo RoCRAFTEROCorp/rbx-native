@@ -73,6 +73,8 @@ pub(crate) struct TerrainEditor {
     /// lifts from: the region as the tool was entered, or as the last move
     /// left it.
     transform_source: Option<StudBox>,
+    /// Where the `Alt`-click material picker stands, while it is open.
+    pub(super) picker_at: Option<Point<Pixels>>,
     /// The voxels hovers aim against, and the bytes they were decoded from.
     overlay_grid: Option<VoxelGrid>,
     overlay_source: Vec<u8>,
@@ -93,6 +95,7 @@ impl Default for TerrainEditor {
             colormap: None,
             last_ray: None,
             transform_source: None,
+            picker_at: None,
             overlay_grid: None,
             overlay_source: Vec::new(),
         }
@@ -257,6 +260,12 @@ impl Shell {
         }
         match input.phase {
             TerrainPhase::Adjust { dial, notches } => self.adjust_dial(dial, notches, cx),
+            TerrainPhase::Picker { x, y } => {
+                if tool.is_brush() {
+                    self.terrain.picker_at = Some(point(px(x), px(y)));
+                    cx.notify();
+                }
+            }
             TerrainPhase::Delete => {
                 if self.terrain_select_keys() {
                     self.terrain_delete_region(cx);
@@ -347,7 +356,7 @@ impl Shell {
                     self.store_grid(stroke.terrain, &stroke.grid, true, cx);
                 }
             }
-            TerrainPhase::Adjust { .. } | TerrainPhase::Delete => {}
+            TerrainPhase::Adjust { .. } | TerrainPhase::Delete | TerrainPhase::Picker { .. } => {}
         }
     }
 
@@ -409,7 +418,10 @@ impl Shell {
     fn region_step(&mut self, tool: TerrainTool, input: TerrainInput, cx: &mut Context<Self>) {
         let pose = input.pose;
         match input.phase {
-            TerrainPhase::Hover | TerrainPhase::Adjust { .. } | TerrainPhase::Delete => {}
+            TerrainPhase::Hover
+            | TerrainPhase::Adjust { .. }
+            | TerrainPhase::Delete
+            | TerrainPhase::Picker { .. } => {}
             TerrainPhase::Press => {
                 let (Some(ray), Some(pose)) = (input.ray, pose) else {
                     return;
@@ -528,7 +540,12 @@ impl Shell {
                     angles[2].to_radians(),
                 );
             }
-            Number::PlaneY => settings.plane_origin[1] = value,
+            Number::PlaneOrigin(axis) => settings.plane_origin[axis] = value,
+            Number::PlaneTilt(axis) => {
+                let mut tilt = crate::terrain::plane_tilt(settings.plane_normal);
+                tilt[axis] = value;
+                settings.plane_normal = crate::terrain::plane_normal(tilt);
+            }
             Number::FlattenY => settings.flatten_y = value,
             Number::Seed => settings.generate.seed = value.max(0.0) as u32,
         }

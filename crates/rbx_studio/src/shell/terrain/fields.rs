@@ -18,13 +18,16 @@ pub(in crate::shell) enum Number {
     Position(usize),
     Size(usize),
     Rotation(usize),
-    PlaneY,
+    /// Manual plane lock's origin, one axis.
+    PlaneOrigin(usize),
+    /// Its tilt in degrees: about X (0) or about Z (1).
+    PlaneTilt(usize),
     FlattenY,
     Seed,
 }
 
 impl Number {
-    pub(in crate::shell) const ALL: [Number; 12] = [
+    pub(in crate::shell) const ALL: [Number; 16] = [
         Number::Position(0),
         Number::Position(1),
         Number::Position(2),
@@ -34,7 +37,11 @@ impl Number {
         Number::Rotation(0),
         Number::Rotation(1),
         Number::Rotation(2),
-        Number::PlaneY,
+        Number::PlaneOrigin(0),
+        Number::PlaneOrigin(1),
+        Number::PlaneOrigin(2),
+        Number::PlaneTilt(0),
+        Number::PlaneTilt(1),
         Number::FlattenY,
         Number::Seed,
     ];
@@ -48,7 +55,8 @@ impl Number {
                 let (x, y, z) = editor.rotation_euler();
                 [x, y, z][axis]
             }
-            Number::PlaneY => settings.plane_origin[1],
+            Number::PlaneOrigin(axis) => settings.plane_origin[axis],
+            Number::PlaneTilt(axis) => crate::terrain::plane_tilt(settings.plane_normal)[axis],
             Number::FlattenY => settings.flatten_y,
             Number::Seed => settings.generate.seed as f32,
         }

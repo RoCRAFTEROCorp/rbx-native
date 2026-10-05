@@ -215,7 +215,7 @@ impl WorkspaceView {
         // outline.
         if self.transform.tool == Tool::Terrain {
             if let Some(ray) = ray {
-                self.terrain_input(ray, TerrainPhase::Hover, modifiers, cx);
+                self.terrain_hover(ray, position, modifiers, cx);
             }
             return;
         }
@@ -310,6 +310,11 @@ impl WorkspaceView {
             return;
         }
         // The Terrain Editor brushes or reshapes its region instead.
+        if self.transform.tool == Tool::Terrain && modifiers.alt {
+            let (x, y) = (f32::from(position.x), f32::from(position.y));
+            self.terrain_input(ray, TerrainPhase::Picker { x, y }, modifiers, cx);
+            return;
+        }
         if self.transform.tool == Tool::Terrain {
             self.begin(Drag::Terrain, cx);
             self.terrain_input(ray, TerrainPhase::Press, modifiers, cx);

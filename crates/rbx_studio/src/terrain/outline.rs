@@ -137,6 +137,19 @@ pub(crate) fn region_outline(
         }
     }
     if let Some(handles) = handles {
+        // Transform's rotate rings, where `Handles::grab_ring` looks for
+        // them: one arm out from the centre, round each axis.
+        for axis in Axis::ALL {
+            let (_, zero, quarter) = handles.ring_frame(axis);
+            ring(
+                handles.origin(),
+                zero,
+                quarter,
+                handles.arm(),
+                axis_color(axis),
+                &mut out,
+            );
+        }
         for axis in Axis::ALL {
             let tip = handles.origin() + handles.direction(axis) * handles.arm();
             out.push(Segment {

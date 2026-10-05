@@ -102,7 +102,7 @@ impl Terrain {
             slots: HashMap::new(),
             error,
         };
-        terrain.claim_slots(catalog, database);
+        terrain.claim_slots(catalog, database, None);
         Some(terrain)
     }
 
@@ -135,16 +135,16 @@ impl Terrain {
     /// through the same catalog parts use, so a `MaterialService` override
     /// of Grass repaints terrain grass too. Returns whether any layer was
     /// new to the catalog (which a running renderer cannot add on the fly).
+    /// `within` limits the look to the chunks an edit changed; a material
+    /// already claimed stays claimed, so only new ones matter.
     pub(crate) fn claim_slots(
         &mut self,
         catalog: &mut Catalog,
         database: &ReflectionDatabase,
+        within: Option<&BTreeSet<ChunkKey>>,
     ) -> bool {
         let before = catalog.layers();
-        let mut present = [false; 23];
-        for (_, cell) in self.grid.voxels() {
-            present[usize::from(cell.material.slot())] = true;
-        }
+        let present = self.grid.materials_in(within);
         for material in
             Material::paintable().filter(|m| m.is_solid() && present[usize::from(m.slot())])
         {
@@ -215,10 +215,9 @@ fn read_grass(properties: &Properties, wind: Vec3) -> Grass {
     }
 }
 
-/// `GlobalWind` lives on `Workspace`, which an edit leaves alone (see
-/// `changes::Role::of`): re-reading the terrain walks its voxels, too much
-/// for every workspace write, so a wind edit lands with the next terrain
-/// edit or reload.
+/// `GlobalWind` lives on `Workspace`; an edit to it re-reads the terrain
+/// (see `Patcher::present`), which with its voxels unchanged reads nothing
+/// else.
 pub(crate) fn read_wind(dom: &WeakDom) -> Vec3 {
     find(dom)
         .and_then(|terrain| dom.get(dom.parent(terrain)?))
@@ -257,7 +256,7 @@ impl super::Scene {
                 let properties = dom.get(referent).map(|i| i.properties());
                 let changed = properties.map(|p| terrain.resync(p)).unwrap_or_default();
                 terrain.grass.wind = read_wind(dom);
-                terrain.claim_slots(&mut self.materials, database);
+                terrain.claim_slots(&mut self.materials, database, Some(&changed));
                 changed
             }
             (found, _) => {

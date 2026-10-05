@@ -219,7 +219,8 @@ fn read_colormap(path: &Path) -> Result<Colormap, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    // Not a glob: `gpui_kit::*` up there carries a `test` macro of its own.
+    use super::{read_colormap, read_heightmap};
 
     #[test]
     fn heightmaps_read_brightness_and_colormaps_rgb() {

@@ -219,6 +219,9 @@ impl Patcher<'_> {
             }
             Role::Material => Err(Rebuild::Materials),
             Role::Terrain => self.sync_terrain(),
+            // `Workspace.GlobalWind` sways the terrain's grass. Re-reading
+            // the terrain with its voxels unchanged costs one byte compare.
+            Role::Inert if instance.class() == "Workspace" => self.sync_terrain(),
             Role::Inert => Ok(()),
         }
     }

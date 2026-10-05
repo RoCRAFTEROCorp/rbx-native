@@ -15,7 +15,7 @@ mod outline;
 mod region;
 mod settings;
 
-pub(crate) use aim::{aim, stroke_plane, Aim, Plane, Surfaces};
+pub(crate) use aim::{aim, plane_normal, plane_tilt, stroke_plane, Aim, Plane, Surfaces};
 pub(crate) use apply::{apply_brush, Effect};
 pub(crate) use dom::{find_terrain, read_grid, write_grid, GridRead};
 pub(crate) use outline::{brush_outline, region_model, region_outline};
