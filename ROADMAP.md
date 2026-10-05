@@ -1841,27 +1841,38 @@ Roblox's own engine.
   window follows a relink or an upload from the File menu.
 
 - [x] **"Freeze"/"Apply" a `MeshPart`'s rotation** — Explorer ›
-  right-click › **Freeze Rotation** zeroes a `MeshPart`'s `Orientation`
-  while it keeps looking exactly where and how it was, the Blender "Apply
-  Transform" equivalent (devforum
-  [`allow-to-reset-the-orientation-of-a-part-to-000-and-keep-the-object-at-its-current-rotation`](https://devforum.roblox.com/t/allow-to-reset-the-orientation-of-a-part-to-000-and-keep-the-object-at-its-current-rotation/1301322)).
-  Live only on a turned `MeshPart` with a mesh: a primitive `Part` has no
-  vertices to turn. The drawn triangles (turn *and* stretch — a stretched
-  mesh turned cannot be re-stretched along the new axes) are baked into a
+  right-click › **Freeze Rotation** clears an instance's turn to `0, 0, 0`
+  while it keeps looking where and how it was, Blender's Apply › Rotation
+  ("rotation values are cleared to zero … the geometry itself is adjusted
+  so that the object continues to appear unchanged") — the devforum's
+  [`allow-to-reset-the-orientation-of-a-part-to-000-and-keep-the-object-at-its-current-rotation`](https://devforum.roblox.com/t/allow-to-reset-the-orientation-of-a-part-to-000-and-keep-the-object-at-its-current-rotation/1301322),
+  which asks it of parts, meshes and models alike, including ones built
+  in Studio. As in Blender the origin stays put and loses its turn: the
+  pivot keeps its place, unturned, while child `Attachment`s and the
+  `C0`/`C1` of joints naming the part keep their whole world frame. Only
+  what Roblox itself would store is written, so four cases qualify:
+  a **`Model`**, whose turn is its pivot's (`WorldPivot`, or its
+  `PrimaryPart`'s `PivotOffset`) — cleared with no part moving; a
+  **`Block`** turned by quarter turns, re-described unturned by swapping
+  its `Size` axes, with its surfaces and any `Decal`/`Texture`/`SurfaceGui`
+  `Face` moved to the face now pointing their way; a **`Ball`** at any
+  angle (unless something sits on one of its faces); and a **`MeshPart`**,
+  whose drawn triangles (turn *and* stretch — a stretched mesh turned
+  cannot be re-stretched along the new axes, so this is Apply › Rotation
+  & Scale, Roblox having no other scale channel) are baked into a
   one-mesh glTF and uploaded through `rbx_cloud` as a real `Model` asset
   (`Client::create_model_asset`, scopes `asset:read`/`asset:write`); the
   `MeshId` Roblox's importer gives it is read back, its mesh downloaded and
   checked to have the bake's proportions, and only then is the part
-  repointed, with `InitialSize` from that mesh, as one undo step. Nothing
-  non-standard is stored in the place. Not a raw `.mesh` upload as first
-  planned: the Assets API's `Mesh` type "only accepts content downloaded
-  from the Asset delivery API" (`creator-docs`,
-  `cloud/guides/usage-assets.md`), so a `Model` import is the one route open
-  to new geometry. `PivotOffset`, child `Attachment`s and the `C0`/`C1` of
-  joints naming the part are re-expressed so nothing hanging off it moves;
-  a skinned mesh (one with `Bone`s) is refused. The bake keeps positions,
-  normals, UVs and LOD 0 only: vertex colours and coarser LODs are dropped,
-  and a `Decal`/`Texture`'s `Face` is not remapped.
+  repointed, with `InitialSize` from that mesh. Not a raw `.mesh` upload
+  as first planned: the Assets API's `Mesh` type "only accepts content
+  downloaded from the Asset delivery API" (`creator-docs`,
+  `cloud/guides/usage-assets.md`). A block at any other angle, a cylinder
+  or a wedge cannot be described unturned and is greyed; a skinned mesh
+  is refused. Known differences, each named in the Output dock when it
+  applies: a patterned `Material`'s grain and a decal's image follow the
+  part's own axes, so on a frozen block they may run another way; a baked
+  mesh keeps positions, normals, UVs and LOD 0 only (no vertex colours).
 
 ### Platform
 - [x] Linux (X11) — the daily-driven target.

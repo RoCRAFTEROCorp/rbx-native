@@ -2,24 +2,17 @@
 
 ## 2026-10-05
 
-- **Freeze Rotation for `MeshPart`s.** Explorer › right-click › Freeze
-  Rotation zeroes a turned `MeshPart`'s `Orientation` while it keeps
-  looking exactly as it did, Blender's "Apply Transform": its triangles are
-  baked into a new mesh, uploaded through the stored key as a real Roblox
-  asset, checked once Roblox has imported it, and only then swapped in, so
-  the place stays one real Studio opens and draws the same. Pivot,
-  attachments and joints hanging off the part stay where they were. Asked
-  for on the DevForum, and something Studio itself has no answer to. —
-  @chteau
-
-- **Unions baked only as `MeshData` draw and export as their real shape.**
-  A union with no operation tree left anywhere, inline or behind its
-  `AssetId`, used to draw and export as its box. Its own baked mesh is now
-  decoded instead, from both CSGMDL versions found in real files: the
-  2015-era version 2 and the version 5 Studio writes now. In marked.rbxl
-  that turns 7 blind rods from boxes into cylinders, and every union in the
-  test places now resolves. Each version 5 bake decodes to exactly the
-  volume its own tree carves to. — @chteau
+- **Freeze Rotation.** Explorer › right-click › Freeze Rotation clears a
+  turned instance's `Orientation` to `0, 0, 0` while it keeps looking as it
+  did, Blender's Apply › Rotation: a model's pivot loses its turn with no
+  part moving, a block turned by quarter turns is re-described unturned
+  (size axes swapped, surfaces and decals moved to their new faces), and a
+  `MeshPart`'s triangles are baked into a new mesh, uploaded through the
+  stored key as a real Roblox asset and checked before it is swapped in.
+  The pivot stays where it was, unturned, and attachments and joints stay
+  put, so the place remains one real Studio opens and draws the same.
+  Asked for on the DevForum since 2021, and something Studio has no answer
+  to. — @chteau
 
 ## 2026-10-04
 
