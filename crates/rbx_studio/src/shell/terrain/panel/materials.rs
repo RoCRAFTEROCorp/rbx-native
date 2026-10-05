@@ -94,6 +94,9 @@ impl Shell {
                             })
                             .on_click(cx.listener(move |shell, _, _, cx| {
                                 shell.terrain.settings.set_material(choice, material);
+                                // One pick is the whole of the Alt-click
+                                // picker's job.
+                                shell.terrain.picker_at = None;
                                 cx.notify();
                             }))
                     })),
@@ -122,15 +125,6 @@ impl Shell {
                 shell.terrain.picker_at = None;
                 cx.notify();
             }))
-            .on_mouse_up(
-                MouseButton::Left,
-                cx.listener(|shell, _: &MouseUpEvent, _, cx| {
-                    // A tile's own click has landed by now; one pick is the
-                    // whole of the picker's job.
-                    shell.terrain.picker_at = None;
-                    cx.notify();
-                }),
-            )
             .child(grid);
         Some(
             deferred(
