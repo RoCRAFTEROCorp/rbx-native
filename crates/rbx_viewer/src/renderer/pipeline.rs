@@ -23,6 +23,7 @@ pub(super) const BOX_SHADER: &str = concat!(
     include_str!("lighting.wgsl"),
     include_str!("atmosphere.wgsl"),
     include_str!("material.wgsl"),
+    include_str!("water.wgsl"),
     include_str!("shader.wgsl")
 );
 pub(super) const FILEMESH_SHADER: &str = concat!(
@@ -30,6 +31,7 @@ pub(super) const FILEMESH_SHADER: &str = concat!(
     include_str!("lighting.wgsl"),
     include_str!("atmosphere.wgsl"),
     include_str!("material.wgsl"),
+    include_str!("water.wgsl"),
     include_str!("filemesh.wgsl")
 );
 pub(super) const APPEARANCE_SHADER: &str = concat!(
@@ -37,6 +39,7 @@ pub(super) const APPEARANCE_SHADER: &str = concat!(
     include_str!("lighting.wgsl"),
     include_str!("atmosphere.wgsl"),
     include_str!("material.wgsl"),
+    include_str!("water.wgsl"),
     include_str!("appearance.wgsl")
 );
 pub(super) const DECAL_SHADER: &str = concat!(
@@ -605,10 +608,7 @@ mod tests {
     #[test]
     fn the_water_shader_knows_the_near_plane() {
         let declared = format!("const CAMERA_NEAR: f32 = {:?};", crate::camera::NEAR_PLANE);
-        assert!(
-            include_str!("material.wgsl").contains(&declared),
-            "{declared}"
-        );
+        assert!(include_str!("water.wgsl").contains(&declared), "{declared}");
     }
 
     #[test]
