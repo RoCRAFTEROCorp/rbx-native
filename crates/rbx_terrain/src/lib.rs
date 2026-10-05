@@ -7,9 +7,12 @@
 
 mod cell;
 pub mod edit;
+pub mod generate;
 mod grid;
+pub mod import;
 mod material;
 mod material_colors;
+mod noise;
 pub mod physics_grid;
 mod raycast;
 pub mod smooth_grid;
